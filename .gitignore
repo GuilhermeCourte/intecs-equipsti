@@ -1,5 +1,25 @@
+# Dependências
 node_modules/
+
+# Variáveis de ambiente / segredos
 .env
+.env.local
+.env.*.local
+
+# Vercel (vínculo do projeto + credenciais)
+.vercel
+
+# Logs
 *.log
-.REF_DESIGN.png
-.plan.md
+npm-debug.log*
+
+# Arquivos internos do projeto (não publicados)
+REF_DESIGN.png
+plan.md
+
+# Sistema operacional / editores
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
