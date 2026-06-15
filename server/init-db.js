@@ -39,12 +39,28 @@ CREATE TABLE dbo.EQUIPSTI_registros (
   setor        NVARCHAR(255) NULL,
   usuario      NVARCHAR(255) NULL,
   ns           NVARCHAR(255) NOT NULL,
-  pat_antigo   NVARCHAR(255) NULL,
   pat_novo     NVARCHAR(255) NULL,
   equipamento  NVARCHAR(255) NOT NULL,
   obs          NVARCHAR(MAX) NULL,
   criado_em    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   atualizado_em DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- Migração: remove a coluna pat_antigo (não é mais usada).
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'pat_antigo') IS NOT NULL
+  ALTER TABLE dbo.EQUIPSTI_registros DROP COLUMN pat_antigo;
+
+IF OBJECT_ID('dbo.EQUIPSTI_emprestimos', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_emprestimos (
+  id              INT IDENTITY(1,1) PRIMARY KEY,
+  pat             NVARCHAR(255) NOT NULL,
+  unidade         NVARCHAR(255) NOT NULL,
+  data_emprestimo DATE NULL,
+  status          NVARCHAR(20) NOT NULL DEFAULT 'EMPRESTADO',
+  data_devolucao  DATE NULL,
+  obs             NVARCHAR(MAX) NULL,
+  criado_em       DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em   DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
 `;
 

@@ -27,11 +27,11 @@ async function api(method, path, body) {
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO'];
 const FORM_SELECTS = ['unidade', 'status', 'setor', 'equipamento'];
 const SELECT_TO_LIST = { unidade: 'UNIDADE', status: 'STATUS', setor: 'SETOR', equipamento: 'EQUIPAMENTO' };
-const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento']);
+const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat']);
 const CHOICES_IDS = [
   'unidade', 'status', 'setor', 'equipamento',
   'edit_unidade', 'edit_status', 'edit_setor', 'edit_equipamento',
-  'listaAlvo'
+  'listaAlvo', 'emp_pat', 'emp_unidade'
 ];
 
 // ---------- Estado em memória ----------
@@ -42,6 +42,7 @@ let modalEditar = null;
 let modalMsg = null;
 let modalAsk = null;
 let askResolve = null;
+let modalHistorico = null;
 const choicesMap = {};
 
 // ============================================================
@@ -75,11 +76,19 @@ function showAlert(_containerId, type, message) {
 }
 
 // ---------- Confirmar / perguntar via modal (substitui confirm/prompt) ----------
-function uiAsk({ title, message, input, value, okText, danger }) {
+function uiAsk({ title, message, input, value, okText, danger, transfer }) {
   return new Promise((resolve) => {
     askResolve = resolve;
     $('askTitle').textContent = title || '';
     $('askText').textContent = message || '';
+    const trans = $('askTransfer');
+    if (transfer) {
+      $('askTransferFrom').textContent = transfer.from;
+      $('askTransferTo').textContent = transfer.to;
+      trans.classList.remove('hidden');
+    } else {
+      trans.classList.add('hidden');
+    }
     const inp = $('askInput');
     if (input) { inp.classList.remove('hidden'); inp.value = value || ''; }
     else { inp.classList.add('hidden'); }
@@ -102,7 +111,8 @@ function finishAsk(confirmado) {
 function uiConfirm(message, opts = {}) {
   return uiAsk({
     title: opts.title || 'Confirmar', message,
-    okText: opts.okText || 'Confirmar', danger: opts.danger !== false
+    okText: opts.okText || 'Confirmar', danger: opts.danger !== false,
+    transfer: opts.transfer
   });
 }
 
@@ -269,27 +279,34 @@ function dadosFormulario(prefix) {
   const g = (campo) => $((prefix || '') + campo).value;
   return {
     unidade: trim(g('unidade')), status: trim(g('status')), setor: trim(g('setor')),
-    usuario: trim(g('usuario')), ns: trim(g('ns')), patAntigo: trim(g('patAntigo')),
+    usuario: trim(g('usuario')), ns: trim(g('ns')),
     patNovo: trim(g('patNovo')), equipamento: trim(g('equipamento')), obs: trim(g('obs'))
   };
 }
 
 async function loadRecords() {
   const corpo = $('corpoTabela');
-  corpo.innerHTML = '<tr><td colspan="10" class="text-muted">Carregando...</td></tr>';
+  corpo.innerHTML = '<tr><td colspan="9" class="text-muted">Carregando...</td></tr>';
   try {
     REGISTROS = await api('GET', '/api/records');
     renderTabela();
   } catch (err) {
     showAlert('alertRegistros', 'danger', 'Erro ao carregar registros: ' + err.message);
-    corpo.innerHTML = '<tr><td colspan="10" class="text-danger">Falha ao carregar.</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="9" class="text-danger">Falha ao carregar.</td></tr>';
   }
+}
+
+// Renderiza um PAT como botão que abre o histórico (ou vazio se não houver).
+function patLink(pat) {
+  if (!pat) return '';
+  const e = escapeHtml(pat);
+  return '<button type="button" class="pat-link" data-hist="' + e + '">' + e + '</button>';
 }
 
 function renderTabela() {
   const corpo = $('corpoTabela');
   if (!REGISTROS.length) {
-    corpo.innerHTML = '<tr><td colspan="10" class="text-muted">Nenhum registro cadastrado.</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="9" class="text-muted">Nenhum registro cadastrado.</td></tr>';
     return;
   }
   corpo.innerHTML = REGISTROS.map((r) =>
@@ -299,8 +316,7 @@ function renderTabela() {
     '<td>' + escapeHtml(r.setor) + '</td>' +
     '<td>' + escapeHtml(r.usuario) + '</td>' +
     '<td>' + escapeHtml(r.ns) + '</td>' +
-    '<td>' + escapeHtml(r.patAntigo) + '</td>' +
-    '<td>' + escapeHtml(r.patNovo) + '</td>' +
+    '<td>' + patLink(r.patNovo) + '</td>' +
     '<td>' + escapeHtml(r.equipamento) + '</td>' +
     '<td title="' + escapeHtml(r.obs) + '">' + escapeHtml(r.obs) + '</td>' +
     '<td class="text-end">' +
@@ -320,7 +336,6 @@ function abrirEdicao(id) {
   fillSelect('edit_equipamento', valsParaEdicao('EQUIPAMENTO', r.equipamento), r.equipamento);
   $('edit_usuario').value = r.usuario || '';
   $('edit_ns').value = r.ns || '';
-  $('edit_patAntigo').value = r.patAntigo || '';
   $('edit_patNovo').value = r.patNovo || '';
   $('edit_obs').value = r.obs || '';
   $('formEditar').classList.remove('was-validated');
@@ -334,11 +349,11 @@ function exportarCSV() {
     return;
   }
   const cabecalho = ['UNIDADE', 'STATUS', 'SETOR', 'USUARIO', 'N/S',
-    'PAT_MSA - ANTIGO', 'PAT_MSA - NOVO', 'EQUIPAMENTO', 'OBS'];
+    'PAT MSA', 'EQUIPAMENTO', 'OBS'];
   const campo = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const linhas = REGISTROS.map((r) => [
     r.unidade, r.status, r.setor, r.usuario, r.ns,
-    r.patAntigo, r.patNovo, r.equipamento, r.obs
+    r.patNovo, r.equipamento, r.obs
   ].map(campo).join(','));
   const csv = '﻿' + [cabecalho.map(campo).join(','), ...linhas].join('\r\n');
 
@@ -404,6 +419,176 @@ async function loadUsuarios() {
   } catch (err) {
     container.innerHTML = '<span class="text-danger">Erro ao carregar: ' + escapeHtml(err.message) + '</span>';
   }
+}
+
+// ============================================================
+//  Empréstimos
+// ============================================================
+// Preenche os selects do formulário de empréstimo (PAT vem dos registros).
+async function loadEmprestimoForm() {
+  fillSelect('emp_unidade', activeValues('UNIDADE'));
+  try {
+    const pats = await api('GET', '/api/pats');
+    fillSelect('emp_pat', pats);
+  } catch (err) {
+    showAlert('alertEmprestimos', 'danger', 'Erro ao carregar PATs: ' + err.message);
+  }
+  // Data padrão = hoje (formato yyyy-mm-dd).
+  const hoje = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  $('emp_data').value = hoje.getFullYear() + '-' + pad(hoje.getMonth() + 1) + '-' + pad(hoje.getDate());
+}
+
+function fmtData(d) {
+  if (!d) return '—';
+  const partes = String(d).split('-'); // yyyy-mm-dd
+  return partes.length === 3 ? partes[2] + '/' + partes[1] + '/' + partes[0] : d;
+}
+
+async function loadEmprestimos() {
+  const container = $('listaEmprestimos');
+  if (!container) return;
+  container.innerHTML = '<span class="text-muted">Carregando...</span>';
+  try {
+    const ativos = (await api('GET', '/api/loans')).filter((e) => e.status !== 'DEVOLVIDO');
+    if (!ativos.length) {
+      container.innerHTML = '<span class="text-muted">Nenhum empréstimo em aberto.</span>';
+      return;
+    }
+    const linhas = ativos.map((e) => {
+      const acao = '<button type="button" class="acao-link acao-exibir" data-loan-id="' + e.id +
+        '" data-to="DEVOLVIDO" data-pat="' + escapeHtml(e.pat) + '" data-unidade="' + escapeHtml(e.unidade) +
+        '"><i class="ph ph-arrow-u-down-left"></i> Devolver</button>';
+      return '<tr>' +
+        '<td>' + patLink(e.pat) + '</td>' +
+        '<td>' + escapeHtml(e.unidade) + '</td>' +
+        '<td>' + fmtData(e.data) + '</td>' +
+        '<td title="' + escapeHtml(e.obs) + '">' + escapeHtml(e.obs) + '</td>' +
+        '<td class="text-end">' + acao + '</td></tr>';
+    }).join('');
+    container.innerHTML =
+      '<div class="table-responsive"><table class="table table-striped align-middle mb-0">' +
+      '<thead><tr><th>PAT</th><th>UNIDADE</th><th>DATA</th><th>OBS</th><th class="text-end">Ação</th></tr></thead>' +
+      '<tbody>' + linhas + '</tbody></table></div>';
+  } catch (err) {
+    container.innerHTML = '<span class="text-danger">Erro ao carregar: ' + escapeHtml(err.message) + '</span>';
+  }
+}
+
+function configurarFormEmprestimo() {
+  const form = $('formEmprestimo');
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+    const dados = {
+      pat: trim($('emp_pat').value),
+      unidade: trim($('emp_unidade').value),
+      data: $('emp_data').value,
+      obs: trim($('emp_obs').value)
+    };
+    const btn = $('btnEmprestar');
+    btn.disabled = true; btn.textContent = 'Emprestando...';
+    try {
+      await api('POST', '/api/loans', dados);
+      form.reset();
+      form.classList.remove('was-validated');
+      await loadEmprestimoForm();
+      showAlert('alertEmprestimos', 'success', 'Empréstimo registrado.');
+      await loadEmprestimos();
+    } catch (err) {
+      showAlert('alertEmprestimos', 'danger', err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Emprestar';
+    }
+  });
+
+  // Histórico do PAT + Devolver / Reabrir (delegação na tabela).
+  $('listaEmprestimos').addEventListener('click', async (ev) => {
+    const hist = ev.target.closest('[data-hist]');
+    if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist')); return; }
+    const btn = ev.target.closest('[data-loan-id]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-loan-id');
+    const to = btn.getAttribute('data-to');
+    const pat = btn.getAttribute('data-pat');
+    const unidade = btn.getAttribute('data-unidade');
+
+    let origem = '';
+    try {
+      const h = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/history');
+      origem = h.origens && h.origens.length ? h.origens[0].unidade : '';
+    } catch (err) {
+      showAlert('alertEmprestimos', 'danger', err.message);
+      return;
+    }
+    if (!(await uiConfirm(
+      'Tem certeza que deseja devolver o PAT ' + pat + '?',
+      {
+        title: 'Devolver empréstimo', okText: 'Devolver',
+        transfer: { from: unidade, to: origem || '—' }
+      }))) return;
+
+    btn.disabled = true;
+    try {
+      await api('PUT', '/api/loans/' + id + '/status', { status: to });
+      await loadEmprestimos();
+    } catch (err) {
+      showAlert('alertEmprestimos', 'danger', err.message);
+      btn.disabled = false;
+    }
+  });
+}
+
+// ============================================================
+//  Histórico do PAT (linha do tempo)
+// ============================================================
+async function abrirHistoricoPat(pat) {
+  $('histPat').textContent = pat;
+  $('histBody').innerHTML = '<span class="text-muted">Carregando...</span>';
+  modalHistorico.show();
+  try {
+    const h = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/history');
+    $('histBody').innerHTML = renderTimeline(h);
+  } catch (err) {
+    $('histBody').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+  }
+}
+
+function tlItem(tipo, icon, titulo, sub, data) {
+  return '<div class="tl-item">' +
+    '<span class="tl-dot ' + tipo + '"><i class="ph ' + icon + '"></i></span>' +
+    (data ? '<div class="tl-date">' + fmtData(data) + '</div>' : '') +
+    '<div class="tl-title">' + titulo + '</div>' +
+    (sub ? '<div class="tl-sub">' + sub + '</div>' : '') +
+    '</div>';
+}
+
+function renderTimeline(h) {
+  const itens = [];
+  if (h.origens && h.origens.length) {
+    h.origens.forEach((o) => {
+      const eq = o.equipamento ? ' · ' + escapeHtml(o.equipamento) : '';
+      const ns = o.ns ? ' · N/S ' + escapeHtml(o.ns) : '';
+      itens.push(tlItem('origem', 'ph-house-line',
+        'Unidade de origem: ' + escapeHtml(o.unidade),
+        'Cadastrado no inventário' + eq + ns, o.criadoEm));
+    });
+  } else {
+    itens.push(tlItem('origem', 'ph-house-line', 'Sem registro de origem',
+      'Este PAT não consta na lista de Registros.', null));
+  }
+  (h.emprestimos || []).forEach((e) => {
+    itens.push(tlItem('emprestado', 'ph-arrow-up-right',
+      'Emprestado para ' + escapeHtml(e.unidade), e.obs ? escapeHtml(e.obs) : '', e.data));
+    if (e.status === 'DEVOLVIDO') {
+      itens.push(tlItem('devolvido', 'ph-arrow-u-down-left',
+        'Devolvido (voltou à origem)', '', e.dataDevolucao));
+    } else {
+      itens.push(tlItem('aberto', 'ph-clock',
+        'Empréstimo em aberto', 'Atualmente em ' + escapeHtml(e.unidade), null));
+    }
+  });
+  return '<div class="timeline">' + itens.join('') + '</div>';
 }
 
 // ============================================================
@@ -620,26 +805,9 @@ function configurarFormEditar() {
     }
   });
 
-  $('btnExcluir').addEventListener('click', async () => {
-    const id = $('edit_id').value;
-    if (!id) return;
-    if (!(await uiConfirm('Excluir este registro definitivamente?',
-      { title: 'Excluir registro', okText: 'Excluir' }))) return;
-    const btn = $('btnExcluir');
-    btn.disabled = true; btn.textContent = 'Excluindo...';
-    try {
-      await api('DELETE', '/api/records/' + id);
-      modalEditar.hide();
-      showAlert('alertRegistros', 'success', 'Registro excluído.');
-      await loadRecords();
-    } catch (err) {
-      showAlert('alertRegistros', 'danger', 'Erro ao excluir: ' + err.message);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Excluir';
-    }
-  });
-
   $('corpoTabela').addEventListener('click', (ev) => {
+    const hist = ev.target.closest('[data-hist]');
+    if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist')); return; }
     const btn = ev.target.closest('[data-edit]');
     if (btn) abrirEdicao(btn.getAttribute('data-edit'));
   });
@@ -678,6 +846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalEditar = new bootstrap.Modal($('modalEditar'));
   modalMsg = new bootstrap.Modal($('modalMsg'));
   modalAsk = new bootstrap.Modal($('modalAsk'));
+  modalHistorico = new bootstrap.Modal($('modalHistorico'));
   $('askOk').addEventListener('click', () => finishAsk(true));
   $('askCancel').addEventListener('click', () => finishAsk(false));
   $('modalAsk').addEventListener('hidden.bs.modal', () => finishAsk(false));
@@ -687,11 +856,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarFormInventario();
   configurarFormOpcao();
   configurarFormUsuario();
+  configurarFormEmprestimo();
   configurarFormEditar();
 
   $('tab-registros').addEventListener('shown.bs.tab', loadRecords);
   $('btnAtualizarLista').addEventListener('click', loadRecords);
   $('btnExportar').addEventListener('click', exportarCSV);
+  $('tab-emprestimos').addEventListener('shown.bs.tab', () => { loadEmprestimoForm(); loadEmprestimos(); });
+  $('btnAtualizarEmprestimos').addEventListener('click', loadEmprestimos);
   $('tab-usuarios').addEventListener('shown.bs.tab', loadUsuarios);
   $('btnAtualizarUsuarios').addEventListener('click', loadUsuarios);
 

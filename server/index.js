@@ -152,7 +152,7 @@ app.put('/api/options/hidden', exigirAuth, wrap(async (req, res) => {
 function lerRegistro(body) {
   return {
     unidade: trim(body.unidade), status: trim(body.status), setor: trim(body.setor),
-    usuario: trim(body.usuario), ns: trim(body.ns), patAntigo: trim(body.patAntigo),
+    usuario: trim(body.usuario), ns: trim(body.ns),
     patNovo: trim(body.patNovo), equipamento: trim(body.equipamento), obs: trim(body.obs)
   };
 }
@@ -167,7 +167,7 @@ function validarRegistro(d) {
 
 app.get('/api/records', exigirAuth, wrap(async (req, res) => {
   const r = await query(`SELECT id, unidade, status, setor, usuario, ns,
-    pat_antigo AS patAntigo, pat_novo AS patNovo, equipamento, obs
+    pat_novo AS patNovo, equipamento, obs
     FROM dbo.EQUIPSTI_registros ORDER BY id DESC`);
   res.json(r.recordset);
 }));
@@ -176,11 +176,10 @@ app.post('/api/records', exigirAuth, wrap(async (req, res) => {
   const d = lerRegistro(req.body);
   validarRegistro(d);
   await query(`INSERT INTO dbo.EQUIPSTI_registros
-    (unidade, status, setor, usuario, ns, pat_antigo, pat_novo, equipamento, obs)
-    VALUES (@unidade, @status, @setor, @usuario, @ns, @patAntigo, @patNovo, @equipamento, @obs)`,
+    (unidade, status, setor, usuario, ns, pat_novo, equipamento, obs)
+    VALUES (@unidade, @status, @setor, @usuario, @ns, @patNovo, @equipamento, @obs)`,
     { unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
-      ns: S(d.ns), patAntigo: S(d.patAntigo), patNovo: S(d.patNovo),
-      equipamento: S(d.equipamento), obs: S(d.obs) });
+      ns: S(d.ns), patNovo: S(d.patNovo), equipamento: S(d.equipamento), obs: S(d.obs) });
   res.status(201).json({ ok: true });
 }));
 
@@ -190,17 +189,104 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
   validarRegistro(d);
   await query(`UPDATE dbo.EQUIPSTI_registros SET
     unidade=@unidade, status=@status, setor=@setor, usuario=@usuario, ns=@ns,
-    pat_antigo=@patAntigo, pat_novo=@patNovo, equipamento=@equipamento, obs=@obs,
+    pat_novo=@patNovo, equipamento=@equipamento, obs=@obs,
     atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { id, unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
-      ns: S(d.ns), patAntigo: S(d.patAntigo), patNovo: S(d.patNovo),
-      equipamento: S(d.equipamento), obs: S(d.obs) });
+      ns: S(d.ns), patNovo: S(d.patNovo), equipamento: S(d.equipamento), obs: S(d.obs) });
   res.json({ ok: true });
 }));
 
 app.delete('/api/records/:id', exigirAuth, wrap(async (req, res) => {
   await query('DELETE FROM dbo.EQUIPSTI_registros WHERE id = @id', { id: Number(req.params.id) });
+  res.json({ ok: true });
+}));
+
+// ===================== PATs (origem dos empréstimos) =====================
+app.get('/api/pats', exigirAuth, wrap(async (req, res) => {
+  const r = await query(`SELECT DISTINCT pat_novo FROM dbo.EQUIPSTI_registros
+    WHERE pat_novo IS NOT NULL AND LTRIM(RTRIM(pat_novo)) <> '' ORDER BY pat_novo`);
+  res.json(r.recordset.map((row) => row.pat_novo));
+}));
+
+// Histórico completo de um PAT: unidade(s) de origem + linha do tempo de empréstimos.
+app.get('/api/pats/:pat/history', exigirAuth, wrap(async (req, res) => {
+  const pat = trim(req.params.pat);
+  const origens = await query(`SELECT unidade, equipamento, ns,
+      CONVERT(varchar(10), MIN(criado_em), 23) AS criadoEm
+    FROM dbo.EQUIPSTI_registros WHERE pat_novo = @pat
+    GROUP BY unidade, equipamento, ns ORDER BY criadoEm`,
+    { pat: S(pat) });
+  const emprestimos = await query(`SELECT unidade,
+      CONVERT(varchar(10), data_emprestimo, 23) AS data, status,
+      CONVERT(varchar(10), data_devolucao, 23) AS dataDevolucao, obs
+    FROM dbo.EQUIPSTI_emprestimos WHERE pat = @pat
+    ORDER BY data_emprestimo, id`,
+    { pat: S(pat) });
+  res.json({ pat, origens: origens.recordset, emprestimos: emprestimos.recordset });
+}));
+
+// ===================== EMPRÉSTIMOS =====================
+app.get('/api/loans', exigirAuth, wrap(async (req, res) => {
+  const r = await query(`SELECT id, pat, unidade,
+    CONVERT(varchar(10), data_emprestimo, 23) AS data,
+    status,
+    CONVERT(varchar(10), data_devolucao, 23) AS dataDevolucao,
+    obs
+    FROM dbo.EQUIPSTI_emprestimos
+    ORDER BY CASE status WHEN 'EMPRESTADO' THEN 0 ELSE 1 END, id DESC`);
+  res.json(r.recordset);
+}));
+
+app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
+  const pat = trim(req.body.pat);
+  const unidade = trim(req.body.unidade);
+  const data = trim(req.body.data);
+  const obs = trim(req.body.obs);
+  const faltando = [];
+  if (!pat) faltando.push('PAT');
+  if (!unidade) faltando.push('UNIDADE');
+  if (faltando.length) return res.status(400).json({ error: 'Preencha: ' + faltando.join(', ') + '.' });
+
+  const aberto = await query(`SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
+    WHERE pat = @pat AND status = 'EMPRESTADO'`, { pat: S(pat) });
+  if (aberto.recordset.length) {
+    return res.status(400).json({
+      error: 'Este PAT já está emprestado para ' + aberto.recordset[0].unidade +
+        '. Devolva-o antes de emprestar para outra unidade.'
+    });
+  }
+
+  await query(`INSERT INTO dbo.EQUIPSTI_emprestimos (pat, unidade, data_emprestimo, status, obs)
+    VALUES (@pat, @unidade, @data, 'EMPRESTADO', @obs)`,
+    { pat: S(pat), unidade: S(unidade), data: S(data || null), obs: S(obs) });
+  res.status(201).json({ ok: true });
+}));
+
+app.put('/api/loans/:id/status', exigirAuth, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const status = trim(req.body.status).toUpperCase();
+  if (status !== 'EMPRESTADO' && status !== 'DEVOLVIDO') {
+    return res.status(400).json({ error: 'Status inválido.' });
+  }
+
+  if (status === 'EMPRESTADO') {
+    const atual = await query(`SELECT pat FROM dbo.EQUIPSTI_emprestimos WHERE id=@id`, { id });
+    if (!atual.recordset.length) return res.status(404).json({ error: 'Empréstimo não encontrado.' });
+    const aberto = await query(`SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
+      WHERE pat = @pat AND status = 'EMPRESTADO' AND id <> @id`,
+      { pat: S(atual.recordset[0].pat), id });
+    if (aberto.recordset.length) {
+      return res.status(400).json({
+        error: 'Este PAT já está emprestado para ' + aberto.recordset[0].unidade + '.'
+      });
+    }
+  }
+
+  const devol = status === 'DEVOLVIDO' ? 'CAST(SYSUTCDATETIME() AS DATE)' : 'NULL';
+  await query(`UPDATE dbo.EQUIPSTI_emprestimos
+    SET status=@status, data_devolucao=${devol}, atualizado_em=SYSUTCDATETIME()
+    WHERE id=@id`, { id, status: S(status) });
   res.json({ ok: true });
 }));
 

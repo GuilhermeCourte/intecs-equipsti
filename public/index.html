@@ -152,6 +152,7 @@
        App
        ============================================================ */
     .app-card { max-width: 980px; margin: 22px auto; border: none; border-radius: var(--radius); }
+    .app-card.app-card-wide { max-width: 1320px; }
     .app-card .card-header {
       background: var(--ink) !important;
       border-radius: var(--radius) var(--radius) 0 0 !important;
@@ -163,7 +164,7 @@
       background: var(--bg-soft) !important; color: var(--ink) !important;
       border: 1px solid var(--line); padding: .5em .85em; border-radius: 999px;
     }
-    #corpoTabela td { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #corpoTabela td { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* tabela */
     .table > thead th {
@@ -187,6 +188,35 @@
       to   { opacity: 1; transform: scale(1) translateY(0); }
     }
 
+    /* PAT clicável (abre histórico) */
+    .pat-link {
+      border: none; background: none; padding: 0; cursor: pointer;
+      color: var(--ink); font-weight: 600; text-decoration: underline;
+      text-decoration-color: #cfcfcf; text-underline-offset: 3px;
+    }
+    .pat-link:hover { text-decoration-color: var(--ink); }
+
+    /* Linha do tempo (histórico do PAT) */
+    .timeline { position: relative; padding-left: 30px; margin: 4px 0; }
+    .timeline::before {
+      content: ''; position: absolute; left: 10px; top: 6px; bottom: 6px;
+      width: 2px; background: var(--line);
+    }
+    .tl-item { position: relative; padding-bottom: 20px; }
+    .tl-item:last-child { padding-bottom: 0; }
+    .tl-dot {
+      position: absolute; left: -30px; top: 0; width: 22px; height: 22px;
+      border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+      color: #fff; font-size: .8rem; box-shadow: 0 0 0 3px #fff;
+    }
+    .tl-dot.origem    { background: var(--ink); }
+    .tl-dot.emprestado { background: #d68910; }
+    .tl-dot.devolvido { background: #1a7f4b; }
+    .tl-dot.aberto    { background: #d68910; }
+    .tl-title { font-weight: 600; }
+    .tl-sub { color: var(--muted); font-size: .85rem; }
+    .tl-date { color: var(--muted); font-size: .8rem; font-weight: 600; }
+
     .msg-icon { font-size: 3.25rem; line-height: 1; }
     .msg-icon.msg-success { color: #1a7f4b; }
     .msg-icon.msg-danger  { color: #c0392b; }
@@ -194,6 +224,8 @@
     .msg-icon.msg-info    { color: var(--ink); }
     .badge-ativo   { color: #1a7f4b; background: #e6f4ec; }
     .badge-inativo { color: #c0392b; background: #fdecea; }
+    .badge-emprestado { color: #d68910; background: #fdf3e3; }
+    .badge-devolvido  { color: #1a7f4b; background: #e6f4ec; }
     .acao-link {
       border: none; background: none; padding: 0; cursor: pointer;
       font-weight: 600; font-size: .92rem;
@@ -320,7 +352,7 @@
 
   <!-- ===================== APP ===================== -->
   <div id="appView" class="container hidden">
-    <div class="card shadow-sm app-card">
+    <div class="card shadow-sm app-card app-card-wide">
       <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Revalidação de Inventário</h5>
         <div class="d-flex align-items-center gap-2">
@@ -338,6 +370,10 @@
           <button class="nav-link" id="tab-registros" data-bs-toggle="tab"
             data-bs-target="#pane-registros" type="button" role="tab">
             <i class="ph ph-table"></i> Registros
+          </button>
+          <button class="nav-link" id="tab-emprestimos" data-bs-toggle="tab"
+            data-bs-target="#pane-emprestimos" type="button" role="tab">
+            <i class="ph ph-hand-arrow-up"></i> Empréstimos
           </button>
           <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
             data-bs-target="#pane-gerenciar" type="button" role="tab">
@@ -394,12 +430,7 @@
                 <div class="invalid-feedback">Selecione o equipamento.</div>
               </div>
               <div class="col-md-6">
-                <label class="form-label" for="patAntigo">PAT_MSA - ANTIGO</label>
-                <input type="text" class="form-control" id="patAntigo"
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="patNovo">PAT_MSA - NOVO</label>
+                <label class="form-label" for="patNovo">PAT MSA</label>
                 <input type="text" class="form-control" id="patNovo"
                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
               </div>
@@ -433,14 +464,60 @@
                 <thead>
                   <tr>
                     <th>UNIDADE</th><th>STATUS</th><th>SETOR</th><th>USUARIO</th><th>N/S</th>
-                    <th>PAT ANT.</th><th>PAT NOVO</th><th>EQUIP.</th><th>OBS</th>
+                    <th>PAT MSA</th><th>EQUIP.</th><th>OBS</th>
                     <th class="text-end">Ações</th>
                   </tr>
                 </thead>
                 <tbody id="corpoTabela">
-                  <tr><td colspan="10" class="text-muted">Carregando...</td></tr>
+                  <tr><td colspan="9" class="text-muted">Carregando...</td></tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- ABA EMPRÉSTIMOS -->
+          <div class="tab-pane fade" id="pane-emprestimos" role="tabpanel">
+            <p class="text-muted">Empreste um PAT já cadastrado para uma unidade.</p>
+            <div id="alertEmprestimos"></div>
+            <form id="formEmprestimo" class="needs-validation row g-3" novalidate>
+              <div class="col-md-6">
+                <label class="form-label" for="emp_pat">PAT *</label>
+                <select class="form-select" id="emp_pat" required>
+                  <option value="">Selecione...</option>
+                </select>
+                <div class="invalid-feedback">Selecione o PAT.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="emp_unidade">UNIDADE *</label>
+                <select class="form-select" id="emp_unidade" required>
+                  <option value="">Selecione...</option>
+                </select>
+                <div class="invalid-feedback">Selecione a unidade.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="emp_data">DATA</label>
+                <input type="date" class="form-control" id="emp_data">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="emp_obs">OBS (Observações)</label>
+                <textarea class="form-control" id="emp_obs" rows="2"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+              </div>
+              <div class="col-12 d-grid">
+                <button type="submit" class="btn btn-primary" id="btnEmprestar">Emprestar</button>
+              </div>
+            </form>
+
+            <hr>
+
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Empréstimos</h6>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarEmprestimos">
+                <i class="ph ph-arrow-clockwise"></i> Atualizar
+              </button>
+            </div>
+            <div id="listaEmprestimos">
+              <span class="text-muted">Carregando...</span>
             </div>
           </div>
 
@@ -571,12 +648,7 @@
               <div class="invalid-feedback">Selecione o equipamento.</div>
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="edit_patAntigo">PAT_MSA - ANTIGO</label>
-              <input type="text" class="form-control" id="edit_patAntigo"
-                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label" for="edit_patNovo">PAT_MSA - NOVO</label>
+              <label class="form-label" for="edit_patNovo">PAT MSA</label>
               <input type="text" class="form-control" id="edit_patNovo"
                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
@@ -586,12 +658,9 @@
                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             </div>
           </div>
-          <div class="modal-footer justify-content-between">
-            <button type="button" class="btn btn-outline-danger" id="btnExcluir">Excluir</button>
-            <div>
-              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-              <button type="submit" class="btn btn-primary" id="btnSalvarEdicao">Salvar</button>
-            </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSalvarEdicao">Salvar</button>
           </div>
         </form>
       </div>
@@ -614,17 +683,41 @@
 
   <!-- ===================== MODAL CONFIRMAR / PERGUNTAR ===================== -->
   <div class="modal fade" id="modalAsk" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-dialog modal-dialog-centered modal-md">
       <div class="modal-content">
-        <div class="modal-body p-4">
-          <h5 id="askTitle" class="mb-2"></h5>
-          <p id="askText" class="text-muted mb-3"></p>
+        <div class="modal-body p-4" style="min-height: 260px; display: flex; flex-direction: column; justify-content: center;">
+          <h5 id="askTitle" class="mb-3"></h5>
+          <p id="askText" class="text-muted mb-4"></p>
+          <div id="askTransfer" class="d-flex align-items-center justify-content-between gap-3 mb-4 hidden">
+            <div class="border rounded p-3 text-center flex-fill">
+              <div class="text-muted text-uppercase" style="font-size:.7rem;">Emprestado em</div>
+              <div class="fw-bold" id="askTransferFrom"></div>
+            </div>
+            <i class="ph ph-arrow-right text-muted fs-3"></i>
+            <div class="border rounded p-3 text-center flex-fill">
+              <div class="text-muted text-uppercase" style="font-size:.7rem;">Devolver para (original)</div>
+              <div class="fw-bold" id="askTransferTo"></div>
+            </div>
+          </div>
           <input id="askInput" class="form-control mb-3 hidden">
           <div class="d-flex justify-content-end gap-2">
             <button type="button" class="btn btn-outline-secondary" id="askCancel">Cancelar</button>
             <button type="button" class="btn btn-primary" id="askOk">OK</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL HISTÓRICO DO PAT ===================== -->
+  <div class="modal fade" id="modalHistorico" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">Histórico do PAT <span id="histPat"></span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="histBody"></div>
       </div>
     </div>
   </div>
