@@ -1,0 +1,19 @@
+{
+  "name": "Revalidação de Inventário",
+  "short_name": "Inventário",
+  "description": "Revalidação de inventário de equipamentos de TI",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f4f5",
+  "theme_color": "#2b2b2b",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

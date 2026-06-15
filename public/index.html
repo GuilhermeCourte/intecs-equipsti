@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b2b2b">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Revalidação de Inventário</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet" crossorigin="anonymous">
+  <link
+    href="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/styles/choices.min.css"
+    rel="stylesheet" crossorigin="anonymous">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <style>
+    /* ============================================================
+       Tema monocromático (referência REF_DESIGN.png)
+       ============================================================ */
+    :root {
+      --ink:      #2b2b2b;   /* charcoal principal */
+      --ink-2:    #1c1c1c;   /* charcoal escuro (hover) */
+      --muted:    #9a9a9a;   /* texto auxiliar */
+      --line:     #e4e4e4;   /* linhas / bordas */
+      --bg:       #ffffff;
+      --bg-soft:  #f4f4f5;
+      --radius:   16px;
+
+      --bs-primary: #2b2b2b;
+      --bs-primary-rgb: 43, 43, 43;
+    }
+
+    * { -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background-color: var(--bg-soft);
+      font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+    }
+
+    .hidden { display: none !important; }
+    .form-label { font-weight: 600; font-size: .85rem; letter-spacing: .3px; color: #555; }
+    .text-muted { color: var(--muted) !important; }
+
+    /* ---------- Botões monocromáticos ---------- */
+    .btn { border-radius: 10px; font-weight: 600; letter-spacing: .4px; }
+    .btn-lg { padding: .8rem 1rem; }
+    .btn-primary,
+    .btn-success {
+      background: var(--ink); border-color: var(--ink); color: #fff;
+    }
+    .btn-primary:hover, .btn-primary:focus,
+    .btn-success:hover, .btn-success:focus,
+    .btn-primary:active, .btn-success:active {
+      background: var(--ink-2) !important; border-color: var(--ink-2) !important; color: #fff !important;
+    }
+    .btn-outline-primary, .btn-outline-secondary {
+      color: var(--ink); border-color: #cfcfcf;
+    }
+    .btn-outline-primary:hover, .btn-outline-secondary:hover {
+      background: var(--ink); border-color: var(--ink); color: #fff;
+    }
+    .btn-light { background: #fff; border-color: rgba(255,255,255,.6); color: var(--ink); }
+    .btn-outline-danger { color: #b02a37; border-color: #e3b6bb; }
+    .btn-outline-danger:hover { background: #b02a37; border-color: #b02a37; color:#fff; }
+    .form-control:focus, .form-select:focus {
+      border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12);
+    }
+    .form-control, .form-select { border-radius: 10px; }
+    a, .text-primary { color: var(--ink) !important; }
+
+    /* ============================================================
+       Tela de login — estilo REF_DESIGN (responsivo / split-screen)
+       ============================================================ */
+    #authView {
+      max-width: none; padding: 24px; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .auth-shell {
+      display: flex; width: 100%; max-width: 1000px; min-height: 580px;
+      background: #fff; border-radius: 24px; overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0,0,0,.18);
+    }
+
+    /* Painel escuro decorativo (esquerda no desktop) */
+    .auth-aside {
+      position: relative; flex: 1 1 50%;
+      background: var(--ink); color: #fff; overflow: hidden;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 56px 48px;
+    }
+    .auth-aside::before, .auth-aside::after {
+      content: ""; position: absolute; border-radius: 50%;
+      background: rgba(255,255,255,.06);
+    }
+    .auth-aside::before { width: 380px; height: 380px; top: -150px; right: -130px; }
+    .auth-aside::after  { width: 250px; height: 250px; bottom: -120px; left: -100px; }
+    .auth-aside .auth-head { position: relative; z-index: 1; }
+    .auth-aside .brand-mark {
+      width: 64px; height: 64px; border-radius: 18px; background: #fff;
+      display: inline-flex; align-items: center; justify-content: center; margin-bottom: 26px;
+      box-shadow: 0 10px 24px rgba(0,0,0,.3);
+    }
+    .auth-aside .brand-mark img { width: 42px; height: 42px; border-radius: 10px; }
+    .auth-aside h1 { font-weight: 800; font-size: 3rem; line-height: 1.05; margin: 0 0 14px; color: #fff; }
+    .auth-aside p { color: rgba(255,255,255,.7); margin: 0; max-width: 320px; font-size: 1rem; }
+
+    /* Lado do formulário (direita no desktop) */
+    .auth-main {
+      flex: 1 1 50%;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 48px 48px;
+    }
+    .auth-panel { position: relative; z-index: 1; }
+    .auth-panel .form-label { text-transform: none; font-weight: 500; color: var(--muted); margin-bottom: 2px; }
+    .auth-panel .form-control {
+      border: none; border-bottom: 2px solid var(--line); border-radius: 0;
+      padding: 10px 2px; background: transparent; font-size: 1.05rem; font-weight: 500;
+    }
+    .auth-panel .form-control:focus {
+      border-bottom-color: var(--ink); box-shadow: none; background: transparent;
+    }
+    .auth-panel .btn-primary {
+      text-transform: uppercase; padding: .8rem; letter-spacing: 1.5px; border-radius: 10px;
+    }
+    .auth-panel .btn-outline-secondary { text-transform: none; }
+    .auth-foot { color: var(--muted); font-size: .8rem; text-align: center; margin-top: 28px; }
+
+    /* ----- Mobile: empilha e volta ao visual de tela cheia ----- */
+    @media (max-width: 767.98px) {
+      #authView { padding: 0; }
+      .auth-shell {
+        flex-direction: column; max-width: 460px; min-height: 100vh;
+        border-radius: 0; box-shadow: none;
+      }
+      .auth-aside { flex: 0 0 auto; padding: 44px 32px 36px; }
+      .auth-aside::before { width: 240px; height: 240px; top: -90px; right: -90px; }
+      .auth-aside::after  { width: 170px; height: 170px; bottom: -70px; left: -70px; }
+      .auth-aside h1 { font-size: 2.4rem; }
+      .auth-aside p { max-width: 260px; font-size: .92rem; }
+      .auth-main { padding: 32px 28px 40px; justify-content: flex-start; }
+    }
+
+    /* ============================================================
+       App
+       ============================================================ */
+    .app-card { max-width: 980px; margin: 22px auto; border: none; border-radius: var(--radius); }
+    .app-card .card-header {
+      background: var(--ink) !important;
+      border-radius: var(--radius) var(--radius) 0 0 !important;
+      padding: 1rem 1.25rem;
+    }
+    .card { border: none; box-shadow: 0 12px 30px rgba(0,0,0,.06); border-radius: var(--radius); }
+    .badge-option {
+      font-size: .85rem; font-weight: 500;
+      background: var(--bg-soft) !important; color: var(--ink) !important;
+      border: 1px solid var(--line); padding: .5em .85em; border-radius: 999px;
+    }
+    #corpoTabela td { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* tabela */
+    .table > thead th {
+      border-bottom: 2px solid var(--line); color: #666;
+      text-transform: uppercase; font-size: .72rem; letter-spacing: .5px;
+    }
+    .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: #fafafa; }
+
+    /* tabela de Gerenciar Opções (status ativo/inativo) */
+    .tabela-opcoes td { vertical-align: middle; }
+    .opt-nome { font-weight: 600; color: var(--ink); }
+    .badge-status {
+      display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .5px;
+      padding: .35em .7em; border-radius: 6px;
+    }
+    /* animação de entrada dos modais */
+    .modal.fade .modal-dialog { transition: none; }
+    .modal.show .modal-dialog { animation: modalPop .3s cubic-bezier(.2, .9, .3, 1.25); }
+    @keyframes modalPop {
+      from { opacity: 0; transform: scale(.85) translateY(14px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .msg-icon { font-size: 3.25rem; line-height: 1; }
+    .msg-icon.msg-success { color: #1a7f4b; }
+    .msg-icon.msg-danger  { color: #c0392b; }
+    .msg-icon.msg-warning { color: #d68910; }
+    .msg-icon.msg-info    { color: var(--ink); }
+    .badge-ativo   { color: #1a7f4b; background: #e6f4ec; }
+    .badge-inativo { color: #c0392b; background: #fdecea; }
+    .acao-link {
+      border: none; background: none; padding: 0; cursor: pointer;
+      font-weight: 600; font-size: .92rem;
+    }
+    .acao-ocultar { color: #c0392b; }
+    .acao-exibir  { color: var(--ink); }
+    .acao-editar  { color: var(--ink); }
+    .acao-link:hover { text-decoration: underline; }
+    .acao-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
+
+    /* ---------- Abas ---------- */
+    .app-card .nav-tabs {
+      position: sticky; top: 0; z-index: 1020;
+      background: #fff; border-bottom: 1px solid var(--line);
+      padding-top: .5rem; margin: -1rem -0.25rem 1rem -0.25rem;
+      padding-left: .25rem; padding-right: .25rem;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .04);
+    }
+    .nav-tabs .nav-link {
+      border: none; color: var(--muted); font-weight: 600;
+      border-bottom: 2px solid transparent; border-radius: 0; padding: .65rem 1rem;
+    }
+    .nav-tabs .nav-link:hover { color: var(--ink); border-color: transparent; }
+    .nav-tabs .nav-link.active {
+      color: var(--ink); background: transparent; border-bottom: 2px solid var(--ink);
+    }
+
+    /* modal */
+    .modal-content { border: none; border-radius: var(--radius); overflow: hidden; }
+    .modal-header.bg-primary { background: var(--ink) !important; }
+
+    /* ---------- Dropdown customizado (Choices.js) ---------- */
+    .choices { margin-bottom: 0; }
+    .choices__inner {
+      min-height: 44px; padding: 8px 10px; background: #fff;
+      border: 1px solid #ced4da; border-radius: 10px; font-size: 1rem;
+    }
+    .choices.is-focused .choices__inner,
+    .choices.is-open .choices__inner {
+      border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12);
+    }
+    .choices[data-type*="select-one"]::after { border-color: var(--ink) transparent transparent; }
+    .choices__list--dropdown,
+    .choices__list[aria-expanded] {
+      border: 1px solid #ced4da; border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .12); overflow: hidden;
+    }
+    .choices__list--dropdown .choices__item,
+    .choices__list[aria-expanded] .choices__item {
+      padding: 14px 16px; font-size: 1rem; border-bottom: 1px solid #f1f1f1;
+    }
+    .choices__list--dropdown .choices__item--selectable.is-highlighted,
+    .choices__list[aria-expanded] .choices__item--selectable.is-highlighted {
+      background: var(--ink); color: #fff;
+    }
+    .choices__list--dropdown .choices__item--selectable.is-selected,
+    .choices__list[aria-expanded] .choices__item--selectable.is-selected {
+      font-weight: 600; background: var(--bg-soft);
+    }
+    .choices__input { font-size: 1rem; }
+
+    .was-validated .choices:has(select:invalid) .choices__inner { border-color: #dc3545; }
+    .was-validated .choices:has(select:valid) .choices__inner { border-color: #198754; }
+    .was-validated .choices:has(select:invalid) ~ .invalid-feedback { display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== TELA DE LOGIN ===================== -->
+  <div id="authView">
+    <div class="auth-shell">
+
+      <aside class="auth-aside">
+        <div class="auth-head">
+          <span class="brand-mark"><img src="icons/icon.svg" alt=""></span>
+          <h1>Acesso</h1>
+          <p>Revalidação de Inventário de TI</p>
+        </div>
+      </aside>
+
+      <main class="auth-main">
+        <div class="auth-panel">
+          <div id="alertAuth"></div>
+
+          <form id="formAuth" class="needs-validation" novalidate>
+            <div class="mb-3">
+              <label class="form-label" for="auth_email">E-mail</label>
+              <input type="email" class="form-control" id="auth_email" required
+                autocomplete="username" placeholder="seu@email.com">
+              <div class="invalid-feedback">Informe um e-mail válido.</div>
+            </div>
+            <div class="mb-4">
+              <label class="form-label" for="auth_senha">Senha</label>
+              <input type="password" class="form-control" id="auth_senha" required minlength="6"
+                autocomplete="current-password" placeholder="••••••••">
+              <div class="invalid-feedback">Mínimo de 6 caracteres.</div>
+            </div>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-primary" id="btnEntrar">Entrar</button>
+            </div>
+          </form>
+        </div>
+
+        <p class="auth-foot">Intecs · Inventário de TI</p>
+      </main>
+
+    </div>
+  </div>
+
+  <!-- ===================== APP ===================== -->
+  <div id="appView" class="container hidden">
+    <div class="card shadow-sm app-card">
+      <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Revalidação de Inventário</h5>
+        <div class="d-flex align-items-center gap-2">
+          <small id="userEmail" class="d-none d-sm-inline"></small>
+          <button class="btn btn-sm btn-light" id="btnSair">Sair</button>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <ul class="nav nav-tabs mb-4" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-registrar" data-bs-toggle="tab"
+              data-bs-target="#pane-registrar" type="button" role="tab">Registrar</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-registros" data-bs-toggle="tab"
+              data-bs-target="#pane-registros" type="button" role="tab">Registros</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
+              data-bs-target="#pane-gerenciar" type="button" role="tab">Gerenciar Opções</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-usuarios" data-bs-toggle="tab"
+              data-bs-target="#pane-usuarios" type="button" role="tab">Usuários</button>
+          </li>
+        </ul>
+
+        <div class="tab-content">
+
+          <!-- ABA REGISTRAR -->
+          <div class="tab-pane fade show active" id="pane-registrar" role="tabpanel">
+            <div id="alertRegistrar"></div>
+            <form id="formInventario" class="needs-validation row g-3" novalidate>
+              <div class="col-md-6">
+                <label class="form-label" for="unidade">UNIDADE *</label>
+                <select class="form-select" id="unidade" required>
+                  <option value="">Selecione...</option>
+                </select>
+                <div class="invalid-feedback">Selecione a unidade.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="status">STATUS *</label>
+                <select class="form-select" id="status" required>
+                  <option value="">Selecione...</option>
+                </select>
+                <div class="invalid-feedback">Selecione o status.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="setor">SETOR</label>
+                <select class="form-select" id="setor">
+                  <option value="">Selecione...</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="usuario">USUARIO</label>
+                <input type="text" class="form-control" id="usuario">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="ns">N/S (Número de Série) *</label>
+                <input type="text" class="form-control" id="ns" required>
+                <div class="invalid-feedback">Informe o número de série.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="equipamento">EQUIPAMENTO *</label>
+                <select class="form-select" id="equipamento" required>
+                  <option value="">Selecione...</option>
+                </select>
+                <div class="invalid-feedback">Selecione o equipamento.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="patAntigo">PAT_MSA - ANTIGO</label>
+                <input type="text" class="form-control" id="patAntigo">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="patNovo">PAT_MSA - NOVO</label>
+                <input type="text" class="form-control" id="patNovo">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="obs">OBS (Observações)</label>
+                <textarea class="form-control" id="obs" rows="3"></textarea>
+              </div>
+              <div class="col-12 d-grid">
+                <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- ABA REGISTROS -->
+          <div class="tab-pane fade" id="pane-registros" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+              <p class="text-muted mb-0">Toque em <strong>Editar</strong> para alterar um registro.</p>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportar">
+                  <i class="ph ph-download-simple"></i> Exportar
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarLista">
+                  <i class="ph ph-arrow-clockwise"></i> Atualizar
+                </button>
+              </div>
+            </div>
+            <div id="alertRegistros"></div>
+            <div class="table-responsive">
+              <table class="table table-striped table-hover align-middle">
+                <thead>
+                  <tr>
+                    <th>UNIDADE</th><th>STATUS</th><th>SETOR</th><th>USUARIO</th><th>N/S</th>
+                    <th>PAT ANT.</th><th>PAT NOVO</th><th>EQUIP.</th><th>OBS</th>
+                    <th class="text-end">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="corpoTabela">
+                  <tr><td colspan="10" class="text-muted">Carregando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ABA GERENCIAR OPÇÕES -->
+          <div class="tab-pane fade" id="pane-gerenciar" role="tabpanel">
+            <p class="text-muted">
+              Cadastre opções para os menus suspensos. Ficam disponíveis imediatamente na aba
+              <strong>Registrar</strong>.
+            </p>
+            <div id="alertGerenciar"></div>
+            <form id="formOpcao" class="row g-3 align-items-end">
+              <div class="col-md-4">
+                <label class="form-label" for="listaAlvo">Lista</label>
+                <select class="form-select" id="listaAlvo">
+                  <option value="UNIDADE">UNIDADE</option>
+                  <option value="STATUS">STATUS</option>
+                  <option value="SETOR">SETOR</option>
+                  <option value="EQUIPAMENTO">EQUIPAMENTO</option>
+                </select>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label" for="novoValor">Novo valor</label>
+                <input type="text" class="form-control text-uppercase" id="novoValor"
+                  placeholder="EX.: MATRIZ, TI...">
+              </div>
+              <div class="col-md-3 d-grid">
+                <button type="submit" class="btn btn-success" id="btnAdicionar">Adicionar</button>
+              </div>
+            </form>
+            <hr>
+            <h6 class="mb-2">Opções atuais de <span id="rotuloLista">UNIDADE</span></h6>
+            <div id="listaOpcoes">
+              <span class="text-muted">Carregando...</span>
+            </div>
+          </div>
+
+          <!-- ABA USUÁRIOS -->
+          <div class="tab-pane fade" id="pane-usuarios" role="tabpanel">
+            <p class="text-muted">
+              Cadastre novos acessos ao sistema. O usuário entra com o e-mail e a senha
+              definidos aqui. Sua sessão atual permanece ativa.
+            </p>
+            <div id="alertUsuarios"></div>
+            <form id="formUsuario" class="row g-3 align-items-end" novalidate>
+              <div class="col-md-5">
+                <label class="form-label" for="novo_email">E-mail</label>
+                <input type="email" class="form-control" id="novo_email" required
+                  autocomplete="off" placeholder="usuario@intecsbr.org">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="novo_senha">Senha</label>
+                <input type="text" class="form-control" id="novo_senha" required minlength="6"
+                  autocomplete="off" placeholder="Mínimo de 6 caracteres">
+              </div>
+              <div class="col-md-3 d-grid">
+                <button type="submit" class="btn btn-success" id="btnCriarUsuario">
+                  Criar usuário
+                </button>
+              </div>
+            </form>
+
+            <hr>
+
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Usuários cadastrados</h6>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarUsuarios">
+                <i class="ph ph-arrow-clockwise"></i> Atualizar
+              </button>
+            </div>
+            <div id="listaUsuarios">
+              <span class="text-muted">Carregando...</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    <p class="text-center text-muted small">Intecs · Inventário de TI</p>
+  </div>
+
+  <!-- ===================== MODAL DE EDIÇÃO ===================== -->
+  <div class="modal fade" id="modalEditar" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <form id="formEditar" class="needs-validation" novalidate>
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title">Editar Registro</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body row g-3">
+            <input type="hidden" id="edit_id">
+            <div class="col-md-6">
+              <label class="form-label" for="edit_unidade">UNIDADE *</label>
+              <select class="form-select" id="edit_unidade" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione a unidade.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_status">STATUS *</label>
+              <select class="form-select" id="edit_status" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o status.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_setor">SETOR</label>
+              <select class="form-select" id="edit_setor">
+                <option value="">Selecione...</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_usuario">USUARIO</label>
+              <input type="text" class="form-control" id="edit_usuario">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_ns">N/S (Número de Série) *</label>
+              <input type="text" class="form-control" id="edit_ns" required>
+              <div class="invalid-feedback">Informe o número de série.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_equipamento">EQUIPAMENTO *</label>
+              <select class="form-select" id="edit_equipamento" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o equipamento.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_patAntigo">PAT_MSA - ANTIGO</label>
+              <input type="text" class="form-control" id="edit_patAntigo">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_patNovo">PAT_MSA - NOVO</label>
+              <input type="text" class="form-control" id="edit_patNovo">
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="edit_obs">OBS (Observações)</label>
+              <textarea class="form-control" id="edit_obs" rows="3"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer justify-content-between">
+            <button type="button" class="btn btn-outline-danger" id="btnExcluir">Excluir</button>
+            <div>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-primary" id="btnSalvarEdicao">Salvar</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL DE NOTIFICAÇÃO ===================== -->
+  <div class="modal fade" id="modalMsg" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <div class="modal-body text-center p-4">
+          <div id="modalMsgIcon" class="msg-icon mb-3"></div>
+          <h5 id="modalMsgTitle" class="mb-2"></h5>
+          <p id="modalMsgText" class="text-muted mb-4"></p>
+          <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL CONFIRMAR / PERGUNTAR ===================== -->
+  <div class="modal fade" id="modalAsk" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <div class="modal-body p-4">
+          <h5 id="askTitle" class="mb-2"></h5>
+          <p id="askText" class="text-muted mb-3"></p>
+          <input id="askInput" class="form-control mb-3 hidden">
+          <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-secondary" id="askCancel">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="askOk">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/scripts/choices.min.js"
+    crossorigin="anonymous"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
