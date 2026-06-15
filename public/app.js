@@ -27,7 +27,7 @@ async function api(method, path, body) {
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO'];
 const FORM_SELECTS = ['unidade', 'status', 'setor', 'equipamento'];
 const SELECT_TO_LIST = { unidade: 'UNIDADE', status: 'STATUS', setor: 'SETOR', equipamento: 'EQUIPAMENTO' };
-const SEARCHABLE = new Set(['equipamento', 'edit_equipamento']);
+const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento']);
 const CHOICES_IDS = [
   'unidade', 'status', 'setor', 'equipamento',
   'edit_unidade', 'edit_status', 'edit_setor', 'edit_equipamento',
