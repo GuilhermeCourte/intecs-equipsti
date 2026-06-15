@@ -204,21 +204,30 @@
     .acao-link:hover { text-decoration: underline; }
     .acao-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
 
-    /* ---------- Abas ---------- */
-    .app-card .nav-tabs {
+    /* ---------- Abas (pílulas, roláveis no celular) ---------- */
+    .app-tabs {
       position: sticky; top: 0; z-index: 1020;
-      background: #fff; border-bottom: 1px solid var(--line);
-      padding-top: .5rem; margin: -1rem -0.25rem 1rem -0.25rem;
-      padding-left: .25rem; padding-right: .25rem;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, .04);
+      display: flex; gap: 4px; flex-wrap: nowrap; overflow-x: auto;
+      background: var(--bg-soft); border: 1px solid var(--line);
+      padding: 5px; border-radius: 14px;
+      margin: -0.25rem 0 1.25rem;
+      scrollbar-width: none; -ms-overflow-style: none;
     }
-    .nav-tabs .nav-link {
-      border: none; color: var(--muted); font-weight: 600;
-      border-bottom: 2px solid transparent; border-radius: 0; padding: .65rem 1rem;
+    .app-tabs::-webkit-scrollbar { display: none; }
+    .app-tabs .nav-link {
+      flex: 1 0 auto; border: none; border-radius: 10px;
+      color: var(--muted); font-weight: 600; padding: .6rem 1rem;
+      display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+      white-space: nowrap; transition: background .15s, color .15s;
     }
-    .nav-tabs .nav-link:hover { color: var(--ink); border-color: transparent; }
-    .nav-tabs .nav-link.active {
-      color: var(--ink); background: transparent; border-bottom: 2px solid var(--ink);
+    .app-tabs .nav-link i { font-size: 1.15rem; }
+    .app-tabs .nav-link:hover { color: var(--ink); background: rgba(0, 0, 0, .04); }
+    .app-tabs .nav-link.active {
+      color: #fff; background: var(--ink);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, .18);
+    }
+    @media (max-width: 575.98px) {
+      .app-tabs .nav-link { flex: 0 0 auto; padding: .55rem .85rem; }
     }
 
     /* modal */
@@ -254,6 +263,12 @@
       font-weight: 600; background: var(--bg-soft);
     }
     .choices__input { font-size: 1rem; }
+
+    /* "+ Adicionar nova opção..." não participa do filtro de busca */
+    .choices.is-buscando .choices__list--dropdown .choices__item[data-value="__novo__"],
+    .choices.is-buscando .choices__list[aria-expanded] .choices__item[data-value="__novo__"] {
+      display: none !important;
+    }
 
     .was-validated .choices:has(select:invalid) .choices__inner { border-color: #dc3545; }
     .was-validated .choices:has(select:valid) .choices__inner { border-color: #198754; }
@@ -315,24 +330,24 @@
       </div>
       <div class="card-body">
 
-        <ul class="nav nav-tabs mb-4" role="tablist">
-          <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tab-registrar" data-bs-toggle="tab"
-              data-bs-target="#pane-registrar" type="button" role="tab">Registrar</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-registros" data-bs-toggle="tab"
-              data-bs-target="#pane-registros" type="button" role="tab">Registros</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
-              data-bs-target="#pane-gerenciar" type="button" role="tab">Gerenciar Opções</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-usuarios" data-bs-toggle="tab"
-              data-bs-target="#pane-usuarios" type="button" role="tab">Usuários</button>
-          </li>
-        </ul>
+        <div class="app-tabs" role="tablist">
+          <button class="nav-link active" id="tab-registrar" data-bs-toggle="tab"
+            data-bs-target="#pane-registrar" type="button" role="tab">
+            <i class="ph ph-clipboard-text"></i> Registrar
+          </button>
+          <button class="nav-link" id="tab-registros" data-bs-toggle="tab"
+            data-bs-target="#pane-registros" type="button" role="tab">
+            <i class="ph ph-table"></i> Registros
+          </button>
+          <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
+            data-bs-target="#pane-gerenciar" type="button" role="tab">
+            <i class="ph ph-sliders-horizontal"></i> Opções
+          </button>
+          <button class="nav-link" id="tab-usuarios" data-bs-toggle="tab"
+            data-bs-target="#pane-usuarios" type="button" role="tab">
+            <i class="ph ph-users"></i> Usuários
+          </button>
+        </div>
 
         <div class="tab-content">
 
@@ -362,11 +377,13 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="usuario">USUARIO</label>
-                <input type="text" class="form-control" id="usuario">
+                <input type="text" class="form-control" id="usuario"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="ns">N/S (Número de Série) *</label>
-                <input type="text" class="form-control" id="ns" required>
+                <input type="text" class="form-control" id="ns" required
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                 <div class="invalid-feedback">Informe o número de série.</div>
               </div>
               <div class="col-md-6">
@@ -378,15 +395,18 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="patAntigo">PAT_MSA - ANTIGO</label>
-                <input type="text" class="form-control" id="patAntigo">
+                <input type="text" class="form-control" id="patAntigo"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="patNovo">PAT_MSA - NOVO</label>
-                <input type="text" class="form-control" id="patNovo">
+                <input type="text" class="form-control" id="patNovo"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
               </div>
               <div class="col-12">
                 <label class="form-label" for="obs">OBS (Observações)</label>
-                <textarea class="form-control" id="obs" rows="3"></textarea>
+                <textarea class="form-control" id="obs" rows="3"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
               </div>
               <div class="col-12 d-grid">
                 <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
@@ -534,11 +554,13 @@
             </div>
             <div class="col-md-6">
               <label class="form-label" for="edit_usuario">USUARIO</label>
-              <input type="text" class="form-control" id="edit_usuario">
+              <input type="text" class="form-control" id="edit_usuario"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <div class="col-md-6">
               <label class="form-label" for="edit_ns">N/S (Número de Série) *</label>
-              <input type="text" class="form-control" id="edit_ns" required>
+              <input type="text" class="form-control" id="edit_ns" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
               <div class="invalid-feedback">Informe o número de série.</div>
             </div>
             <div class="col-md-6">
@@ -550,15 +572,18 @@
             </div>
             <div class="col-md-6">
               <label class="form-label" for="edit_patAntigo">PAT_MSA - ANTIGO</label>
-              <input type="text" class="form-control" id="edit_patAntigo">
+              <input type="text" class="form-control" id="edit_patAntigo"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <div class="col-md-6">
               <label class="form-label" for="edit_patNovo">PAT_MSA - NOVO</label>
-              <input type="text" class="form-control" id="edit_patNovo">
+              <input type="text" class="form-control" id="edit_patNovo"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <div class="col-12">
               <label class="form-label" for="edit_obs">OBS (Observações)</label>
-              <textarea class="form-control" id="edit_obs" rows="3"></textarea>
+              <textarea class="form-control" id="edit_obs" rows="3"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             </div>
           </div>
           <div class="modal-footer justify-content-between">

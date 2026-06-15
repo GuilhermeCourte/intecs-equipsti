@@ -139,16 +139,23 @@ function initChoices() {
   });
 }
 
-function fillSelect(selectId, values, selected) {
+// Valor sentinela do item "Adicionar nova opção...".
+const NEW_OPTION_VALUE = '__novo__';
+const NEW_OPTION_LABEL = '+ Adicionar nova opção...';
+
+function fillSelect(selectId, values, selected, addNew) {
   const sel = $(selectId);
   const alvo = (selected !== undefined && selected !== null) ? String(selected) : (sel.value || '');
+  // Nunca preserva o sentinela como seleção.
+  const alvoFinal = alvo === NEW_OPTION_VALUE ? '' : alvo;
   const inst = choicesMap[selectId];
 
   if (inst) {
-    const lista = [{ value: '', label: 'Selecione...', placeholder: true, selected: !alvo }]
-      .concat(values.map((v) => ({ value: v, label: v, selected: alvo === v })));
+    const lista = [{ value: '', label: 'Selecione...', placeholder: true, selected: !alvoFinal }]
+      .concat(values.map((v) => ({ value: v, label: v, selected: alvoFinal === v })));
+    if (addNew) lista.push({ value: NEW_OPTION_VALUE, label: NEW_OPTION_LABEL });
     inst.setChoices(lista, 'value', 'label', true);
-    if (alvo && values.indexOf(alvo) !== -1) inst.setChoiceByValue(alvo);
+    if (alvoFinal && values.indexOf(alvoFinal) !== -1) inst.setChoiceByValue(alvoFinal);
     return;
   }
   sel.innerHTML = '<option value="">Selecione...</option>';
@@ -157,7 +164,12 @@ function fillSelect(selectId, values, selected) {
     opt.value = v; opt.textContent = v;
     sel.appendChild(opt);
   });
-  if (alvo && values.indexOf(alvo) !== -1) sel.value = alvo;
+  if (addNew) {
+    const opt = document.createElement('option');
+    opt.value = NEW_OPTION_VALUE; opt.textContent = NEW_OPTION_LABEL;
+    sel.appendChild(opt);
+  }
+  if (alvoFinal && values.indexOf(alvoFinal) !== -1) sel.value = alvoFinal;
 }
 
 // Valores ATIVOS (cadastrados e não ocultos).
@@ -174,11 +186,31 @@ function valsParaEdicao(list, atual) {
 }
 
 function renderAllSelects() {
-  FORM_SELECTS.forEach((id) => fillSelect(id, activeValues(SELECT_TO_LIST[id])));
+  FORM_SELECTS.forEach((id) => fillSelect(id, activeValues(SELECT_TO_LIST[id]), undefined, true));
 }
 
 function clearFormSelects() {
-  FORM_SELECTS.forEach((id) => fillSelect(id, activeValues(SELECT_TO_LIST[id]), ''));
+  FORM_SELECTS.forEach((id) => fillSelect(id, activeValues(SELECT_TO_LIST[id]), '', true));
+}
+
+// Ao escolher "+ Adicionar nova opção...", abre o modal de prompt e cadastra.
+async function aoEscolherNovo(selectId) {
+  const lista = SELECT_TO_LIST[selectId];
+  const novo = await uiPrompt('Nova opção para ' + lista + ':', { title: 'Nova opção' });
+  if (!novo || !trim(novo)) {
+    fillSelect(selectId, activeValues(lista), '', true); // volta ao placeholder
+    return;
+  }
+  const valor = trim(novo).toUpperCase();
+  try {
+    await api('POST', '/api/options', { lista, valor });
+    await loadOptions();                                   // recarrega todos os selects
+    fillSelect(selectId, activeValues(lista), valor, true); // já seleciona a nova opção
+    showAlert('alertRegistrar', 'success', 'Opção "' + valor + '" adicionada a ' + lista + '.');
+  } catch (err) {
+    fillSelect(selectId, activeValues(lista), '', true);
+    showAlert('alertRegistrar', 'danger', err.message);
+  }
 }
 
 // ============================================================
@@ -402,6 +434,30 @@ function configurarAuth() {
 
 function configurarFormInventario() {
   const form = $('formInventario');
+
+  // "+ Adicionar nova opção..." em cada select abre o modal de cadastro.
+  FORM_SELECTS.forEach((id) => {
+    const el = $(id);
+    el.addEventListener('change', (ev) => {
+      if (ev.target.value === NEW_OPTION_VALUE) aoEscolherNovo(id);
+    });
+    // Nos selects com busca, o item "novo" não participa do filtro: some
+    // enquanto há texto digitado e reaparece quando a busca está vazia.
+    if (SEARCHABLE.has(id)) {
+      const wrap = el.closest('.choices');
+      if (wrap) {
+        // Ouve o campo de busca interno (detecta inclusive quando esvazia).
+        wrap.addEventListener('input', (ev) => {
+          if (ev.target.classList.contains('choices__input')) {
+            wrap.classList.toggle('is-buscando', ev.target.value.trim().length > 0);
+          }
+        });
+        el.addEventListener('showDropdown', () => wrap.classList.remove('is-buscando'));
+        el.addEventListener('hideDropdown', () => wrap.classList.remove('is-buscando'));
+      }
+    }
+  });
+
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
