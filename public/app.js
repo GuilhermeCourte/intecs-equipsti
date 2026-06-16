@@ -43,6 +43,8 @@ let modalMsg = null;
 let modalAsk = null;
 let askResolve = null;
 let modalHistorico = null;
+let modalRegistrar = null;
+let modalLog = null;
 const choicesMap = {};
 
 // ============================================================
@@ -280,7 +282,10 @@ function dadosFormulario(prefix) {
   return {
     unidade: trim(g('unidade')), status: trim(g('status')), setor: trim(g('setor')),
     usuario: trim(g('usuario')), ns: trim(g('ns')),
-    patNovo: trim(g('patNovo')), equipamento: trim(g('equipamento')), obs: trim(g('obs'))
+    pat: trim(g('pat')), equipamento: trim(g('equipamento')), obs: trim(g('obs')),
+    protocolo: trim(g('protocolo')),
+    dataRecebimento: trim(g('dataRecebimento')) || null,
+    valor: trim(g('valor')) || null
   };
 }
 
@@ -306,24 +311,30 @@ function patLink(pat) {
 function renderTabela() {
   const corpo = $('corpoTabela');
   if (!REGISTROS.length) {
-    corpo.innerHTML = '<tr><td colspan="9" class="text-muted">Nenhum registro cadastrado.</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="14" class="text-muted">Nenhum registro cadastrado.</td></tr>';
     return;
   }
-  corpo.innerHTML = REGISTROS.map((r) =>
-    '<tr>' +
+  corpo.innerHTML = REGISTROS.map((r) => {
+    const valor = r.valor != null
+      ? 'R$ ' + Number(r.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+      : '';
+    return '<tr>' +
     '<td title="' + escapeHtml(r.unidade) + '">' + escapeHtml(r.unidade) + '</td>' +
     '<td>' + escapeHtml(r.status) + '</td>' +
     '<td>' + escapeHtml(r.setor) + '</td>' +
     '<td>' + escapeHtml(r.usuario) + '</td>' +
     '<td>' + escapeHtml(r.ns) + '</td>' +
-    '<td>' + patLink(r.patNovo) + '</td>' +
+    '<td>' + patLink(r.pat) + '</td>' +
     '<td>' + escapeHtml(r.equipamento) + '</td>' +
+    '<td>' + escapeHtml(r.protocolo) + '</td>' +
+    '<td>' + fmtData(r.dataRecebimento) + '</td>' +
+    '<td>' + escapeHtml(valor) + '</td>' +
     '<td title="' + escapeHtml(r.obs) + '">' + escapeHtml(r.obs) + '</td>' +
     '<td class="text-end">' +
       '<button type="button" class="btn btn-sm btn-outline-primary" data-edit="' +
         escapeHtml(r.id) + '">Editar</button>' +
-    '</td></tr>'
-  ).join('');
+    '</td></tr>';
+  }).join('');
 }
 
 function abrirEdicao(id) {
@@ -336,40 +347,238 @@ function abrirEdicao(id) {
   fillSelect('edit_equipamento', valsParaEdicao('EQUIPAMENTO', r.equipamento), r.equipamento);
   $('edit_usuario').value = r.usuario || '';
   $('edit_ns').value = r.ns || '';
-  $('edit_patNovo').value = r.patNovo || '';
+  $('edit_pat').value = r.pat || '';
+  $('edit_protocolo').value = r.protocolo || '';
+  $('edit_dataRecebimento').value = r.dataRecebimento || '';
+  $('edit_valor').value = r.valor != null ? r.valor : '';
   $('edit_obs').value = r.obs || '';
+  $('edit_criadoPor').value = r.criadoPor || '—';
+  $('edit_atualizadoPor').value = r.atualizadoPor || '—';
   $('formEditar').classList.remove('was-validated');
   modalEditar.show();
 }
 
-// Exporta os registros atuais para .csv (UTF-8) — abre no Sheets/Excel.
-function exportarCSV() {
+// ============================================================
+//  Planilha — Importar / Exportar (XLSX via SheetJS)
+// ============================================================
+const COLUNAS_XLSX = [
+  { header: 'UNIDADE',                    field: 'unidade' },
+  { header: 'STATUS',                     field: 'status' },
+  { header: 'SETOR',                      field: 'setor' },
+  { header: 'USUARIO',                    field: 'usuario' },
+  { header: 'N/S',                        field: 'ns' },
+  { header: 'PAT MSA',                    field: 'pat' },
+  { header: 'EQUIPAMENTO',                field: 'equipamento' },
+  { header: 'PROTOCOLO',                  field: 'protocolo' },
+  { header: 'DATA RECEBIMENTO',           field: 'dataRecebimento' },
+  { header: 'VALOR',                      field: 'valor' },
+  { header: 'OBS',                        field: 'obs' },
+];
+
+const COLUNAS_EXPORT_EXTRA = [
+  { header: 'CRIADO EM',        field: 'criadoEm' },
+  { header: 'ATUALIZADO EM',    field: 'atualizadoEm' },
+];
+
+function isoParaBr(s) {
+  if (!s) return '';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : s;
+}
+
+function brParaIso(s) {
+  if (!s) return '';
+  const m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? m[3] + '-' + m[2] + '-' + m[1] : s;
+}
+
+function baixarModelo() {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([COLUNAS_XLSX.map((c) => c.header)]);
+  ws['!cols'] = COLUNAS_XLSX.map(() => ({ wch: 22 }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventário');
+  XLSX.writeFile(wb, 'modelo_inventario.xlsx');
+}
+
+function exportarXlsx() {
   if (!REGISTROS.length) {
     showAlert('alertRegistros', 'warning', 'Nenhum registro para exportar.');
     return;
   }
-  const cabecalho = ['UNIDADE', 'STATUS', 'SETOR', 'USUARIO', 'N/S',
-    'PAT MSA', 'EQUIPAMENTO', 'OBS'];
-  const campo = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const linhas = REGISTROS.map((r) => [
-    r.unidade, r.status, r.setor, r.usuario, r.ns,
-    r.patNovo, r.equipamento, r.obs
-  ].map(campo).join(','));
-  const csv = '﻿' + [cabecalho.map(campo).join(','), ...linhas].join('\r\n');
-
+  const todasColunas = [...COLUNAS_XLSX, ...COLUNAS_EXPORT_EXTRA];
+  const camposData = new Set(['dataRecebimento', 'criadoEm', 'atualizadoEm']);
+  const linhas = REGISTROS.map((r) => todasColunas.map((c) => {
+    const v = r[c.field];
+    if (v == null || v === '') return '';
+    if (camposData.has(c.field)) return isoParaBr(String(v));
+    return v;
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([todasColunas.map((c) => c.header), ...linhas]);
+  ws['!cols'] = todasColunas.map(() => ({ wch: 22 }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventário');
   const agora = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const nome = 'inventario_' + agora.getFullYear() + pad(agora.getMonth() + 1) +
-    pad(agora.getDate()) + '_' + pad(agora.getHours()) + pad(agora.getMinutes()) + '.csv';
+    pad(agora.getDate()) + '_' + pad(agora.getHours()) + pad(agora.getMinutes()) + '.xlsx';
+  XLSX.writeFile(wb, nome);
+  showAlert('alertRegistros', 'success', 'Exportado: ' + REGISTROS.length + ' registros.');
+}
 
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = nome;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showAlert('alertRegistros', 'success',
-    'Planilha exportada (' + REGISTROS.length + ' registros).');
+async function importarXlsx() {
+  const file = $('inputArquivoXlsx').files[0];
+  if (!file) {
+    $('alertImport').innerHTML =
+      '<div class="alert alert-warning py-1 mb-0">Selecione um arquivo .xlsx.</div>';
+    setTimeout(() => { $('alertImport').innerHTML = ''; }, 5000);
+    return;
+  }
+  $('alertImport').innerHTML = '';
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data, { type: 'array', cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  if (!rows.length) {
+    $('alertImport').innerHTML =
+      '<div class="alert alert-danger py-1 mb-0">Planilha vazia.</div>';
+    return;
+  }
+
+  const headerRow = rows[0].map((h) => String(h).trim().toUpperCase());
+  const colIdx = {};
+  COLUNAS_XLSX.forEach((c) => {
+    const i = headerRow.indexOf(c.header.toUpperCase());
+    if (i !== -1) colIdx[c.field] = i;
+  });
+
+  const obrigatorios = ['unidade', 'status', 'setor', 'ns', 'pat', 'equipamento', 'protocolo', 'dataRecebimento', 'valor'];
+  const faltando = obrigatorios.filter((f) => colIdx[f] === undefined);
+  if (faltando.length) {
+    $('alertImport').innerHTML =
+      '<div class="alert alert-danger py-1 mb-0">Colunas não encontradas: ' +
+      faltando.join(', ') + '</div>';
+    return;
+  }
+
+  const dataRows = rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== ''));
+  if (!dataRows.length) {
+    $('alertImport').innerHTML =
+      '<div class="alert alert-warning py-1 mb-0">Nenhuma linha de dados encontrada.</div>';
+    setTimeout(() => { $('alertImport').innerHTML = ''; }, 5000);
+    return;
+  }
+
+  const btnImportar = $('btnImportar');
+  btnImportar.disabled = true;
+  $('progressImport').classList.remove('hidden');
+  $('alertImport').innerHTML = '';
+
+  let nsExistentes;
+  try {
+    const atual = await api('GET', '/api/records');
+    nsExistentes = new Set(atual.map((r) =>
+      String(r.ns).trim().toUpperCase() + '|' + String(r.pat || '').trim().toUpperCase()
+    ));
+  } catch (err) {
+    $('alertImport').innerHTML =
+      '<div class="alert alert-danger py-1 mb-0">Erro ao consultar registros existentes: ' + escapeHtml(err.message) + '</div>';
+    btnImportar.disabled = false;
+    $('progressImport').classList.add('hidden');
+    return;
+  }
+
+  let ok = 0, pulados = 0;
+  const errosDetalhes = [];
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    const linhaXlsx = i + 2; // +2: 1 de header + 1 de base-1
+    const pct = Math.round(((i + 1) / dataRows.length) * 100);
+    $('progressImportBar').style.width = pct + '%';
+    $('progressImportLabel').textContent = (i + 1) + ' / ' + dataRows.length;
+
+    const cel = (field) => {
+      const v = row[colIdx[field]];
+      if (v instanceof Date) {
+        const pad = (n) => String(n).padStart(2, '0');
+        return v.getFullYear() + '-' + pad(v.getMonth() + 1) + '-' + pad(v.getDate());
+      }
+      return String(v == null ? '' : v).trim();
+    };
+
+    const chave = cel('ns').toUpperCase() + '|' + cel('pat').toUpperCase();
+    if (nsExistentes.has(chave)) {
+      pulados++;
+      errosDetalhes.push({ linha: linhaXlsx, msg: 'N/S "' + cel('ns') + '" + PAT "' + cel('pat') + '" já está cadastrado no banco — ignorado.' });
+      continue;
+    }
+
+    const errosLinha = [];
+
+    const valorRaw = cel('valor');
+    let valorNum = null;
+    if (valorRaw !== '') {
+      valorNum = Number(String(valorRaw).replace(',', '.'));
+      if (isNaN(valorNum)) errosLinha.push('VALOR inválido ("' + valorRaw + '") — informe apenas números, ex: 1500.00');
+    }
+
+    let dataRaw = cel('dataRecebimento');
+    if (dataRaw) {
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dataRaw)) {
+        dataRaw = brParaIso(dataRaw);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataRaw)) {
+        errosLinha.push('DATA RECEBIMENTO inválida ("' + dataRaw + '") — use DD/MM/AAAA ou uma célula de data no Excel');
+      }
+    }
+
+    if (errosLinha.length) {
+      errosDetalhes.push({ linha: linhaXlsx, msg: errosLinha.join(' · ') });
+      continue;
+    }
+
+    const registro = {
+      unidade: cel('unidade'), status: cel('status'), setor: cel('setor'),
+      usuario: cel('usuario'), ns: cel('ns'), pat: cel('pat'),
+      equipamento: cel('equipamento'), protocolo: cel('protocolo'),
+      dataRecebimento: dataRaw || null,
+      valor: valorNum,
+      obs: cel('obs'),
+    };
+
+    try {
+      await api('POST', '/api/records', registro);
+      ok++;
+    } catch (err) {
+      errosDetalhes.push({ linha: linhaXlsx, msg: err.message });
+    }
+  }
+
+  $('progressImport').classList.add('hidden');
+  btnImportar.disabled = false;
+  $('inputArquivoXlsx').value = '';
+
+  const erros = errosDetalhes.filter((e) => !e.msg.includes('já está cadastrado'));
+  const resumo = 'Importados: ' + ok +
+    (pulados ? ' &nbsp;·&nbsp; Já existiam: ' + pulados : '') +
+    (erros.length ? ' &nbsp;·&nbsp; Erros: ' + erros.length : '');
+  if (!errosDetalhes.length) {
+    $('alertImport').innerHTML =
+      '<div class="alert alert-success py-1 mb-0">Importados com sucesso: ' + ok + ' registros.</div>';
+    setTimeout(() => { $('alertImport').innerHTML = ''; }, 5000);
+  } else {
+    const listaErros = errosDetalhes.map((e) =>
+      '<li><strong>Linha ' + e.linha + ':</strong> ' + escapeHtml(e.msg) + '</li>'
+    ).join('');
+    const tipo = erros.length ? 'alert-warning' : 'alert-info';
+    $('alertImport').innerHTML =
+      '<div class="alert ' + tipo + ' mb-0">' +
+      '<strong>' + resumo + '</strong>' +
+      '<ul class="mt-2 mb-0 ps-3 small">' + listaErros + '</ul>' +
+      '</div>';
+  }
+  await loadRecords();
 }
 
 // ============================================================
@@ -571,7 +780,7 @@ function renderTimeline(h) {
       const ns = o.ns ? ' · N/S ' + escapeHtml(o.ns) : '';
       itens.push(tlItem('origem', 'ph-house-line',
         'Unidade de origem: ' + escapeHtml(o.unidade),
-        'Cadastrado no inventário' + eq + ns, o.criadoEm));
+        'Equipamento' + eq + ns, o.criadoEm));
     });
   } else {
     itens.push(tlItem('origem', 'ph-house-line', 'Sem registro de origem',
@@ -595,6 +804,14 @@ function renderTimeline(h) {
 //  Wiring dos formulários
 // ============================================================
 function configurarAuth() {
+  $('iconVerSenha').addEventListener('click', () => {
+    const inp = $('auth_senha');
+    const icon = $('iconVerSenha');
+    const mostrar = inp.type === 'password';
+    inp.type = mostrar ? 'text' : 'password';
+    icon.className = mostrar ? 'ph ph-eye-slash' : 'ph ph-eye';
+  });
+
   const form = $('formAuth');
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -650,11 +867,11 @@ function configurarFormInventario() {
     btn.disabled = true; btn.textContent = 'Enviando...';
     try {
       await api('POST', '/api/records', dadosFormulario(''));
-      showAlert('alertRegistrar', 'success', 'Registro salvo com sucesso!');
       form.reset();
       clearFormSelects();
       form.classList.remove('was-validated');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      modalRegistrar.hide();
+      await loadRecords();
     } catch (err) {
       showAlert('alertRegistrar', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
@@ -795,8 +1012,8 @@ function configurarFormEditar() {
     btn.disabled = true; btn.textContent = 'Salvando...';
     try {
       await api('PUT', '/api/records/' + id, dadosFormulario('edit_'));
-      modalEditar.hide();
-      showAlert('alertRegistros', 'success', 'Registro atualizado com sucesso!');
+      $('alertEditar').innerHTML = '<div class="alert alert-success py-2 mb-0">Registro atualizado com sucesso!</div>';
+      setTimeout(() => { $('alertEditar').innerHTML = ''; }, 4000);
       await loadRecords();
     } catch (err) {
       showAlert('alertRegistros', 'danger', 'Erro ao salvar: ' + err.message);
@@ -805,12 +1022,52 @@ function configurarFormEditar() {
     }
   });
 
+  $('btnVerLog').addEventListener('click', () => {
+    const id = $('edit_id').value;
+    if (!id) return;
+    abrirLog(id);
+  });
+
   $('corpoTabela').addEventListener('click', (ev) => {
     const hist = ev.target.closest('[data-hist]');
     if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist')); return; }
     const btn = ev.target.closest('[data-edit]');
     if (btn) abrirEdicao(btn.getAttribute('data-edit'));
   });
+}
+
+async function abrirLog(registroId) {
+  $('logCorpo').innerHTML = '<span class="text-muted">Carregando...</span>';
+  modalEditar.hide();
+  modalLog.show();
+  try {
+    const logs = await api('GET', '/api/records/' + registroId + '/log');
+    if (!logs.length) {
+      $('logCorpo').innerHTML = '<span class="text-muted">Nenhuma alteração registrada.</span>';
+      return;
+    }
+    const linhas = logs.map((l) => {
+      const mDH = l.dataHora ? String(l.dataHora).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}:\d{2})/) : null;
+      const data = mDH ? mDH[3] + '/' + mDH[2] + '/' + mDH[1] + ' ' + mDH[4] : (l.dataHora || '—');
+      if (l.acao === 'CRIADO') {
+        return '<tr><td>' + escapeHtml(data) + '</td><td><span class="badge bg-success">CRIADO</span></td>' +
+          '<td colspan="2" class="text-muted">—</td><td>' + escapeHtml(l.usuario) + '</td></tr>';
+      }
+      const fmtVal = (v) => isoParaBr(v) || v || '';
+      return '<tr><td>' + escapeHtml(data) + '</td><td><span class="badge bg-warning text-dark">ATUALIZADO</span></td>' +
+        '<td>' + escapeHtml(l.campo || '') + '</td>' +
+        '<td><span class="text-danger text-decoration-line-through">' + escapeHtml(fmtVal(l.valorAnterior)) + '</span>' +
+        ' <i class="ph ph-arrow-right"></i> ' +
+        '<span class="text-success">' + escapeHtml(fmtVal(l.valorNovo)) + '</span></td>' +
+        '<td>' + escapeHtml(l.usuario) + '</td></tr>';
+    }).join('');
+    $('logCorpo').innerHTML =
+      '<table class="table table-sm align-middle mb-0">' +
+      '<thead><tr><th>DATA/HORA</th><th>AÇÃO</th><th>CAMPO</th><th>ALTERAÇÃO</th><th>USUÁRIO</th></tr></thead>' +
+      '<tbody>' + linhas + '</tbody></table>';
+  } catch (err) {
+    $('logCorpo').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+  }
 }
 
 // ============================================================
@@ -842,14 +1099,73 @@ function sairDoApp() {
   $('formAuth').classList.remove('was-validated');
 }
 
+const CHAMADOS_COLS = [
+  { key: 'Codigo',     label: 'N°'           },
+  { key: 'Criacao',    label: 'Criação',      fmt: v => v ? v.split('-').reverse().join('/') : '' },
+  { key: 'Assunto',    label: 'Assunto'       },
+  { key: 'St',         label: 'Status'        },
+  { key: 'Solicitante',label: 'Solicitante'   },
+];
+
+let _chamadosTodos = [];
+
+function renderChamados() {
+  const busca = ($('chamadosBusca').value ?? '').toLowerCase();
+  const status = $('chamadosFiltroStatus').value;
+  const rows = _chamadosTodos.filter(r => {
+    if (status === 'aberto' && r.St === 'Resolvido') return false;
+    if (status && status !== 'aberto' && r.St !== status) return false;
+    if (busca && !`${r.Codigo} ${r.Assunto} ${r.Solicitante}`.toLowerCase().includes(busca)) return false;
+    return true;
+  });
+  $('chamadosTbody').innerHTML = rows.map(r =>
+    `<tr>${CHAMADOS_COLS.map(c => `<td>${c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? '')}</td>`).join('')}</tr>`
+  ).join('');
+  $('chamadosStatus').textContent = `${rows.length} de ${_chamadosTodos.length} chamado(s).`;
+}
+
+async function carregarChamados() {
+  $('chamadosStatus').textContent = 'Carregando…';
+  $('chamadosThead').innerHTML = '';
+  $('chamadosTbody').innerHTML = '';
+  try {
+    const data = await api('GET', '/api/chamados');
+    _chamadosTodos = Array.isArray(data) ? data : (data.root ?? data.Lista ?? data.lista ?? []);
+    if (!_chamadosTodos.length) {
+      $('chamadosStatus').textContent = 'Nenhum chamado encontrado.';
+      return;
+    }
+    $('chamadosThead').innerHTML = CHAMADOS_COLS.map(c => `<th>${c.label}</th>`).join('');
+
+    renderChamados();
+  } catch (e) {
+    $('chamadosStatus').textContent = 'Erro: ' + e.message;
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   modalEditar = new bootstrap.Modal($('modalEditar'));
   modalMsg = new bootstrap.Modal($('modalMsg'));
   modalAsk = new bootstrap.Modal($('modalAsk'));
   modalHistorico = new bootstrap.Modal($('modalHistorico'));
+  modalLog = new bootstrap.Modal($('modalLog'));
+  modalRegistrar = new bootstrap.Modal($('modalRegistrar'));
+  document.querySelectorAll('.modal').forEach(el => {
+    el.addEventListener('hidePrevented.bs.modal', () => el.classList.remove('modal-static'));
+  });
+  $('btnVoltarLog').addEventListener('click', () => { modalLog.hide(); modalEditar.show(); });
   $('askOk').addEventListener('click', () => finishAsk(true));
   $('askCancel').addEventListener('click', () => finishAsk(false));
   $('modalAsk').addEventListener('hidden.bs.modal', () => finishAsk(false));
+  $('modalRegistrar').addEventListener('hidden.bs.modal', () => {
+    $('alertRegistrar').innerHTML = '';
+    $('formInventario').classList.remove('was-validated');
+  });
+  $('modalPlanilha').addEventListener('hidden.bs.modal', () => {
+    $('alertImport').innerHTML = '';
+    $('inputArquivoXlsx').value = '';
+    $('progressImport').classList.add('hidden');
+  });
   $('askInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); finishAsk(true); } });
   initChoices();
   configurarAuth();
@@ -861,11 +1177,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   $('tab-registros').addEventListener('shown.bs.tab', loadRecords);
   $('btnAtualizarLista').addEventListener('click', loadRecords);
-  $('btnExportar').addEventListener('click', exportarCSV);
+  $('btnBaixarModelo').addEventListener('click', baixarModelo);
+  $('btnExportarXlsx').addEventListener('click', exportarXlsx);
+  $('btnImportar').addEventListener('click', importarXlsx);
   $('tab-emprestimos').addEventListener('shown.bs.tab', () => { loadEmprestimoForm(); loadEmprestimos(); });
   $('btnAtualizarEmprestimos').addEventListener('click', loadEmprestimos);
   $('tab-usuarios').addEventListener('shown.bs.tab', loadUsuarios);
   $('btnAtualizarUsuarios').addEventListener('click', loadUsuarios);
+  $('tab-chamados').addEventListener('shown.bs.tab', carregarChamados);
+  $('btnRefreshChamados').addEventListener('click', carregarChamados);
+  $('chamadosBusca').addEventListener('input', renderChamados);
+  $('chamadosFiltroStatus').addEventListener('change', renderChamados);
 
   // Sessão persistida: valida o token salvo.
   if (TOKEN) {

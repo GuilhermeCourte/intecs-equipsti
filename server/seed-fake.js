@@ -32,7 +32,7 @@ async function main() {
 
   console.log('Limpando dados de teste antigos (PAT-*)...');
   await query("DELETE FROM dbo.EQUIPSTI_emprestimos WHERE pat LIKE 'PAT-%'");
-  await query("DELETE FROM dbo.EQUIPSTI_registros WHERE pat_novo LIKE 'PAT-%'");
+  await query("DELETE FROM dbo.EQUIPSTI_registros WHERE pat LIKE 'PAT-%'");
 
   console.log('Inserindo opções dos dropdowns...');
   for (const u of UNIDADES) await addOption('UNIDADE', u);
@@ -43,7 +43,7 @@ async function main() {
   console.log('Inserindo 15 registros (PAT-001..PAT-015)...');
   for (let i = 1; i <= 15; i++) {
     const pat = 'PAT-' + String(i).padStart(3, '0');
-    await query(`INSERT INTO dbo.EQUIPSTI_registros (unidade, status, setor, usuario, ns, pat_novo, equipamento, obs)
+    await query(`INSERT INTO dbo.EQUIPSTI_registros (unidade, status, setor, usuario, ns, pat, equipamento, obs)
       VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equip, @obs)`,
       {
         unidade: S(UNIDADES[i % UNIDADES.length]), status: S(STATUS[i % STATUS.length]),

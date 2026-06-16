@@ -305,6 +305,7 @@
     .was-validated .choices:has(select:invalid) .choices__inner { border-color: #dc3545; }
     .was-validated .choices:has(select:valid) .choices__inner { border-color: #198754; }
     .was-validated .choices:has(select:invalid) ~ .invalid-feedback { display: block; }
+    .modal.modal-static .modal-dialog { animation: none !important; transform: none !important; transition: none !important; }
   </style>
 </head>
 <body>
@@ -334,8 +335,12 @@
             </div>
             <div class="mb-4">
               <label class="form-label" for="auth_senha">Senha</label>
-              <input type="password" class="form-control" id="auth_senha" required minlength="6"
-                autocomplete="current-password" placeholder="••••••••">
+              <div class="position-relative">
+                <input type="password" class="form-control" id="auth_senha" required minlength="6"
+                  autocomplete="current-password" placeholder="••••••••" style="padding-right:2.5rem;">
+                <i class="ph ph-eye" id="iconVerSenha"
+                  style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);cursor:pointer;color:#888;font-size:1.1rem;"></i>
+              </div>
               <div class="invalid-feedback">Mínimo de 6 caracteres.</div>
             </div>
             <div class="d-grid">
@@ -363,17 +368,17 @@
       <div class="card-body">
 
         <div class="app-tabs" role="tablist">
-          <button class="nav-link active" id="tab-registrar" data-bs-toggle="tab"
-            data-bs-target="#pane-registrar" type="button" role="tab">
-            <i class="ph ph-clipboard-text"></i> Registrar
-          </button>
-          <button class="nav-link" id="tab-registros" data-bs-toggle="tab"
+          <button class="nav-link active" id="tab-registros" data-bs-toggle="tab"
             data-bs-target="#pane-registros" type="button" role="tab">
             <i class="ph ph-table"></i> Registros
           </button>
           <button class="nav-link" id="tab-emprestimos" data-bs-toggle="tab"
             data-bs-target="#pane-emprestimos" type="button" role="tab">
             <i class="ph ph-hand-arrow-up"></i> Empréstimos
+          </button>
+          <button class="nav-link" id="tab-chamados" data-bs-toggle="tab"
+            data-bs-target="#pane-chamados" type="button" role="tab">
+            <i class="ph ph-headset"></i> Chamados
           </button>
           <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
             data-bs-target="#pane-gerenciar" type="button" role="tab">
@@ -387,71 +392,18 @@
 
         <div class="tab-content">
 
-          <!-- ABA REGISTRAR -->
-          <div class="tab-pane fade show active" id="pane-registrar" role="tabpanel">
-            <div id="alertRegistrar"></div>
-            <form id="formInventario" class="needs-validation row g-3" novalidate>
-              <div class="col-md-6">
-                <label class="form-label" for="unidade">UNIDADE *</label>
-                <select class="form-select" id="unidade" required>
-                  <option value="">Selecione...</option>
-                </select>
-                <div class="invalid-feedback">Selecione a unidade.</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="status">STATUS *</label>
-                <select class="form-select" id="status" required>
-                  <option value="">Selecione...</option>
-                </select>
-                <div class="invalid-feedback">Selecione o status.</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="setor">SETOR</label>
-                <select class="form-select" id="setor">
-                  <option value="">Selecione...</option>
-                </select>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="usuario">USUARIO</label>
-                <input type="text" class="form-control" id="usuario"
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="ns">N/S (Número de Série) *</label>
-                <input type="text" class="form-control" id="ns" required
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                <div class="invalid-feedback">Informe o número de série.</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="equipamento">EQUIPAMENTO *</label>
-                <select class="form-select" id="equipamento" required>
-                  <option value="">Selecione...</option>
-                </select>
-                <div class="invalid-feedback">Selecione o equipamento.</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="patNovo">PAT MSA</label>
-                <input type="text" class="form-control" id="patNovo"
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-              </div>
-              <div class="col-12">
-                <label class="form-label" for="obs">OBS (Observações)</label>
-                <textarea class="form-control" id="obs" rows="3"
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-              </div>
-              <div class="col-12 d-grid">
-                <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
-              </div>
-            </form>
-          </div>
-
           <!-- ABA REGISTROS -->
-          <div class="tab-pane fade" id="pane-registros" role="tabpanel">
+          <div class="tab-pane fade show active" id="pane-registros" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Toque em <strong>Editar</strong> para alterar um registro.</p>
               <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportar">
-                  <i class="ph ph-download-simple"></i> Exportar
+                <button type="button" class="btn btn-primary btn-sm" id="btnNovoRegistro"
+                  data-bs-toggle="modal" data-bs-target="#modalRegistrar">
+                  <i class="ph ph-plus"></i> Novo Registro
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAbrirPlanilha"
+                  data-bs-toggle="modal" data-bs-target="#modalPlanilha">
+                  <i class="ph ph-file-xls"></i> Planilha
                 </button>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarLista">
                   <i class="ph ph-arrow-clockwise"></i> Atualizar
@@ -464,12 +416,12 @@
                 <thead>
                   <tr>
                     <th>UNIDADE</th><th>STATUS</th><th>SETOR</th><th>USUARIO</th><th>N/S</th>
-                    <th>PAT MSA</th><th>EQUIP.</th><th>OBS</th>
+                    <th>PAT MSA</th><th>EQUIP.</th><th>PROTOCOLO</th><th>RECEBIMENTO</th><th>VALOR</th><th>OBS</th>
                     <th class="text-end">Ações</th>
                   </tr>
                 </thead>
                 <tbody id="corpoTabela">
-                  <tr><td colspan="9" class="text-muted">Carregando...</td></tr>
+                  <tr><td colspan="14" class="text-muted">Carregando...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -592,14 +544,204 @@
             </div>
           </div>
 
+          <!-- ABA CHAMADOS -->
+          <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="mb-0">Chamados</h5>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnRefreshChamados">
+                <i class="ph ph-arrow-clockwise"></i> Atualizar
+              </button>
+            </div>
+            <!-- Filtros -->
+            <div class="row g-2 mb-3">
+              <div class="col-12 col-sm-6">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                  <input type="text" class="form-control" id="chamadosBusca" placeholder="Buscar por assunto, número…">
+                </div>
+              </div>
+              <div class="col-12 col-sm-6">
+                <select class="form-select form-select-sm" id="chamadosFiltroStatus">
+                  <option value="">Todos</option>
+                  <option value="aberto" selected>Em Aberto</option>
+                  <option value="Resolvido">Resolvido</option>
+                </select>
+              </div>
+            </div>
+            <div id="chamadosStatus" class="text-muted small mb-2"></div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover align-middle" id="tabelaChamados">
+                <thead class="table-light"><tr id="chamadosThead"></tr></thead>
+                <tbody id="chamadosTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
     <p class="text-center text-muted small">Intecs · Inventário de TI</p>
   </div>
 
+  <!-- ===================== MODAL REGISTRAR ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalRegistrar" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-clipboard-text me-2"></i>Novo Registro</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertRegistrar"></div>
+          <form id="formInventario" class="needs-validation row g-3" novalidate>
+            <div class="col-md-6">
+              <label class="form-label" for="unidade">UNIDADE *</label>
+              <select class="form-select" id="unidade" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione a unidade.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="status">STATUS *</label>
+              <select class="form-select" id="status" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o status.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="setor">SETOR *</label>
+              <select class="form-select" id="setor" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o setor.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="usuario">USUARIO</label>
+              <input type="text" class="form-control" id="usuario"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="ns">N/S (Número de Série) *</label>
+              <input type="text" class="form-control" id="ns" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <div class="invalid-feedback">Informe o número de série.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="equipamento">EQUIPAMENTO *</label>
+              <select class="form-select" id="equipamento" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o equipamento.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="pat">PAT MSA *</label>
+              <input type="text" class="form-control" id="pat" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <div class="invalid-feedback">Informe o PAT MSA.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="protocolo">PROTOCOLO *</label>
+              <input type="text" class="form-control" id="protocolo" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <div class="invalid-feedback">Informe o protocolo.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="dataRecebimento">DATA DE RECEBIMENTO *</label>
+              <input type="date" class="form-control" id="dataRecebimento" required>
+              <div class="invalid-feedback">Informe a data de recebimento.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="valor">VALOR (R$) *</label>
+              <input type="number" class="form-control" id="valor" min="0" step="0.01" required
+                autocomplete="off">
+              <div class="invalid-feedback">Informe o valor.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="obs">OBS (Observações)</label>
+              <textarea class="form-control" id="obs" rows="3"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+            </div>
+            <div class="col-12 d-grid">
+              <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL PLANILHA (IMPORTAR / EXPORTAR) ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalPlanilha" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-md">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-file-xls me-2"></i>Planilha — Importar / Exportar</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4 d-flex flex-column gap-4">
+
+          <!-- Modelo -->
+          <div class="border rounded p-3">
+            <div class="fw-bold mb-1"><i class="ph ph-file-arrow-down me-1"></i>Modelo de importação</div>
+            <p class="text-muted small mb-2">Baixe o modelo .xlsx com as colunas no padrão do sistema. Preencha e importe abaixo.</p>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="btnBaixarModelo">
+              <i class="ph ph-download-simple"></i> Baixar modelo .xlsx
+            </button>
+          </div>
+
+          <!-- Importar -->
+          <div class="border rounded p-3">
+            <div class="fw-bold mb-1"><i class="ph ph-upload-simple me-1"></i>Importar</div>
+            <p class="text-muted small mb-2">Selecione um arquivo .xlsx preenchido com o modelo acima.</p>
+            <input type="file" class="form-control form-control-sm mb-2" id="inputArquivoXlsx" accept=".xlsx,.xls">
+            <div id="alertImport" class="mb-2"></div>
+            <div id="progressImport" class="hidden mb-2">
+              <div class="d-flex justify-content-between small text-muted mb-1">
+                <span>Importando...</span><span id="progressImportLabel"></span>
+              </div>
+              <div class="progress" style="height:6px;">
+                <div class="progress-bar" id="progressImportBar" style="width:0%"></div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm w-100" id="btnImportar">
+              <i class="ph ph-upload-simple"></i> Importar planilha
+            </button>
+          </div>
+
+          <!-- Exportar -->
+          <div class="border rounded p-3">
+            <div class="fw-bold mb-1"><i class="ph ph-download-simple me-1"></i>Exportar</div>
+            <p class="text-muted small mb-2">Exporta todos os registros atuais em .xlsx.</p>
+            <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnExportarXlsx">
+              <i class="ph ph-download-simple"></i> Exportar .xlsx
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL LOG DE ALTERAÇÕES ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalLog" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <button type="button" class="btn btn-link text-white p-0 me-2 text-decoration-none" id="btnVoltarLog" title="Voltar">
+            <i class="ph ph-arrow-left" style="font-size:1.2rem;"></i>
+          </button>
+          <h5 class="modal-title"><i class="ph ph-clock-counter-clockwise me-2"></i>Histórico de alterações</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-0">
+          <div id="logCorpo" class="p-3"><span class="text-muted">Carregando...</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== MODAL DE EDIÇÃO ===================== -->
-  <div class="modal fade" id="modalEditar" tabindex="-1" aria-hidden="true">
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEditar" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <form id="formEditar" class="needs-validation" novalidate>
@@ -624,10 +766,11 @@
               <div class="invalid-feedback">Selecione o status.</div>
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="edit_setor">SETOR</label>
-              <select class="form-select" id="edit_setor">
+              <label class="form-label" for="edit_setor">SETOR *</label>
+              <select class="form-select" id="edit_setor" required>
                 <option value="">Selecione...</option>
               </select>
+              <div class="invalid-feedback">Selecione o setor.</div>
             </div>
             <div class="col-md-6">
               <label class="form-label" for="edit_usuario">USUARIO</label>
@@ -648,19 +791,51 @@
               <div class="invalid-feedback">Selecione o equipamento.</div>
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="edit_patNovo">PAT MSA</label>
-              <input type="text" class="form-control" id="edit_patNovo"
+              <label class="form-label" for="edit_pat">PAT MSA *</label>
+              <input type="text" class="form-control" id="edit_pat" required
                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <div class="invalid-feedback">Informe o PAT MSA.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="edit_protocolo">PROTOCOLO *</label>
+              <input type="text" class="form-control" id="edit_protocolo" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <div class="invalid-feedback">Informe o protocolo.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="edit_dataRecebimento">DATA DE RECEBIMENTO *</label>
+              <input type="date" class="form-control" id="edit_dataRecebimento" required>
+              <div class="invalid-feedback">Informe a data de recebimento.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="edit_valor">VALOR (R$) *</label>
+              <input type="number" class="form-control" id="edit_valor" min="0" step="0.01" required
+                autocomplete="off">
+              <div class="invalid-feedback">Informe o valor.</div>
             </div>
             <div class="col-12">
               <label class="form-label" for="edit_obs">OBS (Observações)</label>
               <textarea class="form-control" id="edit_obs" rows="3"
                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             </div>
+            <div class="col-md-6">
+              <label class="form-label text-muted">CRIADO POR</label>
+              <input type="text" class="form-control" id="edit_criadoPor" disabled>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label text-muted">ATUALIZADO POR</label>
+              <input type="text" class="form-control" id="edit_atualizadoPor" disabled>
+            </div>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button type="submit" class="btn btn-primary" id="btnSalvarEdicao">Salvar</button>
+          <div id="alertEditar" class="px-3 pt-2"></div>
+          <div class="modal-footer justify-content-between">
+            <button type="button" class="btn btn-outline-secondary" id="btnVerLog">
+              <i class="ph ph-clock-counter-clockwise"></i> Histórico
+            </button>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-primary" id="btnSalvarEdicao">Salvar</button>
+            </div>
           </div>
         </form>
       </div>
@@ -668,7 +843,7 @@
   </div>
 
   <!-- ===================== MODAL DE NOTIFICAÇÃO ===================== -->
-  <div class="modal fade" id="modalMsg" tabindex="-1" aria-hidden="true">
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalMsg" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-sm">
       <div class="modal-content">
         <div class="modal-body text-center p-4">
@@ -682,7 +857,7 @@
   </div>
 
   <!-- ===================== MODAL CONFIRMAR / PERGUNTAR ===================== -->
-  <div class="modal fade" id="modalAsk" tabindex="-1" aria-hidden="true">
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalAsk" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-md">
       <div class="modal-content">
         <div class="modal-body p-4" style="min-height: 260px; display: flex; flex-direction: column; justify-content: center;">
@@ -710,7 +885,7 @@
   </div>
 
   <!-- ===================== MODAL HISTÓRICO DO PAT ===================== -->
-  <div class="modal fade" id="modalHistorico" tabindex="-1" aria-hidden="true">
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalHistorico" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
@@ -726,6 +901,8 @@
     crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/scripts/choices.min.js"
     crossorigin="anonymous"></script>
-  <script type="module" src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
+    crossorigin="anonymous"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>

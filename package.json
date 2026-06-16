@@ -7,7 +7,9 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "init-db": "node server/init-db.js",
-    "seed": "node server/seed-fake.js"
+    "seed": "node server/seed-fake.js",
+    "clean-seed": "node server/clean-seed.js",
+    "migrate-col-order": "node server/migrate-col-order.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

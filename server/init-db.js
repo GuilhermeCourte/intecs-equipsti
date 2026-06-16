@@ -39,7 +39,7 @@ CREATE TABLE dbo.EQUIPSTI_registros (
   setor        NVARCHAR(255) NULL,
   usuario      NVARCHAR(255) NULL,
   ns           NVARCHAR(255) NOT NULL,
-  pat_novo     NVARCHAR(255) NULL,
+  pat     NVARCHAR(255) NULL,
   equipamento  NVARCHAR(255) NOT NULL,
   obs          NVARCHAR(MAX) NULL,
   criado_em    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -49,6 +49,33 @@ CREATE TABLE dbo.EQUIPSTI_registros (
 -- Migração: remove a coluna pat_antigo (não é mais usada).
 IF COL_LENGTH('dbo.EQUIPSTI_registros', 'pat_antigo') IS NOT NULL
   ALTER TABLE dbo.EQUIPSTI_registros DROP COLUMN pat_antigo;
+
+-- Migração: novos campos de protocolo, recebimento e valor.
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'protocolo') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD protocolo NVARCHAR(255) NULL;
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'data_recebimento') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD data_recebimento DATE NULL;
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'valor') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD valor DECIMAL(15,2) NULL;
+
+-- Migração: autoria.
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'criado_por') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD criado_por NVARCHAR(255) NULL;
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'atualizado_por') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD atualizado_por NVARCHAR(255) NULL;
+
+-- Log de alterações.
+IF OBJECT_ID('dbo.EQUIPSTI_registros_log', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_registros_log (
+  id            INT IDENTITY(1,1) PRIMARY KEY,
+  registro_id   INT NOT NULL,
+  acao          NVARCHAR(20) NOT NULL,   -- CRIADO | ATUALIZADO
+  campo         NVARCHAR(100) NULL,
+  valor_anterior NVARCHAR(MAX) NULL,
+  valor_novo    NVARCHAR(MAX) NULL,
+  usuario       NVARCHAR(255) NOT NULL,
+  data_hora     DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
 
 IF OBJECT_ID('dbo.EQUIPSTI_emprestimos', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_emprestimos (
