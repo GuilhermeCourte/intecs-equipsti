@@ -296,6 +296,15 @@
     }
     .choices__input { font-size: 1rem; }
 
+    /* Força o dropdown de PAT/NS no form de empréstimo a abrir sempre para baixo */
+    #pane-emprestimos .choices.is-flipped .choices__list--dropdown,
+    #pane-emprestimos .choices.is-flipped .choices__list[aria-expanded] {
+      top: 100% !important; bottom: auto !important;
+    }
+    #pane-emprestimos .choices.is-flipped .choices__inner {
+      border-radius: 10px !important;
+    }
+
     /* "+ Adicionar nova opção..." não participa do filtro de busca */
     .choices.is-buscando .choices__list--dropdown .choices__item[data-value="__novo__"],
     .choices.is-buscando .choices__list[aria-expanded] .choices__item[data-value="__novo__"] {
@@ -439,6 +448,13 @@
                 </select>
                 <div class="invalid-feedback">Selecione o PAT.</div>
               </div>
+              <div class="col-md-6" id="emp_ns_grupo" style="display:none">
+                <label class="form-label" for="emp_ns">N/S *</label>
+                <select class="form-select" id="emp_ns" required>
+                  <option value="">Selecione...</option>
+                </select>
+                <div class="invalid-feedback">Selecione o N/S.</div>
+              </div>
               <div class="col-md-6">
                 <label class="form-label" for="emp_unidade">UNIDADE *</label>
                 <select class="form-select" id="emp_unidade" required>
@@ -548,9 +564,14 @@
           <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h5 class="mb-0">Chamados</h5>
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnRefreshChamados">
-                <i class="ph ph-arrow-clockwise"></i> Atualizar
-              </button>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary btn-sm" id="btnNovoChamado">
+                  <i class="ph ph-plus"></i> Novo Chamado
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnRefreshChamados">
+                  <i class="ph ph-arrow-clockwise"></i> Atualizar
+                </button>
+              </div>
             </div>
             <!-- Filtros -->
             <div class="row g-2 mb-3">
@@ -893,6 +914,116 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body" id="histBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL DETALHE / INTERAÇÃO DO CHAMADO ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalChamadoDetalhe" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="detalheTitle">Chamado</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-0">
+          <div id="detalheBody" class="p-3">
+            <span class="text-muted">Carregando...</span>
+          </div>
+        </div>
+        <div class="modal-footer flex-column align-items-stretch gap-2 pt-2">
+          <div id="alertInteracao"></div>
+          <textarea class="form-control" id="interacaoTexto" rows="3"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            placeholder="Escreva sua interação / resposta..."></textarea>
+          <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+            <button type="button" class="btn btn-primary" id="btnEnviarInteracao">
+              <i class="ph ph-paper-plane-tilt"></i> Enviar Interação
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL NOVO CHAMADO ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalNovoChamado" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-md modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-headset me-2"></i>Novo Chamado</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertNovoChamado"></div>
+          <form id="formNovoChamado" class="needs-validation row g-3" novalidate>
+
+            <div class="col-12">
+              <label class="form-label" for="nc_assunto">Assunto *</label>
+              <select class="form-select" id="nc_assunto" required>
+                <option value="">Carregando...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o assunto.</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label" for="nc_local">Local de Trabalho</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="nc_local"
+                  autocomplete="off" placeholder="Ex: SEDE, Filial...">
+                <button type="button" class="btn btn-outline-secondary" id="btnSede">
+                  <i class="ph ph-map-pin"></i> SEDE
+                </button>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label" for="nc_endereco">Endereço</label>
+              <input type="text" class="form-control" id="nc_endereco"
+                autocomplete="off" placeholder="Ex: Av. Paulista, 1159...">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label" for="nc_unidade">Unidade *</label>
+              <select class="form-select" id="nc_unidade" required>
+                <option value="">Selecione...</option>
+                <option value="INTECS_MA">INTECS_MA</option>
+                <option value="INTECS_SP">INTECS_SP</option>
+                <option value="AS - SÃO MIGUEL PAULISTA">AS - SÃO MIGUEL PAULISTA</option>
+                <option value="AS - CITY JARAGUA">AS - CITY JARAGUA</option>
+                <option value="AS - JARAGUA">AS - JARAGUA</option>
+                <option value="AS - BRASILANDIA">AS - BRASILANDIA</option>
+                <option value="AS - GUAIANASES">AS - GUAIANASES</option>
+                <option value="AS - TIRADENTES">AS - TIRADENTES</option>
+                <option value="AS - MBOI MIRIM">AS - MBOI MIRIM</option>
+              </select>
+              <div class="invalid-feedback">Selecione a unidade.</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label" for="nc_patrimonio">Patrimônio</label>
+              <select class="form-select" id="nc_patrimonio">
+                <option value="">Selecione (opcional)...</option>
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label" for="nc_descricao">Descrição *</label>
+              <textarea class="form-control" id="nc_descricao" rows="4" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                placeholder="Descreva o problema detalhadamente..."></textarea>
+              <div class="invalid-feedback">Informe a descrição do problema.</div>
+            </div>
+
+          </form>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btnAbrirChamado">
+            <i class="ph ph-headset"></i> Abrir Chamado
+          </button>
+        </div>
       </div>
     </div>
   </div>

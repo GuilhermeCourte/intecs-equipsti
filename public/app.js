@@ -17,7 +17,7 @@ async function api(method, path, body) {
     },
     body: body ? JSON.stringify(body) : undefined
   });
-  if (res.status === 401) { sairDoApp(); throw new Error('Sessão expirada. Entre novamente.'); }
+  if (res.status === 401 && TOKEN) { sairDoApp(); throw new Error('Sessão expirada. Entre novamente.'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || ('Erro ' + res.status));
   return data;
@@ -45,6 +45,9 @@ let askResolve = null;
 let modalHistorico = null;
 let modalRegistrar = null;
 let modalLog = null;
+let modalNovoChamado = null;
+let modalChamadoDetalhe = null;
+let _chamadoDetalheAtual = null;
 const choicesMap = {};
 
 // ============================================================
@@ -302,10 +305,11 @@ async function loadRecords() {
 }
 
 // Renderiza um PAT como botão que abre o histórico (ou vazio se não houver).
-function patLink(pat) {
+function patLink(pat, ns) {
   if (!pat) return '';
   const e = escapeHtml(pat);
-  return '<button type="button" class="pat-link" data-hist="' + e + '">' + e + '</button>';
+  const nsAttr = ns ? ' data-ns="' + escapeHtml(ns) + '"' : '';
+  return '<button type="button" class="pat-link" data-hist="' + e + '"' + nsAttr + '>' + e + '</button>';
 }
 
 function renderTabela() {
@@ -324,7 +328,7 @@ function renderTabela() {
     '<td>' + escapeHtml(r.setor) + '</td>' +
     '<td>' + escapeHtml(r.usuario) + '</td>' +
     '<td>' + escapeHtml(r.ns) + '</td>' +
-    '<td>' + patLink(r.pat) + '</td>' +
+    '<td>' + patLink(r.pat, r.ns) + '</td>' +
     '<td>' + escapeHtml(r.equipamento) + '</td>' +
     '<td>' + escapeHtml(r.protocolo) + '</td>' +
     '<td>' + fmtData(r.dataRecebimento) + '</td>' +
@@ -642,10 +646,36 @@ async function loadEmprestimoForm() {
   } catch (err) {
     showAlert('alertEmprestimos', 'danger', 'Erro ao carregar PATs: ' + err.message);
   }
+  $('emp_ns_grupo').style.display = 'none';
+  $('emp_ns').required = false;
+  fillSelect('emp_ns', []);
   // Data padrão = hoje (formato yyyy-mm-dd).
   const hoje = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   $('emp_data').value = hoje.getFullYear() + '-' + pad(hoje.getMonth() + 1) + '-' + pad(hoje.getDate());
+}
+
+async function atualizarNsEmprestimo(pat) {
+  $('emp_ns_grupo').style.display = 'none';
+  $('emp_ns').required = false;
+  fillSelect('emp_ns', []);
+  if (!pat) return;
+  try {
+    const nsList = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/ns');
+    if (nsList.length <= 1) {
+      // Apenas 1 NS (ou nenhum): auto-seleciona e esconde o campo.
+      if (nsList.length === 1) {
+        fillSelect('emp_ns', nsList);
+        $('emp_ns').value = nsList[0];
+      }
+      return;
+    }
+    fillSelect('emp_ns', nsList);
+    $('emp_ns').required = true;
+    $('emp_ns_grupo').style.display = '';
+  } catch (err) {
+    showAlert('alertEmprestimos', 'danger', 'Erro ao carregar N/S: ' + err.message);
+  }
 }
 
 function fmtData(d) {
@@ -665,11 +695,14 @@ async function loadEmprestimos() {
       return;
     }
     const linhas = ativos.map((e) => {
+      const nsAttr = e.ns ? ' data-ns="' + escapeHtml(e.ns) + '"' : '';
       const acao = '<button type="button" class="acao-link acao-exibir" data-loan-id="' + e.id +
-        '" data-to="DEVOLVIDO" data-pat="' + escapeHtml(e.pat) + '" data-unidade="' + escapeHtml(e.unidade) +
+        '" data-to="DEVOLVIDO" data-pat="' + escapeHtml(e.pat) + '"' + nsAttr +
+        ' data-unidade="' + escapeHtml(e.unidade) +
         '"><i class="ph ph-arrow-u-down-left"></i> Devolver</button>';
       return '<tr>' +
-        '<td>' + patLink(e.pat) + '</td>' +
+        '<td>' + patLink(e.pat, e.ns) + '</td>' +
+        '<td>' + escapeHtml(e.ns || '—') + '</td>' +
         '<td>' + escapeHtml(e.unidade) + '</td>' +
         '<td>' + fmtData(e.data) + '</td>' +
         '<td title="' + escapeHtml(e.obs) + '">' + escapeHtml(e.obs) + '</td>' +
@@ -677,7 +710,7 @@ async function loadEmprestimos() {
     }).join('');
     container.innerHTML =
       '<div class="table-responsive"><table class="table table-striped align-middle mb-0">' +
-      '<thead><tr><th>PAT</th><th>UNIDADE</th><th>DATA</th><th>OBS</th><th class="text-end">Ação</th></tr></thead>' +
+      '<thead><tr><th>PAT</th><th>N/S</th><th>UNIDADE</th><th>DATA</th><th>OBS</th><th class="text-end">Ação</th></tr></thead>' +
       '<tbody>' + linhas + '</tbody></table></div>';
   } catch (err) {
     container.innerHTML = '<span class="text-danger">Erro ao carregar: ' + escapeHtml(err.message) + '</span>';
@@ -686,11 +719,13 @@ async function loadEmprestimos() {
 
 function configurarFormEmprestimo() {
   const form = $('formEmprestimo');
+  $('emp_pat').addEventListener('change', (ev) => atualizarNsEmprestimo(ev.target.value));
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
     const dados = {
       pat: trim($('emp_pat').value),
+      ns: trim($('emp_ns').value) || null,
       unidade: trim($('emp_unidade').value),
       data: $('emp_data').value,
       obs: trim($('emp_obs').value)
@@ -714,17 +749,19 @@ function configurarFormEmprestimo() {
   // Histórico do PAT + Devolver / Reabrir (delegação na tabela).
   $('listaEmprestimos').addEventListener('click', async (ev) => {
     const hist = ev.target.closest('[data-hist]');
-    if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist')); return; }
+    if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist'), hist.getAttribute('data-ns')); return; }
     const btn = ev.target.closest('[data-loan-id]');
     if (!btn) return;
     const id = btn.getAttribute('data-loan-id');
     const to = btn.getAttribute('data-to');
     const pat = btn.getAttribute('data-pat');
+    const ns = btn.getAttribute('data-ns');
     const unidade = btn.getAttribute('data-unidade');
 
     let origem = '';
     try {
-      const h = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/history');
+      const qs = ns ? '?ns=' + encodeURIComponent(ns) : '';
+      const h = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/history' + qs);
       origem = h.origens && h.origens.length ? h.origens[0].unidade : '';
     } catch (err) {
       showAlert('alertEmprestimos', 'danger', err.message);
@@ -751,12 +788,13 @@ function configurarFormEmprestimo() {
 // ============================================================
 //  Histórico do PAT (linha do tempo)
 // ============================================================
-async function abrirHistoricoPat(pat) {
+async function abrirHistoricoPat(pat, ns) {
   $('histPat').textContent = pat;
   $('histBody').innerHTML = '<span class="text-muted">Carregando...</span>';
   modalHistorico.show();
   try {
-    const h = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/history');
+    const qs = ns ? '?ns=' + encodeURIComponent(ns) : '';
+    const h = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/history' + qs);
     $('histBody').innerHTML = renderTimeline(h);
   } catch (err) {
     $('histBody').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
@@ -1030,7 +1068,7 @@ function configurarFormEditar() {
 
   $('corpoTabela').addEventListener('click', (ev) => {
     const hist = ev.target.closest('[data-hist]');
-    if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist')); return; }
+    if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist'), hist.getAttribute('data-ns')); return; }
     const btn = ev.target.closest('[data-edit]');
     if (btn) abrirEdicao(btn.getAttribute('data-edit'));
   });
@@ -1068,6 +1106,200 @@ async function abrirLog(registroId) {
   } catch (err) {
     $('logCorpo').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
   }
+}
+
+// ============================================================
+//  Detalhe + Interação do Chamado
+// ============================================================
+function renderDetalheChamado(data) {
+  const tc  = data.TChamado  || {};
+  const conv = (data.TConversa?.root) || [];
+  let html = '';
+
+  // --- Cabeçalho ---
+  html += '<div class="p-3 mb-0" style="background:var(--bg-soft);border-bottom:1px solid var(--line)">';
+  html += '<div class="row g-2 small">';
+  const info = [
+    ['Código',   tc.Codigo],
+    ['Assunto',  tc.Assunto],
+    ['Status',   tc.AcaoStatusCodigo ? tc.AcaoStatusCodigo.replace(/^\d+\s*-\s*/,'') : ''],
+    ['Criado em', tc.DataCriacao ? tc.DataCriacao.split('/').reverse().join('/') + ' ' + (tc.HoraCriacao||'') : ''],
+    ['Tipo',      tc.TipoOcorrencia],
+    ['Ações',     tc.TotalAcoes != null ? String(tc.TotalAcoes) : ''],
+  ];
+  info.forEach(([l, v]) => {
+    if (!v) return;
+    html += `<div class="col-6 col-md-4"><span class="text-muted">${escapeHtml(l)}</span><div class="fw-600">${escapeHtml(v)}</div></div>`;
+  });
+  html += '</div></div>';
+
+  // --- Histórico de conversa (TConversa) ---
+  if (conv.length) {
+    html += '<div class="p-3 border-bottom"><h6 class="mb-3">Histórico</h6>';
+    conv.forEach(item => {
+      const isCliente = !item.Operador || item.Solicitacao === 'Portal';
+      const quem = escapeHtml(item.Operador || 'Cliente');
+      const dt = escapeHtml((item.DataCriacao || '') + (item.HoraCriacao ? ' ' + item.HoraCriacao : ''));
+      html += `<div class="mb-2 p-2 rounded border${isCliente ? '' : ' border-primary'}">`;
+      html += `<div class="d-flex justify-content-between small text-muted mb-1"><span>${quem}</span><span>${dt}</span></div>`;
+      html += `<div class="small">${item.Descricao || ''}</div>`;
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // --- Última ação do técnico (AcaoDescricao) ---
+  const acaoHtml = (tc.AcaoDescricao || '').replace(/<p>(\s|&nbsp;)*<\/p>/gi, '').trim();
+  if (acaoHtml) {
+    html += '<div class="p-3 border-bottom">';
+    html += '<h6 class="mb-2"><i class="ph ph-wrench me-1"></i>Última ação do técnico</h6>';
+    html += `<div class="p-2 rounded border border-primary small">${acaoHtml}</div>`;
+    html += '</div>';
+  }
+
+  if (!conv.length && !acaoHtml) {
+    html += '<div class="p-3 text-muted small">Sem interações registradas ainda.</div>';
+  }
+
+  return html;
+}
+
+async function abrirDetalheChamado(chave, codigo) {
+  _chamadoDetalheAtual = { chave, codigo };
+  $('detalheTitle').textContent = 'Chamado ' + codigo;
+  $('detalheBody').innerHTML = '<div class="p-3 text-muted">Carregando...</div>';
+  $('interacaoTexto').value = '';
+  $('alertInteracao').innerHTML = '';
+  modalChamadoDetalhe.show();
+  try {
+    const data = await api('GET', '/api/chamados/' + encodeURIComponent(chave));
+    $('detalheBody').innerHTML = renderDetalheChamado(data);
+  } catch (err) {
+    $('detalheBody').innerHTML = '<div class="p-3 text-danger">Erro: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function configurarDetalheChamado() {
+  // Delegação de clique na tabela de chamados
+  $('chamadosTbody').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-ver-chave]');
+    if (!btn) return;
+    abrirDetalheChamado(btn.getAttribute('data-ver-chave'), btn.getAttribute('data-ver-codigo'));
+  });
+
+  $('btnEnviarInteracao').addEventListener('click', async () => {
+    if (!_chamadoDetalheAtual) return;
+    const descricao = trim($('interacaoTexto').value);
+    if (!descricao) {
+      $('alertInteracao').innerHTML =
+        '<div class="alert alert-warning py-1 mb-0">Escreva a interação antes de enviar.</div>';
+      return;
+    }
+    const btn = $('btnEnviarInteracao');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ph ph-spinner"></i> Enviando...';
+    $('alertInteracao').innerHTML = '';
+    try {
+      await api('POST', '/api/chamados/' + encodeURIComponent(_chamadoDetalheAtual.chave) + '/interacao', {
+        codigo:    _chamadoDetalheAtual.codigo,
+        descricao
+      });
+      $('interacaoTexto').value = '';
+      // Recarrega o detalhe para mostrar a nova interação
+      const data = await api('GET', '/api/chamados/' + encodeURIComponent(_chamadoDetalheAtual.chave));
+      $('detalheBody').innerHTML = renderDetalheChamado(data);
+      $('alertInteracao').innerHTML =
+        '<div class="alert alert-success py-1 mb-0">Interação enviada com sucesso.</div>';
+      setTimeout(() => { $('alertInteracao').innerHTML = ''; }, 4000);
+    } catch (err) {
+      $('alertInteracao').innerHTML =
+        '<div class="alert alert-danger py-1 mb-0">' + escapeHtml(err.message) + '</div>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ph ph-paper-plane-tilt"></i> Enviar Interação';
+    }
+  });
+}
+
+// ============================================================
+//  Novo Chamado (Eurosa)
+// ============================================================
+const SEDE_LOCAL   = 'SEDE';
+const SEDE_END     = 'Av. Paulista, 1159 - Jardim Paulista, São Paulo - SP, 01311-200';
+
+function configurarNovoChamado() {
+  $('btnNovoChamado').addEventListener('click', async () => {
+    const form = $('formNovoChamado');
+    form.reset();
+    form.classList.remove('was-validated');
+    $('alertNovoChamado').innerHTML = '';
+
+    const assuntoSel = $('nc_assunto');
+    assuntoSel.innerHTML = '<option value="">Carregando...</option>';
+    assuntoSel.disabled = true;
+
+    const patSel = $('nc_patrimonio');
+    patSel.innerHTML = '<option value="">Selecione (opcional)...</option>';
+
+    modalNovoChamado.show();
+
+    try {
+      const [assuntos, pats] = await Promise.all([
+        api('GET', '/api/chamados/assuntos'),
+        api('GET', '/api/pats')
+      ]);
+
+      assuntoSel.innerHTML = '<option value="">Selecione...</option>' +
+        assuntos.map(a => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.text) + '</option>').join('');
+      assuntoSel.disabled = false;
+
+      patSel.innerHTML = '<option value="">Selecione (opcional)...</option>' +
+        pats.map(p => '<option value="' + escapeHtml(p) + '">' + escapeHtml(p) + '</option>').join('');
+    } catch (err) {
+      assuntoSel.innerHTML = '<option value="">Erro ao carregar</option>';
+      assuntoSel.disabled = false;
+      $('alertNovoChamado').innerHTML =
+        '<div class="alert alert-warning py-2 mb-0">Não foi possível carregar os assuntos: ' + escapeHtml(err.message) + '</div>';
+    }
+  });
+
+  $('btnSede').addEventListener('click', () => {
+    $('nc_local').value    = SEDE_LOCAL;
+    $('nc_endereco').value = SEDE_END;
+  });
+
+  $('btnAbrirChamado').addEventListener('click', async () => {
+    const form = $('formNovoChamado');
+    if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+
+    const btn = $('btnAbrirChamado');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ph ph-spinner"></i> Abrindo...';
+    $('alertNovoChamado').innerHTML = '';
+
+    try {
+      const assuntoSel = $('nc_assunto');
+      const resultado = await api('POST', '/api/chamados', {
+        codCatalogo:   trim(assuntoSel.value),
+        assuntoText:   trim(assuntoSel.options[assuntoSel.selectedIndex]?.text || ''),
+        descricao:     trim($('nc_descricao').value),
+        localTrabalho: trim($('nc_local').value),
+        endereco:      trim($('nc_endereco').value),
+        unidade:       trim($('nc_unidade').value),
+        patrimonio:    trim($('nc_patrimonio').value)
+      });
+      const codigo = resultado?.url?.text?.match(/\d{4}-\d{6}/)?.[0] || '';
+      modalNovoChamado.hide();
+      showAlert('alertRegistros', 'success', 'Chamado ' + (codigo ? codigo + ' ' : '') + 'aberto com sucesso!');
+      if ($('tab-chamados').classList.contains('active')) await carregarChamados();
+    } catch (err) {
+      $('alertNovoChamado').innerHTML =
+        '<div class="alert alert-danger py-2 mb-2">' + escapeHtml(err.message) + '</div>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ph ph-headset"></i> Abrir Chamado';
+    }
+  });
 }
 
 // ============================================================
@@ -1119,7 +1351,10 @@ function renderChamados() {
     return true;
   });
   $('chamadosTbody').innerHTML = rows.map(r =>
-    `<tr>${CHAMADOS_COLS.map(c => `<td>${c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? '')}</td>`).join('')}</tr>`
+    `<tr>${CHAMADOS_COLS.map(c => `<td>${escapeHtml(c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? ''))}</td>`).join('')}` +
+    `<td><button type="button" class="btn btn-sm btn-outline-primary" ` +
+    `data-ver-chave="${escapeHtml(String(r.Chave || ''))}" data-ver-codigo="${escapeHtml(r.Codigo || '')}">` +
+    `<i class="ph ph-eye"></i> Ver</button></td></tr>`
   ).join('');
   $('chamadosStatus').textContent = `${rows.length} de ${_chamadosTodos.length} chamado(s).`;
 }
@@ -1135,7 +1370,7 @@ async function carregarChamados() {
       $('chamadosStatus').textContent = 'Nenhum chamado encontrado.';
       return;
     }
-    $('chamadosThead').innerHTML = CHAMADOS_COLS.map(c => `<th>${c.label}</th>`).join('');
+    $('chamadosThead').innerHTML = CHAMADOS_COLS.map(c => `<th>${c.label}</th>`).join('') + '<th></th>';
 
     renderChamados();
   } catch (e) {
@@ -1150,6 +1385,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalHistorico = new bootstrap.Modal($('modalHistorico'));
   modalLog = new bootstrap.Modal($('modalLog'));
   modalRegistrar = new bootstrap.Modal($('modalRegistrar'));
+  modalNovoChamado = new bootstrap.Modal($('modalNovoChamado'));
+  modalChamadoDetalhe = new bootstrap.Modal($('modalChamadoDetalhe'));
   document.querySelectorAll('.modal').forEach(el => {
     el.addEventListener('hidePrevented.bs.modal', () => el.classList.remove('modal-static'));
   });
@@ -1174,6 +1411,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarFormUsuario();
   configurarFormEmprestimo();
   configurarFormEditar();
+  configurarDetalheChamado();
+  configurarNovoChamado();
 
   $('tab-registros').addEventListener('shown.bs.tab', loadRecords);
   $('btnAtualizarLista').addEventListener('click', loadRecords);

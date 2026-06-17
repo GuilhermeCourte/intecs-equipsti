@@ -81,6 +81,7 @@ IF OBJECT_ID('dbo.EQUIPSTI_emprestimos', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_emprestimos (
   id              INT IDENTITY(1,1) PRIMARY KEY,
   pat             NVARCHAR(255) NOT NULL,
+  ns              NVARCHAR(255) NULL,
   unidade         NVARCHAR(255) NOT NULL,
   data_emprestimo DATE NULL,
   status          NVARCHAR(20) NOT NULL DEFAULT 'EMPRESTADO',

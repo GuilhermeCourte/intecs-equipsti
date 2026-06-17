@@ -272,26 +272,42 @@ app.get('/api/pats', exigirAuth, wrap(async (req, res) => {
   res.json(r.recordset.map((row) => row.pat));
 }));
 
-// Histórico completo de um PAT: unidade(s) de origem + linha do tempo de empréstimos.
+// NS distintos para um PAT (para popular o select de NS no form de empréstimo).
+app.get('/api/pats/:pat/ns', exigirAuth, wrap(async (req, res) => {
+  const pat = trim(req.params.pat);
+  const r = await query(
+    `SELECT DISTINCT ns FROM dbo.EQUIPSTI_registros
+      WHERE pat = @pat AND ns IS NOT NULL AND LTRIM(RTRIM(ns)) <> ''
+      ORDER BY ns`,
+    { pat: S(pat) });
+  res.json(r.recordset.map((row) => row.ns));
+}));
+
+// Histórico completo de um PAT (+NS opcional): unidade(s) de origem + linha do tempo de empréstimos.
 app.get('/api/pats/:pat/history', exigirAuth, wrap(async (req, res) => {
   const pat = trim(req.params.pat);
-  const origens = await query(`SELECT unidade, equipamento, ns,
-      CONVERT(varchar(10), MIN(criado_em), 23) AS criadoEm
-    FROM dbo.EQUIPSTI_registros WHERE pat = @pat
-    GROUP BY unidade, equipamento, ns ORDER BY criadoEm`,
-    { pat: S(pat) });
-  const emprestimos = await query(`SELECT unidade,
-      CONVERT(varchar(10), data_emprestimo, 23) AS data, status,
-      CONVERT(varchar(10), data_devolucao, 23) AS dataDevolucao, obs
-    FROM dbo.EQUIPSTI_emprestimos WHERE pat = @pat
-    ORDER BY data_emprestimo, id`,
-    { pat: S(pat) });
-  res.json({ pat, origens: origens.recordset, emprestimos: emprestimos.recordset });
+  const ns  = trim(req.query.ns);
+  const origens = await query(
+    `SELECT unidade, equipamento, ns,
+        CONVERT(varchar(10), MIN(criado_em), 23) AS criadoEm
+      FROM dbo.EQUIPSTI_registros
+      WHERE pat = @pat${ns ? ' AND ns = @ns' : ''}
+      GROUP BY unidade, equipamento, ns ORDER BY criadoEm`,
+    ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
+  const emprestimos = await query(
+    `SELECT unidade, ns,
+        CONVERT(varchar(10), data_emprestimo, 23) AS data, status,
+        CONVERT(varchar(10), data_devolucao, 23) AS dataDevolucao, obs
+      FROM dbo.EQUIPSTI_emprestimos
+      WHERE pat = @pat${ns ? ' AND (ns = @ns OR ns IS NULL)' : ''}
+      ORDER BY data_emprestimo, id`,
+    ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
+  res.json({ pat, ns: ns || null, origens: origens.recordset, emprestimos: emprestimos.recordset });
 }));
 
 // ===================== EMPRÉSTIMOS =====================
 app.get('/api/loans', exigirAuth, wrap(async (req, res) => {
-  const r = await query(`SELECT id, pat, unidade,
+  const r = await query(`SELECT id, pat, ns, unidade,
     CONVERT(varchar(10), data_emprestimo, 23) AS data,
     status,
     CONVERT(varchar(10), data_devolucao, 23) AS dataDevolucao,
@@ -303,6 +319,7 @@ app.get('/api/loans', exigirAuth, wrap(async (req, res) => {
 
 app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
   const pat = trim(req.body.pat);
+  const ns  = trim(req.body.ns);
   const unidade = trim(req.body.unidade);
   const data = trim(req.body.data);
   const obs = trim(req.body.obs);
@@ -311,18 +328,23 @@ app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
   if (!unidade) faltando.push('UNIDADE');
   if (faltando.length) return res.status(400).json({ error: 'Preencha: ' + faltando.join(', ') + '.' });
 
-  const aberto = await query(`SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
-    WHERE pat = @pat AND status = 'EMPRESTADO'`, { pat: S(pat) });
+  // Verifica empréstimo aberto para o mesmo PAT+NS (ou só PAT se ns não informado).
+  const aberto = await query(
+    `SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
+      WHERE pat = @pat AND status = 'EMPRESTADO'
+        ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
+    ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
   if (aberto.recordset.length) {
     return res.status(400).json({
-      error: 'Este PAT já está emprestado para ' + aberto.recordset[0].unidade +
-        '. Devolva-o antes de emprestar para outra unidade.'
+      error: 'Este PAT' + (ns ? '/N/S' : '') + ' já está emprestado para ' +
+        aberto.recordset[0].unidade + '. Devolva-o antes de emprestar para outra unidade.'
     });
   }
 
-  await query(`INSERT INTO dbo.EQUIPSTI_emprestimos (pat, unidade, data_emprestimo, status, obs)
-    VALUES (@pat, @unidade, @data, 'EMPRESTADO', @obs)`,
-    { pat: S(pat), unidade: S(unidade), data: S(data || null), obs: S(obs) });
+  await query(
+    `INSERT INTO dbo.EQUIPSTI_emprestimos (pat, ns, unidade, data_emprestimo, status, obs)
+      VALUES (@pat, @ns, @unidade, @data, 'EMPRESTADO', @obs)`,
+    { pat: S(pat), ns: S(ns || null), unidade: S(unidade), data: S(data || null), obs: S(obs) });
   res.status(201).json({ ok: true });
 }));
 
@@ -334,14 +356,17 @@ app.put('/api/loans/:id/status', exigirAuth, wrap(async (req, res) => {
   }
 
   if (status === 'EMPRESTADO') {
-    const atual = await query(`SELECT pat FROM dbo.EQUIPSTI_emprestimos WHERE id=@id`, { id });
+    const atual = await query(`SELECT pat, ns FROM dbo.EQUIPSTI_emprestimos WHERE id=@id`, { id });
     if (!atual.recordset.length) return res.status(404).json({ error: 'Empréstimo não encontrado.' });
-    const aberto = await query(`SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
-      WHERE pat = @pat AND status = 'EMPRESTADO' AND id <> @id`,
-      { pat: S(atual.recordset[0].pat), id });
+    const { pat: aPat, ns: aNs } = atual.recordset[0];
+    const aberto = await query(
+      `SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
+        WHERE pat = @pat AND status = 'EMPRESTADO' AND id <> @id
+          ${aNs ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
+      aNs ? { pat: S(aPat), ns: S(aNs), id } : { pat: S(aPat), id });
     if (aberto.recordset.length) {
       return res.status(400).json({
-        error: 'Este PAT já está emprestado para ' + aberto.recordset[0].unidade + '.'
+        error: 'Este PAT' + (aNs ? '/N/S' : '') + ' já está emprestado para ' + aberto.recordset[0].unidade + '.'
       });
     }
   }
@@ -430,6 +455,34 @@ async function eurosaLogin() {
   console.log('[eurosa login] ok | sessao:', sessao ? 'ok' : 'ausente', '| cookies:', [...cookieMap.keys()].join(', '));
 }
 
+async function eurosaRequest(method, path, dados, extra = {}) {
+  const body = new URLSearchParams({ Dados: JSON.stringify(dados), App: 'Portal', ...extra });
+  const res = await fetch('https://eurosa.desk.ms' + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Referer': 'https://eurosa.desk.ms/?Portal',
+      'Origin': 'https://eurosa.desk.ms',
+      'User-Agent': EUROSA_UA,
+      'Cookie': eurosaCookie
+    },
+    body: body.toString()
+  });
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  return { status: res.status, data };
+}
+
+const eurosaPost = (path, dados) => eurosaRequest('POST', path, dados);
+
+function eurosaSessionExpired(result) {
+  return result.status === 401 || result.status === 302 ||
+    (typeof result.data === 'string' && result.data.includes('LoginPortal')) ||
+    (typeof result.data === 'object' && result.data?.erro);
+}
+
 async function eurosaFetchChamados() {
   // Body espelhado exatamente do que o browser envia (HAR capturado em 2026-06-16)
   const body = new URLSearchParams({
@@ -463,20 +516,122 @@ async function eurosaFetchChamados() {
   return { status: res.status, data };
 }
 
-app.get('/api/chamados', exigirAuth, wrap(async (req, res) => {
+async function eurosaCall(fn) {
   if (!eurosaCookie) await eurosaLogin();
-  let result = await eurosaFetchChamados();
-  // Re-login se sessão expirou (resposta HTML ou erro de auth)
-  const expired = result.status === 401 || result.status === 302 ||
-    (typeof result.data === 'string' && result.data.includes('LoginPortal')) ||
-    (typeof result.data === 'object' && result.data?.erro);
-  if (expired) {
+  let result = await fn();
+  if (eurosaSessionExpired(result)) {
     eurosaCookie = null;
     await eurosaLogin();
-    result = await eurosaFetchChamados();
+    result = await fn();
   }
+  return result;
+}
+
+app.get('/api/chamados', exigirAuth, wrap(async (req, res) => {
+  const result = await eurosaCall(() => eurosaFetchChamados());
   console.log('[chamados] status:', result.status, '| data:', JSON.stringify(result.data).slice(0, 200));
   res.json(result.data);
+}));
+
+async function eurosaGetChamadoDetalhe(chave) {
+  const body = new URLSearchParams({ Chave: String(chave), OrigemID: '', App: 'Portal' });
+  const res = await fetch('https://eurosa.desk.ms/Chamados', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Referer': 'https://eurosa.desk.ms/?Portal',
+      'Origin': 'https://eurosa.desk.ms',
+      'User-Agent': EUROSA_UA,
+      'Cookie': eurosaCookie
+    },
+    body: body.toString()
+  });
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  return { status: res.status, data };
+}
+
+app.get('/api/chamados/:chave', exigirAuth, wrap(async (req, res) => {
+  const chave = trim(req.params.chave);
+  const result = await eurosaCall(() => eurosaGetChamadoDetalhe(chave));
+  if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status);
+  res.json(result.data);
+}));
+
+app.post('/api/chamados/:chave/interacao', exigirAuth, wrap(async (req, res) => {
+  const chave   = trim(req.params.chave);
+  const codigo  = trim(req.body.codigo   || '');
+  const descricao = trim(req.body.descricao || '');
+  if (!descricao) return res.status(400).json({ error: 'Informe a descrição.' });
+
+  const dados = {
+    Continuar: '',
+    TChamado: {
+      Chave:    chave,
+      Codigo:   codigo,
+      Descricao: '<p>' + descricao + '</p>'
+    }
+  };
+  const result = await eurosaCall(() => eurosaRequest('PUT', '/Chamados', dados));
+  console.log('[interacao] status:', result.status, JSON.stringify(result.data).slice(0, 200));
+  if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status + ': ' + JSON.stringify(result.data));
+  res.status(201).json(result.data);
+}));
+
+app.get('/api/chamados/assuntos', exigirAuth, wrap(async (req, res) => {
+  const dados = {
+    Pesquisa: '', Ativo: '1', Ordem: [], Tudo: 'true', Ajax: 'true',
+    Filtro: { ListaCatalogoUsuario: ['', 'equal'] }
+  };
+  const result = await eurosaCall(() => eurosaPost('/Chamados/listaAutoCategoria', dados));
+  if (result.status >= 400) throw new Error('Erro eurosa: ' + result.status);
+  const lista = result.data?.root ?? [];
+  res.json(lista.map(i => ({ id: String(i.id).replace(/\\+$/, ''), text: i.text })));
+}));
+
+const EUROSA_CODUSUARIO = '12290';
+
+app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
+  const codCatalogo   = trim(req.body.codCatalogo   || '');
+  const assuntoText   = trim(req.body.assuntoText   || '');
+  const descricao     = trim(req.body.descricao     || '');
+  const localTrabalho = trim(req.body.localTrabalho || '');
+  const endereco      = trim(req.body.endereco      || '');
+  const unidade       = trim(req.body.unidade       || '');
+
+  if (!codCatalogo) return res.status(400).json({ error: 'Selecione o assunto.' });
+  if (!descricao)   return res.status(400).json({ error: 'Informe a descrição.' });
+
+  // AutoCategoriaArvore = parte após o último " - " no texto do assunto
+  const arvore = assuntoText.includes(' - ')
+    ? assuntoText.slice(assuntoText.lastIndexOf(' - ') + 3)
+    : assuntoText;
+
+  const dados = {
+    Continuar: '',
+    TChamado: {
+      Chave:                '',
+      CodUsuario:           EUROSA_CODUSUARIO,
+      Assunto:              assuntoText,
+      AutoCategoria:        codCatalogo + '\\',
+      AutoCategoriaArvore:  arvore,
+      CodSolIC:             EUROSA_CODUSUARIO,
+      Descricao:            '<p>' + descricao + '</p>'
+    },
+    TCampoExtra: {
+      '12310': localTrabalho,
+      '12311': endereco,
+      '19024': unidade,
+      '20742': '0'
+    }
+  };
+
+  const result = await eurosaCall(() => eurosaRequest('PUT', '/Chamados', dados, { Menu: 'Chamados' }));
+  console.log('[chamado criado] status:', result.status, JSON.stringify(result.data).slice(0, 200));
+  if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status + ': ' + JSON.stringify(result.data));
+  res.status(201).json(result.data);
 }));
 
 // ===================== ESTÁTICO (front-end vanilla) =====================
