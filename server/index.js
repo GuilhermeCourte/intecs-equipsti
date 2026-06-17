@@ -20,7 +20,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO'];
+const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
 const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
 const trim = (v) => String(v == null ? '' : v).trim();
 
@@ -98,10 +98,14 @@ app.put('/api/users/:id', exigirAuth, wrap(async (req, res) => {
 
 // ===================== OPÇÕES =====================
 app.get('/api/options', exigirAuth, wrap(async (req, res) => {
-  const r = await query('SELECT lista, valor, oculto FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
-  const out = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [] };
+  const r = await query('SELECT lista, valor, oculto, detalhe, preco, tipo_aquisicao FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
+  const out = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [], INSUMOS: [] };
   r.recordset.forEach((row) => {
-    if (out[row.lista]) out[row.lista].push({ valor: row.valor, oculto: !!row.oculto });
+    if (out[row.lista]) out[row.lista].push({
+      valor: row.valor, oculto: !!row.oculto, detalhe: row.detalhe || null,
+      preco: row.preco != null ? Number(row.preco) : null,
+      tipo_aquisicao: row.tipo_aquisicao || null
+    });
   });
   res.json(out);
 }));
@@ -109,6 +113,11 @@ app.get('/api/options', exigirAuth, wrap(async (req, res) => {
 app.post('/api/options', exigirAuth, wrap(async (req, res) => {
   const lista = trim(req.body.lista).toUpperCase();
   const valor = trim(req.body.valor).toUpperCase();
+  const detalhe = trim(req.body.detalhe || '') || null;
+  const precoRaw = lista === 'EQUIPAMENTO' && req.body.preco !== undefined && req.body.preco !== ''
+    ? Number(String(req.body.preco).replace(',', '.')) : null;
+  const preco = precoRaw != null && !isNaN(precoRaw) ? precoRaw : null;
+  const tipoAquisicao = lista === 'EQUIPAMENTO' ? (trim(req.body.tipo_aquisicao || '') || null) : null;
   if (!OPTION_LISTS.includes(lista)) return res.status(400).json({ error: 'Lista inválida.' });
   if (!valor) return res.status(400).json({ error: 'O valor não pode ser vazio.' });
 
@@ -116,8 +125,10 @@ app.post('/api/options', exigirAuth, wrap(async (req, res) => {
     { lista: S(lista), valor: S(valor) });
   if (existe.recordset.length) return res.status(409).json({ error: `"${valor}" já existe em ${lista}.` });
 
-  await query('INSERT INTO dbo.EQUIPSTI_opcoes (lista, valor, oculto) VALUES (@lista, @valor, 0)',
-    { lista: S(lista), valor: S(valor) });
+  await query('INSERT INTO dbo.EQUIPSTI_opcoes (lista, valor, oculto, detalhe, preco, tipo_aquisicao) VALUES (@lista, @valor, 0, @detalhe, @preco, @tipoAquisicao)',
+    { lista: S(lista), valor: S(valor), detalhe: { type: sql.NVarChar, value: detalhe },
+      preco: preco != null ? { type: sql.Decimal(15,2), value: preco } : S(null),
+      tipoAquisicao: S(tipoAquisicao) });
   res.status(201).json({ ok: true });
 }));
 
@@ -138,6 +149,24 @@ app.put('/api/options/rename', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Atualiza o detalhe e o preço de uma opção de equipamento.
+app.put('/api/options/detalhe', exigirAuth, wrap(async (req, res) => {
+  const lista = trim(req.body.lista).toUpperCase();
+  const valor = trim(req.body.valor);
+  const detalhe = trim(req.body.detalhe || '') || null;
+  const precoRaw = req.body.preco !== undefined && req.body.preco !== ''
+    ? Number(String(req.body.preco).replace(',', '.')) : null;
+  const preco = precoRaw != null && !isNaN(precoRaw) ? precoRaw : null;
+  const tipoAquisicao = trim(req.body.tipo_aquisicao || '') || null;
+  if (!OPTION_LISTS.includes(lista)) return res.status(400).json({ error: 'Lista inválida.' });
+  await query('UPDATE dbo.EQUIPSTI_opcoes SET detalhe = @detalhe, preco = @preco, tipo_aquisicao = @tipoAquisicao WHERE lista = @lista AND valor = @valor',
+    { detalhe: { type: sql.NVarChar, value: detalhe },
+      preco: preco != null ? { type: sql.Decimal(15,2), value: preco } : S(null),
+      tipoAquisicao: S(tipoAquisicao),
+      lista: S(lista), valor: S(valor) });
+  res.json({ ok: true });
+}));
+
 // Oculta / exibe uma opção.
 app.put('/api/options/hidden', exigirAuth, wrap(async (req, res) => {
   const lista = trim(req.body.lista).toUpperCase();
@@ -154,10 +183,14 @@ function lerRegistro(body) {
   return {
     unidade: trim(body.unidade), status: trim(body.status), setor: trim(body.setor),
     usuario: trim(body.usuario), ns: trim(body.ns),
-    pat: trim(body.pat), equipamento: trim(body.equipamento), obs: trim(body.obs),
+    pat: trim(body.pat), equipamento: trim(body.equipamento),
+    equipamento_detalhe: trim(body.equipamento_detalhe) || null,
+    obs: trim(body.obs),
     protocolo: trim(body.protocolo),
     dataRecebimento: trim(body.dataRecebimento) || null,
-    valor: isNaN(valor) ? null : valor
+    valor: isNaN(valor) ? null : valor,
+    insumo: trim(body.insumo) || null,
+    tipo_aquisicao: trim(body.tipo_aquisicao) || null
   };
 }
 function validarRegistro(d) {
@@ -168,15 +201,15 @@ function validarRegistro(d) {
   if (!d.ns) faltando.push('N/S');
   if (!d.equipamento) faltando.push('EQUIPAMENTO');
   if (!d.pat) faltando.push('PAT MSA');
+  if (!d.tipo_aquisicao) faltando.push('COMPRADO/LOCADO');
   if (!d.protocolo) faltando.push('PROTOCOLO');
   if (!d.dataRecebimento) faltando.push('DATA DE RECEBIMENTO');
-  if (d.valor == null) faltando.push('VALOR');
   if (faltando.length) throw new Error('Preencha: ' + faltando.join(', ') + '.');
 }
 
 app.get('/api/records', exigirAuth, wrap(async (req, res) => {
   const r = await query(`SELECT id, unidade, status, setor, usuario, ns,
-    pat, equipamento, protocolo,
+    pat, equipamento, equipamento_detalhe AS equipamentoDetalhe, insumo, tipo_aquisicao AS tipoAquisicao, protocolo,
     CONVERT(varchar(10), data_recebimento, 23) AS dataRecebimento, valor, obs,
     criado_por AS criadoPor, atualizado_por AS atualizadoPor,
     CONVERT(varchar(19), criado_em, 120) AS criadoEm,
@@ -199,13 +232,14 @@ app.post('/api/records', exigirAuth, wrap(async (req, res) => {
   validarRegistro(d);
   const usuario = req.user.email;
   const ins = await query(`INSERT INTO dbo.EQUIPSTI_registros
-    (unidade, status, setor, usuario, ns, pat, equipamento, obs, protocolo, data_recebimento, valor, criado_por)
+    (unidade, status, setor, usuario, ns, pat, equipamento, equipamento_detalhe, obs, protocolo, data_recebimento, valor, insumo, tipo_aquisicao, criado_por)
     OUTPUT INSERTED.id
-    VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equipamento, @obs, @protocolo, @dataRecebimento, @valor, @criadoPor)`,
+    VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equipamento, @equipamentoDetalhe, @obs, @protocolo, @dataRecebimento, @valor, @insumo, @tipoAquisicao, @criadoPor)`,
     { unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
-      ns: S(d.ns), pat: S(d.pat), equipamento: S(d.equipamento), obs: S(d.obs),
-      protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
+      ns: S(d.ns), pat: S(d.pat), equipamento: S(d.equipamento), equipamentoDetalhe: S(d.equipamento_detalhe),
+      obs: S(d.obs), protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
       valor: d.valor != null ? { type: sql.Decimal(15,2), value: d.valor } : S(null),
+      insumo: S(d.insumo), tipoAquisicao: S(d.tipo_aquisicao),
       criadoPor: S(usuario) });
   const novoId = ins.recordset[0].id;
   await query(`INSERT INTO dbo.EQUIPSTI_registros_log (registro_id, acao, usuario) VALUES (@id, 'CRIADO', @usuario)`,
@@ -215,7 +249,8 @@ app.post('/api/records', exigirAuth, wrap(async (req, res) => {
 
 const CAMPOS_LOG = [
   ['unidade','UNIDADE'], ['status','STATUS'], ['setor','SETOR'], ['usuario','USUARIO'],
-  ['ns','N/S'], ['pat','PAT MSA'], ['equipamento','EQUIPAMENTO'], ['protocolo','PROTOCOLO'],
+  ['ns','N/S'], ['pat','PAT MSA'], ['equipamento','EQUIPAMENTO'],
+  ['equipamento_detalhe','EQUIPAMENTO DETALHE'], ['insumo','INSUMO'], ['tipo_aquisicao','TIPO AQUISIÇÃO'], ['protocolo','PROTOCOLO'],
   ['dataRecebimento','DATA RECEBIMENTO'], ['valor','VALOR'], ['obs','OBS']
 ];
 
@@ -226,6 +261,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
   const usuario = req.user.email;
 
   const anterior = await query(`SELECT unidade, status, setor, usuario, ns, pat, equipamento,
+    equipamento_detalhe AS equipamento_detalhe, insumo, tipo_aquisicao,
     obs, protocolo, CONVERT(varchar(10), data_recebimento, 23) AS dataRecebimento,
     CAST(valor AS NVARCHAR) AS valor
     FROM dbo.EQUIPSTI_registros WHERE id=@id`, { id });
@@ -233,14 +269,15 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
 
   await query(`UPDATE dbo.EQUIPSTI_registros SET
     unidade=@unidade, status=@status, setor=@setor, usuario=@usuario, ns=@ns,
-    pat=@pat, equipamento=@equipamento, obs=@obs,
-    protocolo=@protocolo, data_recebimento=@dataRecebimento, valor=@valor,
+    pat=@pat, equipamento=@equipamento, equipamento_detalhe=@equipamentoDetalhe, obs=@obs,
+    protocolo=@protocolo, data_recebimento=@dataRecebimento, valor=@valor, insumo=@insumo, tipo_aquisicao=@tipoAquisicao,
     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { id, unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
-      ns: S(d.ns), pat: S(d.pat), equipamento: S(d.equipamento), obs: S(d.obs),
-      protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
+      ns: S(d.ns), pat: S(d.pat), equipamento: S(d.equipamento), equipamentoDetalhe: S(d.equipamento_detalhe),
+      obs: S(d.obs), protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
       valor: d.valor != null ? { type: sql.Decimal(15,2), value: d.valor } : S(null),
+      insumo: S(d.insumo), tipoAquisicao: S(d.tipo_aquisicao),
       atualizadoPor: S(usuario) });
 
   for (const [key, label] of CAMPOS_LOG) {

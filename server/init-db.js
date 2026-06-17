@@ -64,6 +64,30 @@ IF COL_LENGTH('dbo.EQUIPSTI_registros', 'criado_por') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_registros', 'atualizado_por') IS NULL
   ALTER TABLE dbo.EQUIPSTI_registros ADD atualizado_por NVARCHAR(255) NULL;
 
+-- Migração: nome técnico do equipamento.
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'equipamento_detalhe') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD equipamento_detalhe NVARCHAR(255) NULL;
+
+-- Migração: detalhe vinculado à opção de equipamento.
+IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'detalhe') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_opcoes ADD detalhe NVARCHAR(255) NULL;
+
+-- Migração: preço padrão do equipamento no catálogo.
+IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'preco') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_opcoes ADD preco DECIMAL(15,2) NULL;
+
+-- Migração: tipo de aquisição do equipamento (COMPRADO | LOCADO).
+IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'tipo_aquisicao') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_opcoes ADD tipo_aquisicao NVARCHAR(20) NULL;
+
+-- Migração: insumo (toner) vinculado ao registro de impressora.
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'insumo') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD insumo NVARCHAR(255) NULL;
+
+-- Migração: tipo de aquisição copiado do equipamento no momento do cadastro.
+IF COL_LENGTH('dbo.EQUIPSTI_registros', 'tipo_aquisicao') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros ADD tipo_aquisicao NVARCHAR(20) NULL;
+
 -- Log de alterações.
 IF OBJECT_ID('dbo.EQUIPSTI_registros_log', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_registros_log (

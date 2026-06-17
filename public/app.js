@@ -24,24 +24,30 @@ async function api(method, path, body) {
 }
 
 // ---------- Constantes de domínio ----------
-const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO'];
+const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
 const FORM_SELECTS = ['unidade', 'status', 'setor', 'equipamento'];
 const SELECT_TO_LIST = { unidade: 'UNIDADE', status: 'STATUS', setor: 'SETOR', equipamento: 'EQUIPAMENTO' };
 const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat']);
 const CHOICES_IDS = [
   'unidade', 'status', 'setor', 'equipamento',
   'edit_unidade', 'edit_status', 'edit_setor', 'edit_equipamento',
+  'insumo', 'edit_insumo',
   'listaAlvo', 'emp_pat', 'emp_unidade'
 ];
 
 // ---------- Estado em memória ----------
-let OPTIONS = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [] };
-let HIDDEN = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [] };
+let OPTIONS = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [], INSUMOS: [] };
+let HIDDEN = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [], INSUMOS: [] };
+let EQUIP_DETALHE = {};
+let EQUIP_PRECO = {};
+let EQUIP_TIPO = {};
+let INSUMOS = [];
 let REGISTROS = [];
 let modalEditar = null;
 let modalMsg = null;
 let modalAsk = null;
 let askResolve = null;
+const fpMap = {};
 let modalHistorico = null;
 let modalRegistrar = null;
 let modalLog = null;
@@ -81,9 +87,12 @@ function showAlert(_containerId, type, message) {
 }
 
 // ---------- Confirmar / perguntar via modal (substitui confirm/prompt) ----------
-function uiAsk({ title, message, input, value, okText, danger, transfer }) {
+let askOnOk = null; // async handler — quando definido, OK não fecha o dialog direto
+
+function uiAsk({ title, message, input, value, input2Label, value2, input3Label, value3, input4Label, value4, okText, danger, transfer, onOk }) {
   return new Promise((resolve) => {
     askResolve = resolve;
+    askOnOk = onOk || null;
     $('askTitle').textContent = title || '';
     $('askText').textContent = message || '';
     const trans = $('askTransfer');
@@ -97,20 +106,75 @@ function uiAsk({ title, message, input, value, okText, danger, transfer }) {
     const inp = $('askInput');
     if (input) { inp.classList.remove('hidden'); inp.value = value || ''; }
     else { inp.classList.add('hidden'); }
+    const wrap2 = $('askInput2Wrap');
+    if (input2Label !== undefined) {
+      $('askInput2Label').textContent = input2Label;
+      $('askInput2').value = value2 || '';
+      wrap2.classList.remove('hidden');
+    } else {
+      wrap2.classList.add('hidden');
+    }
+    const wrap3 = $('askInput3Wrap');
+    if (input3Label !== undefined) {
+      $('askInput3Label').textContent = input3Label;
+      $('askInput3').value = value3 != null ? value3 : '';
+      wrap3.classList.remove('hidden');
+    } else {
+      wrap3.classList.add('hidden');
+    }
+    const wrap4 = $('askInput4Wrap');
+    if (input4Label !== undefined) {
+      $('askInput4Label').textContent = input4Label;
+      $('askInput4').value = value4 || '';
+      wrap4.classList.remove('hidden');
+    } else {
+      wrap4.classList.add('hidden');
+    }
     const ok = $('askOk');
     ok.textContent = okText || 'OK';
     ok.className = 'btn ' + (danger ? 'btn-outline-danger' : 'btn-primary');
-    modalAsk.show();
-    if (input) setTimeout(() => { inp.focus(); inp.select(); }, 250);
+    $('askOverlay').classList.add('show');
+    if (input) setTimeout(() => { inp.focus(); inp.select(); }, 100);
   });
 }
 
-function finishAsk(confirmado) {
+function askClose(result) {
+  const r = askResolve; askResolve = null; askOnOk = null;
+  askClearError();
+  $('askOverlay').classList.remove('show');
+  r(result);
+}
+
+async function finishAsk(confirmado) {
   if (!askResolve) return;
-  const r = askResolve; askResolve = null;
   const inputVisivel = !$('askInput').classList.contains('hidden');
-  r(inputVisivel ? (confirmado ? $('askInput').value : null) : !!confirmado);
-  modalAsk.hide();
+  const input2Visivel = !$('askInput2Wrap').classList.contains('hidden');
+  const input3Visivel = !$('askInput3Wrap').classList.contains('hidden');
+
+  if (!confirmado) { askClose(inputVisivel ? null : false); return; }
+
+  const input4Visivel = !$('askInput4Wrap').classList.contains('hidden');
+  const result = !inputVisivel ? true
+    : input2Visivel
+      ? { valor: $('askInput').value, detalhe: $('askInput2').value,
+          preco: input3Visivel ? ($('askInput3').value !== '' ? $('askInput3').value : null) : undefined,
+          tipo: input4Visivel ? ($('askInput4').value || null) : undefined }
+      : $('askInput').value;
+
+  if (askOnOk) {
+    const btn = $('askOk');
+    btn.disabled = true;
+    try {
+      await askOnOk(result);
+      askClose(result);
+    } catch (err) {
+      askShowError(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
+  askClose(result);
 }
 
 function uiConfirm(message, opts = {}) {
@@ -125,6 +189,16 @@ function uiPrompt(message, opts = {}) {
   return uiAsk({
     title: opts.title || '', message,
     input: true, value: opts.value || '', okText: opts.okText || 'Salvar'
+  });
+}
+
+function uiPrompt2(message, opts = {}) {
+  if (opts.error) askShowError(opts.error);
+  return uiAsk({
+    title: opts.title || '', message,
+    input: true, value: opts.value || '',
+    input2Label: opts.label2 || '', value2: opts.value2 || '',
+    okText: opts.okText || 'Salvar'
   });
 }
 
@@ -151,6 +225,65 @@ function initChoices() {
       placeholder: true,
       placeholderValue: 'Selecione...'
     });
+  });
+}
+
+function initFlatpickr() {
+  if (typeof window.flatpickr === 'undefined') return;
+  const flatpickr = window.flatpickr;
+  const cfg = {
+    locale: 'pt',
+    dateFormat: 'Y-m-d',
+    altInput: true,
+    altFormat: 'd/m/Y',
+    allowInput: true,
+    disableMobile: true,
+    monthSelectorType: 'static',
+    onReady(_d, _s, fp) {
+      fp.altInput.classList.add('form-control');
+
+      // Torna o input do ano somente leitura (como o mês estático)
+      const yearInput = fp.calendarContainer.querySelector('.cur-year');
+      if (yearInput) yearInput.setAttribute('readonly', true);
+
+      // Substitui SVGs das setas de mês por ícones Phosphor
+      const prev = fp.calendarContainer.querySelector('.flatpickr-prev-month');
+      const next = fp.calendarContainer.querySelector('.flatpickr-next-month');
+      if (prev) prev.innerHTML = '<i class="ph ph-caret-left"></i>';
+      if (next) next.innerHTML = '<i class="ph ph-caret-right"></i>';
+
+      // Máscara dd/mm/aaaa
+      fp.altInput.addEventListener('input', (ev) => {
+        const input = ev.target;
+        const digits = input.value.replace(/\D/g, '').slice(0, 8);
+        let masked = digits;
+        if (digits.length > 4) masked = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+        else if (digits.length > 2) masked = digits.slice(0, 2) + '/' + digits.slice(2);
+        input.value = masked;
+        if (digits.length === 8) fp.setDate(masked, false, 'd/m/Y');
+      });
+
+      // Botão "Hoje" no rodapé do calendário
+      const footer = document.createElement('div');
+      footer.className = 'fp-footer';
+      footer.style.cssText = 'padding:6px 8px;border-top:1px solid var(--line);text-align:center;';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Hoje';
+      btn.style.cssText =
+        'width:100%;padding:6px;border:none;border-radius:8px;' +
+        'background:var(--ink);color:#fff;font-family:inherit;font-size:.85rem;' +
+        'font-weight:600;cursor:pointer;letter-spacing:.3px;';
+      btn.addEventListener('mouseenter', () => { btn.style.background = 'var(--ink-2)'; });
+      btn.addEventListener('mouseleave', () => { btn.style.background = 'var(--ink)'; });
+      btn.addEventListener('click', () => { fp.setDate(new Date(), true); fp.close(); });
+      footer.appendChild(btn);
+      fp.calendarContainer.appendChild(footer);
+    },
+  };
+  ['dataRecebimento', 'edit_dataRecebimento', 'emp_data'].forEach((id) => {
+    const el = $(id);
+    if (el && !fpMap[id]) fpMap[id] = flatpickr(el, cfg);
   });
 }
 
@@ -209,22 +342,55 @@ function clearFormSelects() {
 }
 
 // Ao escolher "+ Adicionar nova opção...", abre o modal de prompt e cadastra.
+function askShowError(msg) {
+  const el = $('askAlert');
+  el.innerHTML = '<div class="alert alert-danger py-2 mb-0 mt-2">' + escapeHtml(msg) + '</div>';
+  el.classList.remove('hidden');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => askClearError(), 5000);
+}
+function askClearError() {
+  const el = $('askAlert');
+  el.innerHTML = '';
+  el.classList.add('hidden');
+}
+
 async function aoEscolherNovo(selectId) {
   const lista = SELECT_TO_LIST[selectId];
-  const novo = await uiPrompt('Nova opção para ' + lista + ':', { title: 'Nova opção' });
-  if (!novo || !trim(novo)) {
-    fillSelect(selectId, activeValues(lista), '', true); // volta ao placeholder
-    return;
-  }
-  const valor = trim(novo).toUpperCase();
-  try {
-    await api('POST', '/api/options', { lista, valor });
-    await loadOptions();                                   // recarrega todos os selects
-    fillSelect(selectId, activeValues(lista), valor, true); // já seleciona a nova opção
-    showAlert('alertRegistrar', 'success', 'Opção "' + valor + '" adicionada a ' + lista + '.');
-  } catch (err) {
-    fillSelect(selectId, activeValues(lista), '', true);
-    showAlert('alertRegistrar', 'danger', err.message);
+
+  if (lista === 'EQUIPAMENTO') {
+    const detId = selectId === 'equipamento' ? 'equipamento_detalhe' : 'edit_equipamento_detalhe';
+    const res = await uiAsk({
+      title: 'Nova opção', message: 'Nome do equipamento:',
+      input: true, input2Label: 'Equipamento detalhe (opcional)',
+      input3Label: 'Valor padrão (R$, opcional)',
+      input4Label: 'Comprado/Locado',
+      okText: 'Salvar',
+      onOk: async ({ valor: v, detalhe: d, preco: p, tipo: t }) => {
+        const valor = trim(v).toUpperCase();
+        if (!valor) throw new Error('O nome não pode ser vazio.');
+        const detalhe = trim(d) || null;
+        const preco = p !== null && p !== '' && p !== undefined ? Number(String(p).replace(',', '.')) : null;
+        await api('POST', '/api/options', { lista, valor, detalhe, preco: !isNaN(preco) ? preco : null, tipo_aquisicao: t || null });
+        await loadOptions();
+        fillSelect(selectId, activeValues(lista), valor, true);
+        atualizarEquipDetalhe(valor, detId);
+      }
+    });
+    if (res === null) fillSelect(selectId, activeValues(lista), '', true);
+  } else {
+    const novo = await uiPrompt('Nova opção para ' + lista + ':', { title: 'Nova opção' });
+    if (!novo || !trim(novo)) { fillSelect(selectId, activeValues(lista), '', true); return; }
+    const valor = trim(novo).toUpperCase();
+    try {
+      await api('POST', '/api/options', { lista, valor });
+      await loadOptions();
+      fillSelect(selectId, activeValues(lista), valor, true);
+      showAlert('alertRegistrar', 'success', 'Opção "' + valor + '" adicionada a ' + lista + '.');
+    } catch (err) {
+      fillSelect(selectId, activeValues(lista), '', true);
+      showAlert('alertRegistrar', 'danger', err.message);
+    }
   }
 }
 
@@ -238,6 +404,15 @@ async function loadOptions() {
     OPTIONS[l] = arr.map((o) => o.valor);
     HIDDEN[l] = arr.filter((o) => o.oculto).map((o) => o.valor);
   });
+  EQUIP_DETALHE = {};
+  EQUIP_PRECO = {};
+  EQUIP_TIPO = {};
+  (data['EQUIPAMENTO'] || []).forEach((o) => {
+    if (o.detalhe) EQUIP_DETALHE[o.valor] = o.detalhe;
+    if (o.preco != null) EQUIP_PRECO[o.valor] = o.preco;
+    if (o.tipo_aquisicao) EQUIP_TIPO[o.valor] = o.tipo_aquisicao;
+  });
+  INSUMOS = (data['INSUMOS'] || []).filter((o) => !o.oculto).map((o) => o.valor);
   renderAllSelects();
   renderListaOpcoes();
 }
@@ -252,10 +427,21 @@ function renderListaOpcoes() {
     return;
   }
   const hidden = HIDDEN[lista] || [];
+  const isEquip = lista === 'EQUIPAMENTO';
 
   const linhas = values.map((v) => {
     const ativo = hidden.indexOf(v) === -1;
     const vEsc = escapeHtml(v);
+    const detalhe = isEquip ? (EQUIP_DETALHE[v] || '') : '';
+    const preco = isEquip && EQUIP_PRECO[v] != null
+      ? 'R$ ' + Number(EQUIP_PRECO[v]).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+      : '';
+    const tipo = isEquip ? (EQUIP_TIPO[v] || '') : '';
+    let nomeCell = vEsc;
+    if (isEquip) {
+      const sub = [detalhe ? escapeHtml(detalhe) : '', preco ? escapeHtml(preco) : '', tipo ? escapeHtml(tipo) : ''].filter(Boolean).join(' · ');
+      nomeCell = vEsc + (sub ? '<br><small class="text-muted">' + sub + '</small>' : '');
+    }
     const status = ativo
       ? '<span class="badge-status badge-ativo">ATIVO</span>'
       : '<span class="badge-status badge-inativo">INATIVO</span>';
@@ -264,9 +450,12 @@ function renderListaOpcoes() {
         vEsc + '" data-hide="1"><i class="ph ph-eye-slash"></i> Ocultar</button>'
       : '<button type="button" class="acao-link acao-exibir" data-toggle-opt data-val="' +
         vEsc + '" data-hide="0"><i class="ph ph-eye"></i> Exibir</button>';
+    const precoAttr = isEquip && EQUIP_PRECO[v] != null ? ' data-preco="' + EQUIP_PRECO[v] + '"' : '';
+    const tipoAttr = isEquip && EQUIP_TIPO[v] ? ' data-tipo="' + escapeHtml(EQUIP_TIPO[v]) + '"' : '';
     const editar = '<button type="button" class="acao-link acao-editar ms-3" ' +
-      'data-edit-opt data-val="' + vEsc + '"><i class="ph ph-pencil-simple"></i> Editar</button>';
-    return '<tr><td class="opt-nome">' + vEsc + '</td>' +
+      'data-edit-opt data-val="' + vEsc + '" data-detalhe="' + escapeHtml(detalhe) + '"' + precoAttr + tipoAttr + '>' +
+      '<i class="ph ph-pencil-simple"></i> Editar</button>';
+    return '<tr><td class="opt-nome">' + nomeCell + '</td>' +
       '<td>' + status + '</td>' +
       '<td class="text-end">' + toggle + editar + '</td></tr>';
   }).join('');
@@ -285,10 +474,14 @@ function dadosFormulario(prefix) {
   return {
     unidade: trim(g('unidade')), status: trim(g('status')), setor: trim(g('setor')),
     usuario: trim(g('usuario')), ns: trim(g('ns')),
-    pat: trim(g('pat')), equipamento: trim(g('equipamento')), obs: trim(g('obs')),
+    pat: trim(g('pat')), equipamento: trim(g('equipamento')),
+    equipamento_detalhe: trim(g('equipamento_detalhe')) || null,
+    obs: trim(g('obs')),
     protocolo: trim(g('protocolo')),
     dataRecebimento: trim(g('dataRecebimento')) || null,
-    valor: trim(g('valor')) || null
+    valor: trim(g('valor')) || null,
+    insumo: trim(g('insumo')) || null,
+    tipo_aquisicao: trim(g('tipo_aquisicao')) || null
   };
 }
 
@@ -349,11 +542,22 @@ function abrirEdicao(id) {
   fillSelect('edit_status', valsParaEdicao('STATUS', r.status), r.status);
   fillSelect('edit_setor', valsParaEdicao('SETOR', r.setor), r.setor);
   fillSelect('edit_equipamento', valsParaEdicao('EQUIPAMENTO', r.equipamento), r.equipamento);
+  const edEl = $('edit_equipamento_detalhe');
+  edEl.value = r.equipamentoDetalhe || '';
+  edEl.readOnly = true;
+  $('edit_tipo_aquisicao').value = r.tipoAquisicao || '';
+  const isImp = ehImpressora(r.equipamento);
+  $('edit_insumo_grupo').classList.toggle('hidden', !isImp);
+  fillSelect('edit_insumo', isImp ? INSUMOS : [], r.insumo || '');
   $('edit_usuario').value = r.usuario || '';
   $('edit_ns').value = r.ns || '';
   $('edit_pat').value = r.pat || '';
   $('edit_protocolo').value = r.protocolo || '';
-  $('edit_dataRecebimento').value = r.dataRecebimento || '';
+  if (fpMap['edit_dataRecebimento']) {
+    fpMap['edit_dataRecebimento'].setDate(r.dataRecebimento || '', false);
+  } else {
+    $('edit_dataRecebimento').value = r.dataRecebimento || '';
+  }
   $('edit_valor').value = r.valor != null ? r.valor : '';
   $('edit_obs').value = r.obs || '';
   $('edit_criadoPor').value = r.criadoPor || '—';
@@ -371,15 +575,17 @@ const COLUNAS_XLSX = [
   { header: 'SETOR',                      field: 'setor' },
   { header: 'USUARIO',                    field: 'usuario' },
   { header: 'N/S',                        field: 'ns' },
-  { header: 'PAT MSA',                    field: 'pat' },
+  { header: 'PAT',                         field: 'pat' },
   { header: 'EQUIPAMENTO',                field: 'equipamento' },
+  { header: 'EQUIPAMENTO DETALHE',        field: 'equipamentoDetalhe' },
+  { header: 'COMPRADO/LOCADO',            field: 'tipoAquisicao' },
   { header: 'PROTOCOLO',                  field: 'protocolo' },
   { header: 'DATA RECEBIMENTO',           field: 'dataRecebimento' },
-  { header: 'VALOR',                      field: 'valor' },
   { header: 'OBS',                        field: 'obs' },
 ];
 
 const COLUNAS_EXPORT_EXTRA = [
+  { header: 'VALOR',            field: 'valor' },
   { header: 'CRIADO EM',        field: 'criadoEm' },
   { header: 'ATUALIZADO EM',    field: 'atualizadoEm' },
 ];
@@ -456,7 +662,7 @@ async function importarXlsx() {
     if (i !== -1) colIdx[c.field] = i;
   });
 
-  const obrigatorios = ['unidade', 'status', 'setor', 'ns', 'pat', 'equipamento', 'protocolo', 'dataRecebimento', 'valor'];
+  const obrigatorios = ['unidade', 'status', 'setor', 'ns', 'pat', 'equipamento', 'tipoAquisicao', 'protocolo', 'dataRecebimento'];
   const faltando = obrigatorios.filter((f) => colIdx[f] === undefined);
   if (faltando.length) {
     $('alertImport').innerHTML =
@@ -520,13 +726,6 @@ async function importarXlsx() {
 
     const errosLinha = [];
 
-    const valorRaw = cel('valor');
-    let valorNum = null;
-    if (valorRaw !== '') {
-      valorNum = Number(String(valorRaw).replace(',', '.'));
-      if (isNaN(valorNum)) errosLinha.push('VALOR inválido ("' + valorRaw + '") — informe apenas números, ex: 1500.00');
-    }
-
     let dataRaw = cel('dataRecebimento');
     if (dataRaw) {
       if (/^\d{2}\/\d{2}\/\d{4}$/.test(dataRaw)) {
@@ -542,12 +741,16 @@ async function importarXlsx() {
       continue;
     }
 
+    const equipNome = cel('equipamento');
     const registro = {
       unidade: cel('unidade'), status: cel('status'), setor: cel('setor'),
       usuario: cel('usuario'), ns: cel('ns'), pat: cel('pat'),
-      equipamento: cel('equipamento'), protocolo: cel('protocolo'),
+      equipamento: equipNome,
+      equipamento_detalhe: colIdx['equipamentoDetalhe'] !== undefined ? cel('equipamentoDetalhe') : null,
+      tipo_aquisicao: cel('tipoAquisicao') || null,
+      protocolo: cel('protocolo'),
       dataRecebimento: dataRaw || null,
-      valor: valorNum,
+      valor: EQUIP_PRECO[equipNome] ?? null,
       obs: cel('obs'),
     };
 
@@ -649,10 +852,14 @@ async function loadEmprestimoForm() {
   $('emp_ns_grupo').style.display = 'none';
   $('emp_ns').required = false;
   fillSelect('emp_ns', []);
-  // Data padrão = hoje (formato yyyy-mm-dd).
+  // Data padrão = hoje.
   const hoje = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  $('emp_data').value = hoje.getFullYear() + '-' + pad(hoje.getMonth() + 1) + '-' + pad(hoje.getDate());
+  if (fpMap['emp_data']) {
+    fpMap['emp_data'].setDate(hoje, false);
+  } else {
+    const pad = (n) => String(n).padStart(2, '0');
+    $('emp_data').value = hoje.getFullYear() + '-' + pad(hoje.getMonth() + 1) + '-' + pad(hoje.getDate());
+  }
 }
 
 async function atualizarNsEmprestimo(pat) {
@@ -872,8 +1079,41 @@ function configurarAuth() {
   $('btnSair').addEventListener('click', sairDoApp);
 }
 
+function ehImpressora(equipVal) {
+  const v = String(equipVal || '').toUpperCase();
+  return v.includes('IMPRESSORA PRETO/BRANCO') || v.includes('IMPRESSORA COLORIDA');
+}
+
+function atualizarEquipDetalhe(equipVal, detId) {
+  const el = $(detId);
+  if (!el) return;
+  el.value = EQUIP_DETALHE[equipVal] || '';
+  el.readOnly = true;
+
+  const precoId = detId === 'equipamento_detalhe' ? 'valor' : 'edit_valor';
+  const precoEl = $(precoId);
+  if (precoEl) {
+    precoEl.value = EQUIP_PRECO[equipVal] != null ? EQUIP_PRECO[equipVal] : '';
+    precoEl.readOnly = true;
+  }
+
+  const tipoId = detId === 'equipamento_detalhe' ? 'tipo_aquisicao' : 'edit_tipo_aquisicao';
+  const tipoEl = $(tipoId);
+  if (tipoEl) { tipoEl.value = EQUIP_TIPO[equipVal] || ''; tipoEl.readOnly = true; }
+
+  const grupoId = detId === 'equipamento_detalhe' ? 'insumo_grupo' : 'edit_insumo_grupo';
+  const insumoId = detId === 'equipamento_detalhe' ? 'insumo' : 'edit_insumo';
+  const isImp = ehImpressora(equipVal);
+  $(grupoId).classList.toggle('hidden', !isImp);
+  fillSelect(insumoId, isImp ? INSUMOS : [], '');
+}
+
 function configurarFormInventario() {
   const form = $('formInventario');
+
+  $('equipamento').addEventListener('change', (ev) => {
+    atualizarEquipDetalhe(ev.target.value, 'equipamento_detalhe');
+  });
 
   // "+ Adicionar nova opção..." em cada select abre o modal de cadastro.
   FORM_SELECTS.forEach((id) => {
@@ -906,6 +1146,7 @@ function configurarFormInventario() {
     try {
       await api('POST', '/api/records', dadosFormulario(''));
       form.reset();
+      if (fpMap['dataRecebimento']) fpMap['dataRecebimento'].clear();
       clearFormSelects();
       form.classList.remove('was-validated');
       modalRegistrar.hide();
@@ -919,8 +1160,39 @@ function configurarFormInventario() {
 }
 
 function configurarFormOpcao() {
-  const form = $('formOpcao');
   $('listaAlvo').addEventListener('change', renderListaOpcoes);
+
+  $('btnAdicionar').addEventListener('click', async () => {
+    const lista = $('listaAlvo').value;
+    if (lista === 'EQUIPAMENTO') {
+      await uiAsk({
+        title: 'Nova opção', message: 'Nome do equipamento:',
+        input: true, input2Label: 'Equipamento detalhe (opcional)',
+        input3Label: 'Valor padrão (R$, opcional)',
+        input4Label: 'Comprado/Locado',
+        okText: 'Adicionar',
+        onOk: async ({ valor: v, detalhe: d, preco: p, tipo: t }) => {
+          const valor = trim(v).toUpperCase();
+          if (!valor) throw new Error('O nome não pode ser vazio.');
+          const preco = p !== null && p !== '' && p !== undefined ? Number(String(p).replace(',', '.')) : null;
+          await api('POST', '/api/options', { lista, valor, detalhe: trim(d) || null, preco: !isNaN(preco) ? preco : null, tipo_aquisicao: t || null });
+          await loadOptions();
+          showAlert('alertGerenciar', 'success', 'Opção "' + valor + '" adicionada.');
+        }
+      });
+    } else {
+      const novo = await uiPrompt('Nova opção para ' + lista + ':', { title: 'Nova opção', okText: 'Adicionar' });
+      if (!novo || !trim(novo)) return;
+      const valor = trim(novo).toUpperCase();
+      try {
+        await api('POST', '/api/options', { lista, valor });
+        await loadOptions();
+        showAlert('alertGerenciar', 'success', 'Opção "' + valor + '" adicionada.');
+      } catch (err) {
+        showAlert('alertGerenciar', 'danger', 'Erro: ' + err.message);
+      }
+    }
+  });
 
   $('listaOpcoes').addEventListener('click', async (ev) => {
     const lista = $('listaAlvo').value;
@@ -943,17 +1215,44 @@ function configurarFormOpcao() {
     const btnEdit = ev.target.closest('[data-edit-opt]');
     if (btnEdit) {
       const val = btnEdit.getAttribute('data-val');
-      const novo = await uiPrompt('Editar opção da lista ' + lista + ':',
-        { title: 'Editar opção', value: val });
-      if (novo === null) return;
-      const limpo = trim(novo).toUpperCase();
+      const detalheAtual = btnEdit.getAttribute('data-detalhe') || '';
+      const precoAtual = btnEdit.getAttribute('data-preco');
+
+      let limpo, novoDetalhe, novoPreco, novoTipo;
+      if (lista === 'EQUIPAMENTO') {
+        const tipoAtual = btnEdit.getAttribute('data-tipo') || '';
+        const res = await uiAsk({
+          title: 'Editar opção', message: 'Nome do equipamento:',
+          input: true, value: val,
+          input2Label: 'Equipamento detalhe (opcional)', value2: detalheAtual,
+          input3Label: 'Valor padrão (R$, opcional)', value3: precoAtual != null ? precoAtual : '',
+          input4Label: 'Comprado/Locado', value4: tipoAtual,
+          okText: 'Salvar'
+        });
+        if (res === null) return;
+        limpo = trim(res.valor).toUpperCase();
+        novoDetalhe = trim(res.detalhe) || null;
+        const precoRaw = res.preco !== null && res.preco !== '' && res.preco !== undefined
+          ? Number(String(res.preco).replace(',', '.')) : null;
+        novoPreco = precoRaw != null && !isNaN(precoRaw) ? precoRaw : null;
+        novoTipo = res.tipo || null;
+      } else {
+        const novo = await uiPrompt('Editar opção:', { title: 'Editar opção', value: val });
+        if (novo === null) return;
+        limpo = trim(novo).toUpperCase();
+      }
+
       if (!limpo) { showAlert('alertGerenciar', 'warning', 'O valor não pode ser vazio.'); return; }
-      if (limpo === val) return;
       btnEdit.disabled = true;
       try {
-        await api('PUT', '/api/options/rename', { lista, valor: val, novoValor: limpo });
+        if (limpo !== val) {
+          await api('PUT', '/api/options/rename', { lista, valor: val, novoValor: limpo });
+        }
+        if (lista === 'EQUIPAMENTO') {
+          await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: novoPreco, tipo_aquisicao: novoTipo });
+        }
         await loadOptions();
-        showAlert('alertGerenciar', 'success', 'Opção atualizada para "' + limpo + '".');
+        showAlert('alertGerenciar', 'success', 'Opção atualizada.');
       } catch (err) {
         showAlert('alertGerenciar', 'danger', 'Erro: ' + err.message);
         btnEdit.disabled = false;
@@ -961,24 +1260,6 @@ function configurarFormOpcao() {
     }
   });
 
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const lista = $('listaAlvo').value;
-    const valor = $('novoValor').value;
-    if (!trim(valor)) { showAlert('alertGerenciar', 'warning', 'Digite um valor.'); return; }
-    const btn = $('btnAdicionar');
-    btn.disabled = true; btn.textContent = 'Adicionando...';
-    try {
-      await api('POST', '/api/options', { lista, valor });
-      await loadOptions();
-      $('novoValor').value = '';
-      showAlert('alertGerenciar', 'success', 'Opção adicionada a ' + lista + '.');
-    } catch (err) {
-      showAlert('alertGerenciar', 'danger', 'Erro: ' + err.message);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Adicionar';
-    }
-  });
 }
 
 function configurarFormUsuario() {
@@ -1042,6 +1323,11 @@ function configurarFormUsuario() {
 
 function configurarFormEditar() {
   const form = $('formEditar');
+
+  $('edit_equipamento').addEventListener('change', (ev) => {
+    atualizarEquipDetalhe(ev.target.value, 'edit_equipamento_detalhe');
+  });
+
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
@@ -1381,7 +1667,7 @@ async function carregarChamados() {
 document.addEventListener('DOMContentLoaded', async () => {
   modalEditar = new bootstrap.Modal($('modalEditar'));
   modalMsg = new bootstrap.Modal($('modalMsg'));
-  modalAsk = new bootstrap.Modal($('modalAsk'));
+  modalAsk = null; // substituído por dialog custom (#askOverlay)
   modalHistorico = new bootstrap.Modal($('modalHistorico'));
   modalLog = new bootstrap.Modal($('modalLog'));
   modalRegistrar = new bootstrap.Modal($('modalRegistrar'));
@@ -1393,10 +1679,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnVoltarLog').addEventListener('click', () => { modalLog.hide(); modalEditar.show(); });
   $('askOk').addEventListener('click', () => finishAsk(true));
   $('askCancel').addEventListener('click', () => finishAsk(false));
-  $('modalAsk').addEventListener('hidden.bs.modal', () => finishAsk(false));
+  $('askOverlay').addEventListener('focusin', (e) => e.stopPropagation());
+  $('askOverlay').addEventListener('mousedown', (e) => e.stopPropagation());
+  ['modalRegistrar', 'modalEditar'].forEach((id) => {
+    $(id).addEventListener('hide.bs.modal', (ev) => {
+      if ($('askOverlay').classList.contains('show')) ev.preventDefault();
+    });
+  });
   $('modalRegistrar').addEventListener('hidden.bs.modal', () => {
     $('alertRegistrar').innerHTML = '';
     $('formInventario').classList.remove('was-validated');
+    $('insumo_grupo').classList.add('hidden');
+    fillSelect('insumo', [], '');
   });
   $('modalPlanilha').addEventListener('hidden.bs.modal', () => {
     $('alertImport').innerHTML = '';
@@ -1405,6 +1699,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   $('askInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); finishAsk(true); } });
   initChoices();
+  initFlatpickr();
   configurarAuth();
   configurarFormInventario();
   configurarFormOpcao();
