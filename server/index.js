@@ -212,7 +212,9 @@ function lerRegistro(body) {
     valor: isNaN(valor) ? null : valor,
     insumo: trim(body.insumo) || null,
     tipo_aquisicao: trim(body.tipo_aquisicao) || null,
-    imagem_base64: body.imagem_base64 || null
+    imagem_base64: body.imagem_base64 || null,
+    imagem2_base64: body.imagem2_base64 || null,
+    imagem3_base64: body.imagem3_base64 || null
   };
 }
 function validarRegistro(d) {
@@ -241,10 +243,11 @@ app.get('/api/records', exigirAuth, wrap(async (req, res) => {
 }));
 
 app.get('/api/records/:id/imagem', exigirAuth, wrap(async (req, res) => {
-  const r = await query(`SELECT imagem_base64 FROM dbo.EQUIPSTI_registros WHERE id = @id`,
+  const r = await query(`SELECT imagem_base64, imagem2_base64, imagem3_base64 FROM dbo.EQUIPSTI_registros WHERE id = @id`,
     { id: Number(req.params.id) });
   if (!r.recordset.length) return res.status(404).json({ error: 'Não encontrado.' });
-  res.json({ imagem_base64: r.recordset[0].imagem_base64 || null });
+  const row = r.recordset[0];
+  res.json({ imagem_base64: row.imagem_base64 || null, imagem2_base64: row.imagem2_base64 || null, imagem3_base64: row.imagem3_base64 || null });
 }));
 
 app.get('/api/records/:id/log', exigirAuth, wrap(async (req, res) => {
@@ -261,15 +264,15 @@ app.post('/api/records', exigirAuth, wrap(async (req, res) => {
   validarRegistro(d);
   const usuario = req.user.email;
   const ins = await query(`INSERT INTO dbo.EQUIPSTI_registros
-    (unidade, status, setor, usuario, ns, pat, equipamento, equipamento_detalhe, obs, protocolo, data_recebimento, valor, insumo, tipo_aquisicao, imagem_base64, criado_por)
+    (unidade, status, setor, usuario, ns, pat, equipamento, equipamento_detalhe, obs, protocolo, data_recebimento, valor, insumo, tipo_aquisicao, imagem_base64, imagem2_base64, imagem3_base64, criado_por)
     OUTPUT INSERTED.id
-    VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equipamento, @equipamentoDetalhe, @obs, @protocolo, @dataRecebimento, @valor, @insumo, @tipoAquisicao, @imagemBase64, @criadoPor)`,
+    VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equipamento, @equipamentoDetalhe, @obs, @protocolo, @dataRecebimento, @valor, @insumo, @tipoAquisicao, @imagemBase64, @imagem2Base64, @imagem3Base64, @criadoPor)`,
     { unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
       ns: S(d.ns), pat: S(d.pat), equipamento: S(d.equipamento), equipamentoDetalhe: S(d.equipamento_detalhe),
       obs: S(d.obs), protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
       valor: d.valor != null ? { type: sql.Decimal(15,2), value: d.valor } : S(null),
       insumo: S(d.insumo), tipoAquisicao: S(d.tipo_aquisicao),
-      imagemBase64: S(d.imagem_base64),
+      imagemBase64: S(d.imagem_base64), imagem2Base64: S(d.imagem2_base64), imagem3Base64: S(d.imagem3_base64),
       criadoPor: S(usuario) });
   const novoId = ins.recordset[0].id;
   await query(`INSERT INTO dbo.EQUIPSTI_registros_log (registro_id, acao, usuario) VALUES (@id, 'CRIADO', @usuario)`,
@@ -300,7 +303,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
   const anterior = await query(`SELECT unidade, status, setor, usuario, ns, pat, equipamento,
     equipamento_detalhe AS equipamento_detalhe, insumo, tipo_aquisicao,
     obs, protocolo, CONVERT(varchar(10), data_recebimento, 23) AS dataRecebimento,
-    CAST(valor AS NVARCHAR) AS valor, imagem_base64
+    CAST(valor AS NVARCHAR) AS valor, imagem_base64, imagem2_base64, imagem3_base64
     FROM dbo.EQUIPSTI_registros WHERE id=@id`, { id });
   const old = anterior.recordset[0] || {};
 
@@ -308,7 +311,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
     unidade=@unidade, status=@status, setor=@setor, usuario=@usuario, ns=@ns,
     pat=@pat, equipamento=@equipamento, equipamento_detalhe=@equipamentoDetalhe, obs=@obs,
     protocolo=@protocolo, data_recebimento=@dataRecebimento, valor=@valor, insumo=@insumo, tipo_aquisicao=@tipoAquisicao,
-    imagem_base64=@imagemBase64,
+    imagem_base64=@imagemBase64, imagem2_base64=@imagem2Base64, imagem3_base64=@imagem3Base64,
     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { id, unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
@@ -316,7 +319,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
       obs: S(d.obs), protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
       valor: d.valor != null ? { type: sql.Decimal(15,2), value: d.valor } : S(null),
       insumo: S(d.insumo), tipoAquisicao: S(d.tipo_aquisicao),
-      imagemBase64: S(d.imagem_base64),
+      imagemBase64: S(d.imagem_base64), imagem2Base64: S(d.imagem2_base64), imagem3Base64: S(d.imagem3_base64),
       atualizadoPor: S(usuario) });
 
   for (const [key, label] of CAMPOS_LOG) {
@@ -333,15 +336,17 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
     }
   }
 
-  const fotoAntes = old.imagem_base64 ? 'SIM' : 'NÃO';
-  const fotoDepois = d.imagem_base64 ? 'SIM' : 'NÃO';
-  const fotoMudou = (old.imagem_base64 || '') !== (d.imagem_base64 || '');
-  if (fotoMudou) {
-    const label = fotoAntes === fotoDepois ? 'FOTO (substituída)' : 'FOTO';
-    await query(`INSERT INTO dbo.EQUIPSTI_registros_log
-      (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
-      VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
-      { id, campo: S(label), antes: S(fotoAntes), depois: S(fotoDepois), justificativa: S(justificativa), usuario: S(usuario) });
+  const fotoCols = [['imagem_base64','FOTO 1'],['imagem2_base64','FOTO 2'],['imagem3_base64','FOTO 3']];
+  for (const [col, label] of fotoCols) {
+    const antes = old[col] ? 'SIM' : 'NÃO';
+    const depois = d[col] ? 'SIM' : 'NÃO';
+    if ((old[col] || '') !== (d[col] || '')) {
+      const nomeLog = antes === depois ? label + ' (substituída)' : label;
+      await query(`INSERT INTO dbo.EQUIPSTI_registros_log
+        (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
+        VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
+        { id, campo: S(nomeLog), antes: S(antes), depois: S(depois), justificativa: S(justificativa), usuario: S(usuario) });
+    }
   }
 
   res.json({ ok: true });

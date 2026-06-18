@@ -562,7 +562,9 @@ function dadosFormulario(prefix) {
     valor: trim(g('valor')) || null,
     insumo: trim(g('insumo')) || null,
     tipo_aquisicao: trim(g('tipo_aquisicao')) || null,
-    imagem_base64: g('imagem_base64') || null
+    imagem_base64:  g('foto_1_base64') || null,
+    imagem2_base64: g('foto_2_base64') || null,
+    imagem3_base64: g('foto_3_base64') || null
   };
 }
 
@@ -637,14 +639,23 @@ function abrirEdicao(id) {
   }
   $('edit_valor').value = r.valor != null ? r.valor : '';
   $('edit_obs').value = r.obs || '';
-  resetFoto('edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', 'edit_fotoThumb');
+  [1, 2, 3].forEach((n) => resetSlotFoto('edit_', n));
+  $('edit_foto_1_slot').classList.add('d-none');
+  $('edit_foto_2_slot').classList.add('d-none');
+  $('edit_foto_3_slot').classList.add('d-none');
+  $('edit_btnAddFoto').classList.remove('d-none');
   api('GET', '/api/records/' + r.id + '/imagem').then((data) => {
-    if (data.imagem_base64) {
-      $('edit_imagem_base64').value = data.imagem_base64;
-      $('edit_fotoThumb').src = data.imagem_base64;
-      $('edit_fotoPreview').classList.remove('d-none');
-      $('edit_btnAbrirCamera').classList.add('d-none');
-    }
+    ['imagem_base64', 'imagem2_base64', 'imagem3_base64'].forEach((campo, i) => {
+      const n = i + 1;
+      if (data[campo]) {
+        $(`edit_foto_${n}_base64`).value = data[campo];
+        $(`edit_foto_${n}_thumb`).src = data[campo];
+        $(`edit_foto_${n}_preview`).classList.remove('d-none');
+        $(`edit_btnAbrirCamera_${n}`).classList.add('d-none');
+        $(`edit_foto_${n}_slot`).classList.remove('d-none');
+      }
+    });
+    atualizarBtnAddFoto('edit_');
   }).catch(() => {});
   $('edit_criadoPor').value = r.criadoPor || '—';
   $('edit_atualizadoPor').value = r.atualizadoPor || '—';
@@ -1250,77 +1261,107 @@ function atualizarEquipDetalhe(equipVal, detId) {
   fillSelect(insumoId, isImp ? INSUMOS : [], '');
 }
 
-// ── Câmera ────────────────────────────────────────────────────────────────
-let _stream = null;
-let _editStream = null;
+// ── Câmera Overlay ────────────────────────────────────────────────────────
+let _camStream = null;
+let _camCtx = null; // { prefix, n, isNew }
 
-function capturarFoto(videoId, canvasId, thumbId, previewId, cameraId, abrirId, inputId, streamRef, setStream) {
-  const video = $(videoId);
-  const canvas = $(canvasId);
-  const MAX = 800;
-  let w = video.videoWidth, h = video.videoHeight;
-  if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-  canvas.width = w; canvas.height = h;
-  canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-  const b64 = canvas.toDataURL('image/jpeg', 0.7);
-  $(inputId).value = b64;
-  $(thumbId).src = b64;
-  $(previewId).classList.remove('d-none');
-  $(cameraId).classList.add('d-none');
-  streamRef.getTracks().forEach((t) => t.stop());
-  setStream(null);
+function mostrarCameraOverlay(show) {
+  $('cameraOverlay').classList.toggle('d-none', !show);
+  document.body.style.overflow = show ? 'hidden' : '';
 }
 
-function pararStream(streamRef, setStream) {
-  if (streamRef) { streamRef.getTracks().forEach((t) => t.stop()); setStream(null); }
+function resetSlotFoto(prefix, n) {
+  $(prefix + 'foto_' + n + '_base64').value = '';
+  $(prefix + 'foto_' + n + '_thumb').src = '';
+  $(prefix + 'foto_' + n + '_preview').classList.add('d-none');
 }
 
-function resetFoto(previewId, cameraId, abrirId, inputId, thumbId) {
-  $(inputId).value = '';
-  $(thumbId).src = '';
-  $(previewId).classList.add('d-none');
-  $(cameraId).classList.add('d-none');
-  $(abrirId).classList.remove('d-none');
+function atualizarBtnAddFoto(p) {
+  const slot3Visivel = !$(p + 'foto_3_slot').classList.contains('d-none');
+  $(p + 'btnAddFoto').classList.toggle('d-none', slot3Visivel);
 }
 
-async function abrirCamera(videoId, cameraId, abrirId, facingMode) {
+function fecharCameraOverlay(captured) {
+  if (_camStream) { _camStream.getTracks().forEach((t) => t.stop()); _camStream = null; }
+  if (!captured && _camCtx && _camCtx.isNew) {
+    $(_camCtx.prefix + 'foto_' + _camCtx.n + '_slot').classList.add('d-none');
+    atualizarBtnAddFoto(_camCtx.prefix);
+  }
+  _camCtx = null;
+  mostrarCameraOverlay(false);
+}
+
+async function abrirCameraOverlay(prefix, n, isNew) {
+  _camCtx = { prefix, n, isNew };
+  $('cameraOverlayTitulo').textContent = 'Foto ' + n;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
-    $(videoId).srcObject = stream;
-    $(cameraId).classList.remove('d-none');
-    $(abrirId).classList.add('d-none');
-    return stream;
+    _camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    $('cameraOverlayVideo').srcObject = _camStream;
+    mostrarCameraOverlay(true);
   } catch {
     alert('Não foi possível acessar a câmera. Verifique as permissões do navegador.');
-    return null;
+    if (isNew) {
+      $(prefix + 'foto_' + n + '_slot').classList.add('d-none');
+      atualizarBtnAddFoto(prefix);
+    }
+    _camCtx = null;
   }
 }
 
+function inicializarCameraOverlay() {
+  $('btnFecharCameraOverlay').addEventListener('click', () => fecharCameraOverlay(false));
+
+  $('btnCapturarOverlayFoto').addEventListener('click', () => {
+    if (!_camStream || !_camCtx) return;
+    const { prefix, n } = _camCtx;
+    const video = $('cameraOverlayVideo');
+    const canvas = $('cameraOverlayCanvas');
+    const MAX = 800;
+    let w = video.videoWidth, h = video.videoHeight;
+    if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+    const b64 = canvas.toDataURL('image/jpeg', 0.7);
+    $(prefix + 'foto_' + n + '_base64').value = b64;
+    $(prefix + 'foto_' + n + '_base64').dispatchEvent(new Event('change', { bubbles: true }));
+    $(prefix + 'foto_' + n + '_thumb').src = b64;
+    $(prefix + 'foto_' + n + '_preview').classList.remove('d-none');
+    fecharCameraOverlay(true);
+    atualizarBtnAddFoto(prefix);
+  });
+}
+
 function configurarCameraNovoRegistro() {
-  $('btnAbrirCamera').addEventListener('click', async () => {
-    _stream = await abrirCamera('fotoVideo', 'fotoCamera', 'btnAbrirCamera', 'environment');
+  [1, 2, 3].forEach((n) => {
+    $('btnRefazerFoto_' + n).addEventListener('click', async () => {
+      resetSlotFoto('', n);
+      await abrirCameraOverlay('', n, false);
+    });
   });
-  $('btnCapturarFoto').addEventListener('click', () => {
-    if (!_stream) return;
-    capturarFoto('fotoVideo', 'fotoCanvas', 'fotoThumb', 'fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', _stream, (v) => { _stream = v; });
-  });
-  $('btnRefazerFoto').addEventListener('click', async () => {
-    resetFoto('fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', 'fotoThumb');
-    _stream = await abrirCamera('fotoVideo', 'fotoCamera', 'btnAbrirCamera', 'environment');
+  $('btnAddFoto').addEventListener('click', async () => {
+    if (_camStream) return;
+    const n = $('foto_1_slot').classList.contains('d-none') ? 1
+            : $('foto_2_slot').classList.contains('d-none') ? 2 : 3;
+    $('foto_' + n + '_slot').classList.remove('d-none');
+    atualizarBtnAddFoto('');
+    await abrirCameraOverlay('', n, true);
   });
 }
 
 function configurarCameraEdicao() {
-  $('edit_btnAbrirCamera').addEventListener('click', async () => {
-    _editStream = await abrirCamera('edit_fotoVideo', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'environment');
+  [1, 2, 3].forEach((n) => {
+    $('edit_btnRefazerFoto_' + n).addEventListener('click', async () => {
+      resetSlotFoto('edit_', n);
+      await abrirCameraOverlay('edit_', n, false);
+    });
   });
-  $('edit_btnCapturarFoto').addEventListener('click', () => {
-    if (!_editStream) return;
-    capturarFoto('edit_fotoVideo', 'edit_fotoCanvas', 'edit_fotoThumb', 'edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', _editStream, (v) => { _editStream = v; });
-  });
-  $('edit_btnRefazerFoto').addEventListener('click', async () => {
-    resetFoto('edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', 'edit_fotoThumb');
-    _editStream = await abrirCamera('edit_fotoVideo', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'environment');
+  $('edit_btnAddFoto').addEventListener('click', async () => {
+    if (_camStream) return;
+    const n = $('edit_foto_1_slot').classList.contains('d-none') ? 1
+            : $('edit_foto_2_slot').classList.contains('d-none') ? 2 : 3;
+    $('edit_foto_' + n + '_slot').classList.remove('d-none');
+    atualizarBtnAddFoto('edit_');
+    await abrirCameraOverlay('edit_', n, true);
   });
 }
 // ── Fim Câmera ────────────────────────────────────────────────────────────
@@ -1366,8 +1407,12 @@ function configurarFormInventario() {
       if (fpMap['dataRecebimento']) fpMap['dataRecebimento'].clear();
       clearFormSelects();
       form.classList.remove('was-validated');
-      pararStream(_stream, (v) => { _stream = v; });
-      resetFoto('fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', 'fotoThumb');
+      fecharCameraOverlay(true);
+      [1, 2, 3].forEach((n) => resetSlotFoto('', n));
+      $('foto_1_slot').classList.add('d-none');
+      $('foto_2_slot').classList.add('d-none');
+      $('foto_3_slot').classList.add('d-none');
+      $('btnAddFoto').classList.remove('d-none');
       modalRegistrar.hide();
       await loadRecords();
     } catch (err) {
@@ -1981,12 +2026,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('formInventario').classList.remove('was-validated');
     $('insumo_grupo').classList.add('hidden');
     fillSelect('insumo', [], '');
-    pararStream(_stream, (v) => { _stream = v; });
-    resetFoto('fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', 'fotoThumb');
+    fecharCameraOverlay(true);
+    [1, 2, 3].forEach((n) => resetSlotFoto('', n));
+    $('foto_1_slot').classList.add('d-none');
+    $('foto_2_slot').classList.add('d-none');
+    $('foto_3_slot').classList.add('d-none');
+    $('btnAddFoto').classList.remove('d-none');
   });
   $('modalEditar').addEventListener('hidden.bs.modal', () => {
-    pararStream(_editStream, (v) => { _editStream = v; });
-    resetFoto('edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', 'edit_fotoThumb');
+    fecharCameraOverlay(true);
+    [1, 2, 3].forEach((n) => resetSlotFoto('edit_', n));
+    $('edit_foto_1_slot').classList.add('d-none');
+    $('edit_foto_2_slot').classList.add('d-none');
+    $('edit_foto_3_slot').classList.add('d-none');
+    $('edit_btnAddFoto').classList.remove('d-none');
   });
   $('modalPlanilha').addEventListener('hidden.bs.modal', () => {
     $('alertImport').innerHTML = '';
@@ -1998,6 +2051,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFlatpickr();
   configurarAuth();
   configurarFormInventario();
+  inicializarCameraOverlay();
   configurarCameraNovoRegistro();
   configurarCameraEdicao();
   configurarFormOpcao();

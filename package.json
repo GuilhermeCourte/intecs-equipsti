@@ -10,7 +10,8 @@
     "seed": "node server/seed-fake.js",
     "clean-seed": "node server/clean-seed.js",
     "migrate-col-order": "node server/migrate-col-order.js",
-    "migrate-quantidade": "node server/migrate-add-quantidade.js"
+    "migrate-quantidade": "node server/migrate-add-quantidade.js",
+    "seed:perf": "node server/seed-performance.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
