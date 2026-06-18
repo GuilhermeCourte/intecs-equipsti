@@ -170,8 +170,8 @@
     #corpoTabela td { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* tabela */
+    .table-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .table > thead th {
-      border-bottom: 2px solid var(--line); color: #666;
       text-transform: uppercase; font-size: .72rem; letter-spacing: .5px;
     }
     .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: #fafafa; }
@@ -179,6 +179,17 @@
     /* tabela de Gerenciar Opções (status ativo/inativo) */
     .tabela-opcoes td { vertical-align: middle; }
     .opt-nome { font-weight: 600; color: var(--ink); }
+    @media (max-width: 575.98px) {
+      .email-dominio { display: block; font-weight: 400; color: var(--muted); }
+    }
+
+    /* Mobile: app ocupa tela inteira sem margens */
+    @media (max-width: 767.98px) {
+      #appView.container { padding-left: 0; padding-right: 0; max-width: 100%; }
+      .app-card { margin: 0; border-radius: 0; box-shadow: none; }
+      .app-card .card-header { border-radius: 0 !important; }
+      .card { border-radius: 0; }
+    }
     .badge-status {
       display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .5px;
       padding: .35em .7em; border-radius: 6px;
@@ -242,27 +253,45 @@
     .acao-link:hover { text-decoration: underline; }
     .acao-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
 
-    /* ---------- Abas (pílulas, roláveis no celular) ---------- */
+    /* ---------- Abas (liquid slider) ---------- */
     .app-tabs {
+      --gap: 5px;
+      --speed: 0.55s;
+      --ease: cubic-bezier(0.22, 0.9, 0.25, 1);
+
       position: sticky; top: 0; z-index: 1020;
-      display: flex; gap: 4px; flex-wrap: nowrap; overflow-x: auto;
+      display: flex; gap: 0; flex-wrap: nowrap; overflow-x: auto;
       background: var(--bg-soft); border: 1px solid var(--line);
-      padding: 5px; border-radius: 14px;
+      padding: var(--gap); border-radius: 14px;
       margin: -0.25rem 0 1.25rem;
       scrollbar-width: none; -ms-overflow-style: none;
     }
     .app-tabs::-webkit-scrollbar { display: none; }
     .app-tabs .nav-link {
+      position: relative; z-index: 2;
       flex: 1 0 auto; border: none; border-radius: 10px;
       color: var(--muted); font-weight: 600; padding: .6rem 1rem;
       display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
-      white-space: nowrap; transition: background .15s, color .15s;
+      white-space: nowrap; background: transparent;
+      transition: color 0.35s ease, transform 0.2s ease;
     }
     .app-tabs .nav-link i { font-size: 1.15rem; }
-    .app-tabs .nav-link:hover { color: var(--ink); background: rgba(0, 0, 0, .04); }
-    .app-tabs .nav-link.active {
-      color: #fff; background: var(--ink);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, .18);
+    .app-tabs .nav-link:hover { color: var(--ink); background: transparent; }
+    .app-tabs .nav-link:active { transform: scale(0.97); }
+    .app-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
+    .app-tabs.slider-pronto .nav-link.active { background: transparent; box-shadow: none; }
+    .app-tabs .liquid-slider {
+      position: absolute;
+      top: var(--gap);
+      height: calc(100% - var(--gap) * 2);
+      border-radius: 10px;
+      background: var(--ink);
+      z-index: 1;
+      pointer-events: none;
+      transition:
+        left var(--speed) var(--ease),
+        width var(--speed) var(--ease);
+      box-shadow: 0 6px 16px rgba(0,0,0,.18);
     }
     @media (max-width: 575.98px) {
       .app-tabs .nav-link { flex: 0 0 auto; padding: .55rem .85rem; }
@@ -449,6 +478,7 @@
             data-bs-target="#pane-usuarios" type="button" role="tab">
             <i class="ph ph-users"></i> Usuários
           </button>
+          <div class="liquid-slider"></div>
         </div>
 
         <div class="tab-content">
@@ -456,7 +486,7 @@
           <!-- ABA REGISTROS -->
           <div class="tab-pane fade show active" id="pane-registros" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-              <p class="text-muted mb-0">Toque em <strong>Editar</strong> para alterar um registro.</p>
+              <p class="text-muted mb-0">Cadastre ou altere equipamentos.</p>
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-primary btn-sm" id="btnNovoRegistro"
                   data-bs-toggle="modal" data-bs-target="#modalRegistrar">
@@ -466,15 +496,17 @@
                   data-bs-toggle="modal" data-bs-target="#modalPlanilha">
                   <i class="ph ph-file-xls"></i> Planilha
                 </button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarLista">
-                  <i class="ph ph-arrow-clockwise"></i> Atualizar
-                </button>
               </div>
             </div>
             <div id="alertRegistros"></div>
-            <div class="table-responsive">
+            <div class="d-flex justify-content-end mb-1">
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarLista" title="Atualizar">
+                <i class="ph ph-arrow-clockwise fs-5"></i>
+              </button>
+            </div>
+            <div class="table-scroll-x">
               <table class="table table-striped table-hover align-middle">
-                <thead>
+                <thead class="table-light">
                   <tr>
                     <th>UNIDADE</th><th>STATUS</th><th>SETOR</th><th>USUARIO</th><th>N/S</th>
                     <th>PAT</th><th>EQUIP.</th><th>PROTOCOLO</th><th>RECEBIMENTO</th><th>VALOR</th><th>OBS</th>
@@ -490,7 +522,7 @@
 
           <!-- ABA EMPRÉSTIMOS -->
           <div class="tab-pane fade" id="pane-emprestimos" role="tabpanel">
-            <p class="text-muted">Empreste um PAT já cadastrado para uma unidade.</p>
+            <p class="text-muted">Empreste um equipamento para uma unidade.</p>
             <div id="alertEmprestimos"></div>
             <form id="formEmprestimo" class="needs-validation row g-3" novalidate>
               <div class="col-md-6">
@@ -544,8 +576,7 @@
           <!-- ABA GERENCIAR OPÇÕES -->
           <div class="tab-pane fade" id="pane-gerenciar" role="tabpanel">
             <p class="text-muted">
-              Cadastre opções para os menus suspensos. Ficam disponíveis imediatamente na aba
-              <strong>Registrar</strong>.
+              Cadastre opções para os menus suspensos.
             </p>
             <div id="alertGerenciar"></div>
             <div class="d-flex align-items-center gap-3 mb-3">
@@ -570,16 +601,14 @@
 
           <!-- ABA USUÁRIOS -->
           <div class="tab-pane fade" id="pane-usuarios" role="tabpanel">
-            <p class="text-muted">
-              Cadastre novos acessos ao sistema. O usuário entra com o e-mail e a senha
-              definidos aqui. Sua sessão atual permanece ativa.
-            </p>
+
+            <p class="text-muted">Cadastre novos acessos ao sistema.</p>
             <div id="alertUsuarios"></div>
             <form id="formUsuario" class="row g-3 align-items-end" novalidate>
               <div class="col-md-5">
                 <label class="form-label" for="novo_email">E-mail</label>
                 <input type="email" class="form-control" id="novo_email" required
-                  autocomplete="off" placeholder="usuario@intecsbr.org">
+                  autocomplete="off" placeholder="usuario@email.com">
               </div>
               <div class="col-md-4">
                 <label class="form-label" for="novo_senha">Senha</label>
@@ -609,7 +638,7 @@
           <!-- ABA CHAMADOS -->
           <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5 class="mb-0">Chamados</h5>
+              <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Abra e acompanhe chamados para a MSA.</h5>
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-primary btn-sm" id="btnNovoChamado">
                   <i class="ph ph-plus"></i> Novo Chamado

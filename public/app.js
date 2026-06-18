@@ -809,6 +809,10 @@ async function loadUsuarios() {
         : '—';
       const ativo = !!u.ativo;
       const emailEsc = escapeHtml(u.email);
+      const atIdx = u.email.indexOf('@');
+      const emailHtml = atIdx > -1
+        ? escapeHtml(u.email.slice(0, atIdx)) + '<span class="email-dominio">@' + escapeHtml(u.email.slice(atIdx + 1)) + '</span>'
+        : emailEsc;
       const status = ativo
         ? '<span class="badge-status badge-ativo">ATIVO</span>'
         : '<span class="badge-status badge-inativo">INATIVO</span>';
@@ -817,7 +821,7 @@ async function loadUsuarios() {
           '" data-to="0" data-email="' + emailEsc + '"><i class="ph ph-prohibit"></i> Inativar</button>'
         : '<button type="button" class="acao-link acao-exibir ms-3" data-user-ativo="' + u.id +
           '" data-to="1" data-email="' + emailEsc + '"><i class="ph ph-check-circle"></i> Reativar</button>';
-      return '<tr><td class="opt-nome">' + emailEsc + '</td>' +
+      return '<tr><td class="opt-nome">' + emailHtml + '</td>' +
         '<td>' + quando + '</td>' +
         '<td>' + status + '</td>' +
         '<td class="text-end">' +
@@ -1308,6 +1312,9 @@ function configurarFormUsuario() {
         const id = bAtivo.getAttribute('data-user-ativo');
         const email = bAtivo.getAttribute('data-email');
         const ativar = bAtivo.getAttribute('data-to') === '1';
+        if (ativar && !(await uiConfirm(
+          'Reativar o acesso de ' + email + '? Ele voltará a conseguir entrar no sistema.',
+          { title: 'Reativar usuário', okText: 'Reativar' }))) return;
         if (!ativar && !(await uiConfirm(
           'Inativar o acesso de ' + email + '? Ele não conseguirá mais entrar.',
           { title: 'Inativar usuário', okText: 'Inativar' }))) return;
@@ -1597,6 +1604,7 @@ async function entrarNoApp(email) {
   $('authView').classList.add('hidden');
   $('appView').classList.remove('hidden');
   $('userEmail').textContent = email || '';
+  requestAnimationFrame(() => posicionarSlider(false));
   if (dadosCarregados) return;
   dadosCarregados = true;
   try {
@@ -1664,6 +1672,26 @@ async function carregarChamados() {
   }
 }
 
+function posicionarSlider(animar = true) {
+  const tabs = document.querySelector('.app-tabs');
+  const slider = tabs?.querySelector('.liquid-slider');
+  const active = tabs?.querySelector('.nav-link.active');
+  if (!slider || !active) return;
+  if (!animar) slider.style.transition = 'none';
+  const tabsRect = tabs.getBoundingClientRect();
+  const activeRect = active.getBoundingClientRect();
+  slider.style.left = (activeRect.left - tabsRect.left + tabs.scrollLeft) + 'px';
+  slider.style.width = activeRect.width + 'px';
+  if (!animar) {
+    requestAnimationFrame(() => {
+      slider.style.transition = '';
+      tabs.classList.add('slider-pronto');
+    });
+  } else {
+    tabs.classList.add('slider-pronto');
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   modalEditar = new bootstrap.Modal($('modalEditar'));
   modalMsg = new bootstrap.Modal($('modalMsg'));
@@ -1708,6 +1736,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarFormEditar();
   configurarDetalheChamado();
   configurarNovoChamado();
+
+  document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
+    btn.addEventListener('shown.bs.tab', () => posicionarSlider());
+  });
 
   $('tab-registros').addEventListener('shown.bs.tab', loadRecords);
   $('btnAtualizarLista').addEventListener('click', loadRecords);

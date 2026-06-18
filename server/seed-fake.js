@@ -1,6 +1,6 @@
 // ============================================================
 //  Dados FICTÍCIOS para teste. Rode:  npm run seed
-//  Cria 15 PATs (PAT-001..PAT-015), opções e alguns empréstimos.
+//  Cria 30 PATs (PAT-001..PAT-030), opções e alguns empréstimos.
 //  Reexecutável: limpa antes os dados de teste (prefixo "PAT-").
 // ============================================================
 import dotenv from 'dotenv';
@@ -40,8 +40,8 @@ async function main() {
   for (const e of EQUIPS) await addOption('EQUIPAMENTO', e);
   for (const st of STATUS) await addOption('STATUS', st);
 
-  console.log('Inserindo 15 registros (PAT-001..PAT-015)...');
-  for (let i = 1; i <= 15; i++) {
+  console.log('Inserindo 30 registros (PAT-001..PAT-030)...');
+  for (let i = 1; i <= 30; i++) {
     const pat = 'PAT-' + String(i).padStart(3, '0');
     await query(`INSERT INTO dbo.EQUIPSTI_registros (unidade, status, setor, usuario, ns, pat, equipamento, obs)
       VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equip, @obs)`,
@@ -66,12 +66,21 @@ async function main() {
   await emp('PAT-005', 'CD CAMPINAS', '2026-02-01', 'DEVOLVIDO', '2026-03-01', '');
   // PAT-008: emprestado em aberto
   await emp('PAT-008', 'FILIAL RJ', '2026-06-01', 'EMPRESTADO', null, 'Substituicao temporaria');
-  // PAT-004, 006, 007, 009..015: SEM empréstimo
+  // PAT-016..030: novos registros extras
+  await emp('PAT-016', 'MATRIZ', '2026-01-15', 'EMPRESTADO', null, 'Suporte remoto');
+  await emp('PAT-017', 'FILIAL SP', '2026-02-20', 'DEVOLVIDO', '2026-03-10', 'Treinamento');
+  await emp('PAT-018', 'CD CAMPINAS', '2026-03-01', 'EMPRESTADO', null, '');
+  await emp('PAT-019', 'ALMOXARIFADO', '2025-12-10', 'DEVOLVIDO', '2026-01-05', 'Revisão anual');
+  await emp('PAT-020', 'FILIAL RJ', '2026-04-15', 'EMPRESTADO', null, 'Evento externo');
+  await emp('PAT-022', 'MATRIZ', '2026-05-01', 'DEVOLVIDO', '2026-05-20', '');
+  await emp('PAT-025', 'FILIAL SP', '2026-06-01', 'EMPRESTADO', null, 'Projeto Y');
+  await emp('PAT-027', 'CD CAMPINAS', '2026-03-15', 'DEVOLVIDO', '2026-04-10', 'Manutenção');
+  // PAT-004, 006, 007, 009..015, 021, 023, 024, 026, 028..030: SEM empréstimo
 
   console.log('--------------------------------------------------');
-  console.log('Concluído! 15 PATs criados.');
-  console.log('Com empréstimo: PAT-001 (2 ciclos), 002, 003, 005 (2 ciclos), 008.');
-  console.log('Sem empréstimo: 004, 006, 007, 009 a 015.');
+  console.log('Concluído! 30 PATs criados.');
+  console.log('Com empréstimo: PAT-001 (2 ciclos), 002, 003, 005 (2 ciclos), 008,');
+  console.log('  016, 017, 018, 019, 020, 022, 025, 027.');
   console.log('--------------------------------------------------');
   process.exit(0);
 }
