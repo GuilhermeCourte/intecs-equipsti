@@ -98,16 +98,37 @@ app.put('/api/users/:id', exigirAuth, wrap(async (req, res) => {
 
 // ===================== OPÇÕES =====================
 app.get('/api/options', exigirAuth, wrap(async (req, res) => {
-  const r = await query('SELECT lista, valor, oculto, detalhe, preco, tipo_aquisicao FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
+  const r = await query('SELECT lista, valor, oculto, detalhe, preco, tipo_aquisicao, quantidade FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
+  const counts = await query(`
+    SELECT equipamento, COUNT(*) AS total
+    FROM dbo.EQUIPSTI_registros
+    GROUP BY equipamento
+  `);
+  const equipCount = {};
+  counts.recordset.forEach((row) => { equipCount[row.equipamento] = row.total; });
+
   const out = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [], INSUMOS: [] };
   r.recordset.forEach((row) => {
-    if (out[row.lista]) out[row.lista].push({
+    if (!out[row.lista]) return;
+    const item = {
       valor: row.valor, oculto: !!row.oculto, detalhe: row.detalhe || null,
       preco: row.preco != null ? Number(row.preco) : null,
       tipo_aquisicao: row.tipo_aquisicao || null
-    });
+    };
+    if (row.lista === 'INSUMOS') item.quantidade = row.quantidade ?? 0;
+    if (row.lista === 'EQUIPAMENTO') item.qtd_registros = equipCount[row.valor] ?? 0;
+    out[row.lista].push(item);
   });
   res.json(out);
+}));
+
+app.put('/api/options/quantidade', exigirAuth, wrap(async (req, res) => {
+  const valor = trim(req.body.valor);
+  const qtd = parseInt(req.body.quantidade, 10);
+  if (isNaN(qtd) || qtd < 0) return res.status(400).json({ error: 'Quantidade inválida.' });
+  await query('UPDATE dbo.EQUIPSTI_opcoes SET quantidade = @qtd WHERE lista = @lista AND valor = @valor',
+    { qtd: { type: sql.Int, value: qtd }, lista: S('INSUMOS'), valor: S(valor) });
+  res.json({ ok: true });
 }));
 
 app.post('/api/options', exigirAuth, wrap(async (req, res) => {
@@ -190,7 +211,8 @@ function lerRegistro(body) {
     dataRecebimento: trim(body.dataRecebimento) || null,
     valor: isNaN(valor) ? null : valor,
     insumo: trim(body.insumo) || null,
-    tipo_aquisicao: trim(body.tipo_aquisicao) || null
+    tipo_aquisicao: trim(body.tipo_aquisicao) || null,
+    imagem_base64: body.imagem_base64 || null
   };
 }
 function validarRegistro(d) {
@@ -218,10 +240,17 @@ app.get('/api/records', exigirAuth, wrap(async (req, res) => {
   res.json(r.recordset);
 }));
 
+app.get('/api/records/:id/imagem', exigirAuth, wrap(async (req, res) => {
+  const r = await query(`SELECT imagem_base64 FROM dbo.EQUIPSTI_registros WHERE id = @id`,
+    { id: Number(req.params.id) });
+  if (!r.recordset.length) return res.status(404).json({ error: 'Não encontrado.' });
+  res.json({ imagem_base64: r.recordset[0].imagem_base64 || null });
+}));
+
 app.get('/api/records/:id/log', exigirAuth, wrap(async (req, res) => {
   const id = Number(req.params.id);
   const r = await query(`SELECT acao, campo, valor_anterior AS valorAnterior, valor_novo AS valorNovo,
-    usuario, CONVERT(varchar(19), data_hora, 120) AS dataHora
+    justificativa, usuario, CONVERT(varchar(19), data_hora, 120) AS dataHora
     FROM dbo.EQUIPSTI_registros_log WHERE registro_id = @id ORDER BY id DESC`,
     { id });
   res.json(r.recordset);
@@ -232,14 +261,15 @@ app.post('/api/records', exigirAuth, wrap(async (req, res) => {
   validarRegistro(d);
   const usuario = req.user.email;
   const ins = await query(`INSERT INTO dbo.EQUIPSTI_registros
-    (unidade, status, setor, usuario, ns, pat, equipamento, equipamento_detalhe, obs, protocolo, data_recebimento, valor, insumo, tipo_aquisicao, criado_por)
+    (unidade, status, setor, usuario, ns, pat, equipamento, equipamento_detalhe, obs, protocolo, data_recebimento, valor, insumo, tipo_aquisicao, imagem_base64, criado_por)
     OUTPUT INSERTED.id
-    VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equipamento, @equipamentoDetalhe, @obs, @protocolo, @dataRecebimento, @valor, @insumo, @tipoAquisicao, @criadoPor)`,
+    VALUES (@unidade, @status, @setor, @usuario, @ns, @pat, @equipamento, @equipamentoDetalhe, @obs, @protocolo, @dataRecebimento, @valor, @insumo, @tipoAquisicao, @imagemBase64, @criadoPor)`,
     { unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
       ns: S(d.ns), pat: S(d.pat), equipamento: S(d.equipamento), equipamentoDetalhe: S(d.equipamento_detalhe),
       obs: S(d.obs), protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
       valor: d.valor != null ? { type: sql.Decimal(15,2), value: d.valor } : S(null),
       insumo: S(d.insumo), tipoAquisicao: S(d.tipo_aquisicao),
+      imagemBase64: S(d.imagem_base64),
       criadoPor: S(usuario) });
   const novoId = ins.recordset[0].id;
   await query(`INSERT INTO dbo.EQUIPSTI_registros_log (registro_id, acao, usuario) VALUES (@id, 'CRIADO', @usuario)`,
@@ -258,12 +288,19 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
   const id = Number(req.params.id);
   const d = lerRegistro(req.body);
   validarRegistro(d);
+  const justificativa = trim(req.body.justificativa || '');
+  if (!justificativa) return res.status(400).json({ error: 'Informe a justificativa da edição.' });
   const usuario = req.user.email;
+
+  const dup = await query(
+    `SELECT id FROM dbo.EQUIPSTI_registros WHERE ns = @ns AND pat = @pat AND id <> @id`,
+    { ns: S(d.ns), pat: S(d.pat), id });
+  if (dup.recordset.length) return res.status(409).json({ error: `Já existe outro registro com N/S "${d.ns}" e PAT "${d.pat}".` });
 
   const anterior = await query(`SELECT unidade, status, setor, usuario, ns, pat, equipamento,
     equipamento_detalhe AS equipamento_detalhe, insumo, tipo_aquisicao,
     obs, protocolo, CONVERT(varchar(10), data_recebimento, 23) AS dataRecebimento,
-    CAST(valor AS NVARCHAR) AS valor
+    CAST(valor AS NVARCHAR) AS valor, imagem_base64
     FROM dbo.EQUIPSTI_registros WHERE id=@id`, { id });
   const old = anterior.recordset[0] || {};
 
@@ -271,6 +308,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
     unidade=@unidade, status=@status, setor=@setor, usuario=@usuario, ns=@ns,
     pat=@pat, equipamento=@equipamento, equipamento_detalhe=@equipamentoDetalhe, obs=@obs,
     protocolo=@protocolo, data_recebimento=@dataRecebimento, valor=@valor, insumo=@insumo, tipo_aquisicao=@tipoAquisicao,
+    imagem_base64=@imagemBase64,
     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { id, unidade: S(d.unidade), status: S(d.status), setor: S(d.setor), usuario: S(d.usuario),
@@ -278,6 +316,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
       obs: S(d.obs), protocolo: S(d.protocolo), dataRecebimento: S(d.dataRecebimento),
       valor: d.valor != null ? { type: sql.Decimal(15,2), value: d.valor } : S(null),
       insumo: S(d.insumo), tipoAquisicao: S(d.tipo_aquisicao),
+      imagemBase64: S(d.imagem_base64),
       atualizadoPor: S(usuario) });
 
   for (const [key, label] of CAMPOS_LOG) {
@@ -288,10 +327,21 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
       : vAntes === vDepois;
     if (!igual) {
       await query(`INSERT INTO dbo.EQUIPSTI_registros_log
-        (registro_id, acao, campo, valor_anterior, valor_novo, usuario)
-        VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @usuario)`,
-        { id, campo: S(label), antes: S(vAntes), depois: S(vDepois), usuario: S(usuario) });
+        (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
+        VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
+        { id, campo: S(label), antes: S(vAntes), depois: S(vDepois), justificativa: S(justificativa), usuario: S(usuario) });
     }
+  }
+
+  const fotoAntes = old.imagem_base64 ? 'SIM' : 'NÃO';
+  const fotoDepois = d.imagem_base64 ? 'SIM' : 'NÃO';
+  const fotoMudou = (old.imagem_base64 || '') !== (d.imagem_base64 || '');
+  if (fotoMudou) {
+    const label = fotoAntes === fotoDepois ? 'FOTO (substituída)' : 'FOTO';
+    await query(`INSERT INTO dbo.EQUIPSTI_registros_log
+      (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
+      VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
+      { id, campo: S(label), antes: S(fotoAntes), depois: S(fotoDepois), justificativa: S(justificativa), usuario: S(usuario) });
   }
 
   res.json({ ok: true });
@@ -365,18 +415,32 @@ app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
   if (!unidade) faltando.push('UNIDADE');
   if (faltando.length) return res.status(400).json({ error: 'Preencha: ' + faltando.join(', ') + '.' });
 
-  // Verifica empréstimo aberto para o mesmo PAT+NS (ou só PAT se ns não informado).
-  const aberto = await query(
-    `SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
-      WHERE pat = @pat AND status = 'EMPRESTADO'
-        ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
+  // Busca unidade original do cadastro.
+  const origemRes = await query(
+    `SELECT TOP 1 unidade FROM dbo.EQUIPSTI_registros
+     WHERE pat = @pat ${ns ? 'AND ns = @ns' : ''}
+     ORDER BY criado_em`,
     ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
-  if (aberto.recordset.length) {
-    return res.status(400).json({
-      error: 'Este PAT' + (ns ? '/N/S' : '') + ' já está emprestado para ' +
-        aberto.recordset[0].unidade + '. Devolva-o antes de emprestar para outra unidade.'
-    });
+  const unidadeOriginal = origemRes.recordset.length ? origemRes.recordset[0].unidade : null;
+
+  // Se destino é a unidade original, trata como devolução (não cria novo empréstimo).
+  if (unidadeOriginal && unidade.toUpperCase() === unidadeOriginal.toUpperCase()) {
+    await query(
+      `UPDATE dbo.EQUIPSTI_emprestimos
+         SET status = 'DEVOLVIDO', data_devolucao = CAST(GETDATE() AS date)
+       WHERE pat = @pat AND status = 'EMPRESTADO'
+         ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
+      ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
+    return res.status(201).json({ ok: true, devolvido: true });
   }
+
+  // Fecha empréstimo aberto anterior como TRANSFERIDO (suporta cadeia 1→2→3→1).
+  await query(
+    `UPDATE dbo.EQUIPSTI_emprestimos
+       SET status = 'TRANSFERIDO', data_devolucao = CAST(GETDATE() AS date)
+     WHERE pat = @pat AND status = 'EMPRESTADO'
+       ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
+    ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
 
   await query(
     `INSERT INTO dbo.EQUIPSTI_emprestimos (pat, ns, unidade, data_emprestimo, status, obs)

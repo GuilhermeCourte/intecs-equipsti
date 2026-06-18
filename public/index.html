@@ -77,6 +77,7 @@
       border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12);
     }
     .form-control, .form-select { border-radius: 10px; }
+    input.form-control, .form-select { height: calc(1.5em + .75rem + 2px); }
     a, .text-primary { color: var(--ink) !important; }
 
     /* ============================================================
@@ -226,10 +227,11 @@
       border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
       color: #fff; font-size: .8rem; box-shadow: 0 0 0 3px #fff;
     }
-    .tl-dot.origem    { background: var(--ink); }
-    .tl-dot.emprestado { background: #d68910; }
-    .tl-dot.devolvido { background: #1a7f4b; }
-    .tl-dot.aberto    { background: #d68910; }
+    .tl-dot.origem      { background: var(--ink); }
+    .tl-dot.emprestado  { background: #d68910; }
+    .tl-dot.devolvido   { background: #1a7f4b; }
+    .tl-dot.transferido { background: #2471a3; }
+    .tl-dot.aberto      { background: #d68910; }
     .tl-title { font-weight: 600; }
     .tl-sub { color: var(--muted); font-size: .85rem; }
     .tl-date { color: var(--muted); font-size: .8rem; font-weight: 600; }
@@ -396,6 +398,42 @@
     .was-validated .flatpickr-input[required]:valid + input.flatpickr-alt-input {
       border-color: #198754;
     }
+    #fp-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.6);
+      z-index: 9998;
+    }
+    #fp-backdrop.fp-backdrop--visible { display: block; }
+    @media (max-width: 768px) {
+      .flatpickr-calendar {
+        position: fixed !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        z-index: 9999 !important;
+        right: auto !important;
+        bottom: auto !important;
+      }
+      .flatpickr-calendar::before,
+      .flatpickr-calendar::after { display: none !important; }
+      .fp-mobile-header {
+        background: var(--ink);
+        color: #fff;
+        text-align: center;
+        padding: 10px 16px;
+        font-weight: 700;
+        font-size: .78rem;
+        letter-spacing: .6px;
+        border-radius: var(--radius) var(--radius) 0 0;
+      }
+      .fp-mobile-header ~ .flatpickr-months .flatpickr-month {
+        border-radius: 0 !important;
+      }
+      #askText { white-space: pre-line; }
+      #askDialog { max-width: 300px; padding: 1.2rem; }
+    }
   </style>
 </head>
 <body>
@@ -509,12 +547,12 @@
                 <thead class="table-light">
                   <tr>
                     <th>UNIDADE</th><th>STATUS</th><th>SETOR</th><th>USUARIO</th><th>N/S</th>
-                    <th>PAT</th><th>EQUIP.</th><th>PROTOCOLO</th><th>RECEBIMENTO</th><th>VALOR</th><th>OBS</th>
+                    <th>PAT</th><th>EQUIP.</th><th>PROTOCOLO</th><th>RECEBIMENTO</th><th>OBS</th>
                     <th class="text-end">Ações</th>
                   </tr>
                 </thead>
                 <tbody id="corpoTabela">
-                  <tr><td colspan="14" class="text-muted">Carregando...</td></tr>
+                  <tr><td colspan="13" class="text-muted">Carregando...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -547,7 +585,7 @@
                 <div class="invalid-feedback">Selecione a unidade.</div>
               </div>
               <div class="col-md-6">
-                <label class="form-label" for="emp_data">DATA</label>
+                <label class="form-label" for="emp_data">DATA DO EMPRÉSTIMO</label>
                 <input type="text" class="form-control" id="emp_data" autocomplete="off" readonly>
               </div>
               <div class="col-12">
@@ -772,6 +810,28 @@
               <textarea class="form-control" id="obs" rows="3"
                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             </div>
+            <div class="col-12">
+              <label class="form-label">FOTO DO EQUIPAMENTO</label>
+              <div id="fotoPreview" class="d-none mb-2">
+                <img id="fotoThumb" src="" class="img-fluid rounded border" style="max-height:200px">
+                <div class="mt-1">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefazerFoto">
+                    <i class="ph ph-camera-rotate"></i> Refazer
+                  </button>
+                </div>
+              </div>
+              <div id="fotoCamera" class="d-none mb-2">
+                <video id="fotoVideo" autoplay playsinline class="w-100 rounded border mb-1" style="max-height:220px;background:#000"></video>
+                <button type="button" class="btn btn-sm btn-primary w-100" id="btnCapturarFoto">
+                  <i class="ph ph-camera"></i> Capturar
+                </button>
+              </div>
+              <button type="button" class="btn btn-outline-secondary w-100" id="btnAbrirCamera">
+                <i class="ph ph-camera"></i> Tirar Foto
+              </button>
+              <input type="hidden" id="imagem_base64">
+              <canvas id="fotoCanvas" class="d-none"></canvas>
+            </div>
             <div class="col-12 d-grid">
               <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
             </div>
@@ -944,6 +1004,28 @@
               <textarea class="form-control" id="edit_obs" rows="3"
                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             </div>
+            <div class="col-12">
+              <label class="form-label">FOTO DO EQUIPAMENTO</label>
+              <div id="edit_fotoPreview" class="d-none mb-2">
+                <img id="edit_fotoThumb" src="" class="img-fluid rounded border" style="max-height:200px">
+                <div class="mt-1">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="edit_btnRefazerFoto">
+                    <i class="ph ph-camera-rotate"></i> Refazer foto
+                  </button>
+                </div>
+              </div>
+              <div id="edit_fotoCamera" class="d-none mb-2">
+                <video id="edit_fotoVideo" autoplay playsinline class="w-100 rounded border mb-1" style="max-height:220px;background:#000"></video>
+                <button type="button" class="btn btn-sm btn-primary w-100" id="edit_btnCapturarFoto">
+                  <i class="ph ph-camera"></i> Capturar
+                </button>
+              </div>
+              <button type="button" class="btn btn-outline-secondary w-100" id="edit_btnAbrirCamera">
+                <i class="ph ph-camera"></i> Tirar Foto
+              </button>
+              <input type="hidden" id="edit_imagem_base64">
+              <canvas id="edit_fotoCanvas" class="d-none"></canvas>
+            </div>
             <div class="col-md-6">
               <label class="form-label text-muted">CRIADO POR</label>
               <input type="text" class="form-control" id="edit_criadoPor" disabled>
@@ -951,6 +1033,13 @@
             <div class="col-md-6">
               <label class="form-label text-muted">ATUALIZADO POR</label>
               <input type="text" class="form-control" id="edit_atualizadoPor" disabled>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="edit_justificativa">JUSTIFICATIVA DA EDIÇÃO *</label>
+              <textarea class="form-control" id="edit_justificativa" rows="2" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                placeholder="Descreva o motivo da alteração..."></textarea>
+              <div class="invalid-feedback">Informe a justificativa da edição.</div>
             </div>
           </div>
           <div id="alertEditar" class="px-3 pt-2"></div>
@@ -989,12 +1078,12 @@
       <p id="askText" class="text-muted mb-3"></p>
       <div id="askTransfer" class="d-flex align-items-center justify-content-between gap-3 mb-3 hidden">
         <div class="border rounded p-3 text-center flex-fill">
-          <div class="text-muted text-uppercase" style="font-size:.7rem;">Emprestado em</div>
+          <div class="text-muted text-uppercase" style="font-size:.7rem;" id="askTransferFromLabel">Emprestado em</div>
           <div class="fw-bold" id="askTransferFrom"></div>
         </div>
         <i class="ph ph-arrow-right text-muted fs-3"></i>
         <div class="border rounded p-3 text-center flex-fill">
-          <div class="text-muted text-uppercase" style="font-size:.7rem;">Devolver para (original)</div>
+          <div class="text-muted text-uppercase" style="font-size:.7rem;" id="askTransferToLabel">Devolver para</div>
           <div class="fw-bold" id="askTransferTo"></div>
         </div>
       </div>

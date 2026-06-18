@@ -41,6 +41,8 @@ let HIDDEN = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [], INSUMOS: [] 
 let EQUIP_DETALHE = {};
 let EQUIP_PRECO = {};
 let EQUIP_TIPO = {};
+let EQUIP_QTD_REG = {};
+let INSUMO_QTD = {};
 let INSUMOS = [];
 let REGISTROS = [];
 let modalEditar = null;
@@ -97,6 +99,8 @@ function uiAsk({ title, message, input, value, input2Label, value2, input3Label,
     $('askText').textContent = message || '';
     const trans = $('askTransfer');
     if (transfer) {
+      $('askTransferFromLabel').textContent = transfer.fromLabel || 'Emprestado em';
+      $('askTransferToLabel').textContent = transfer.toLabel || 'Devolver para';
       $('askTransferFrom').textContent = transfer.from;
       $('askTransferTo').textContent = transfer.to;
       trans.classList.remove('hidden');
@@ -231,6 +235,7 @@ function initChoices() {
 function initFlatpickr() {
   if (typeof window.flatpickr === 'undefined') return;
   const flatpickr = window.flatpickr;
+  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const cfg = {
     locale: 'pt',
     dateFormat: 'Y-m-d',
@@ -238,9 +243,20 @@ function initFlatpickr() {
     altFormat: 'd/m/Y',
     allowInput: true,
     disableMobile: true,
+    closeOnSelect: !isTouch,
+    minDate: 'today',
     monthSelectorType: 'static',
     onReady(_d, _s, fp) {
       fp.altInput.classList.add('form-control');
+      if (isTouch) {
+        fp.altInput.setAttribute('readonly', true);
+        const lbl = document.querySelector('label[for="' + fp.input.id + '"]');
+        const titulo = lbl ? lbl.textContent.replace('*', '').trim() : 'DATA';
+        const header = document.createElement('div');
+        header.className = 'fp-mobile-header';
+        header.textContent = titulo;
+        fp.calendarContainer.insertBefore(header, fp.calendarContainer.firstChild);
+      }
 
       // Torna o input do ano somente leitura (como o mês estático)
       const yearInput = fp.calendarContainer.querySelector('.cur-year');
@@ -276,9 +292,50 @@ function initFlatpickr() {
         'font-weight:600;cursor:pointer;letter-spacing:.3px;';
       btn.addEventListener('mouseenter', () => { btn.style.background = 'var(--ink-2)'; });
       btn.addEventListener('mouseleave', () => { btn.style.background = 'var(--ink)'; });
-      btn.addEventListener('click', () => { fp.setDate(new Date(), true); fp.close(); });
+      btn.addEventListener('click', () => {
+        fp.setDate(new Date(), false);
+        if (isTouch) fp._fechandoPorSelecao = true;
+        fp.close();
+      });
       footer.appendChild(btn);
       fp.calendarContainer.appendChild(footer);
+    },
+    onChange(_d, _s, fp) {
+      if (isTouch) {
+        fp._fechandoPorSelecao = true;
+        fp.close();
+      }
+    },
+    onOpen(_d, _s, fp) {
+      if (!isTouch) return;
+      fp._fechandoPorSelecao = false;
+      fp._blocker = (e) => {
+        if (fp.isOpen && !fp.calendarContainer.contains(e.target)) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }
+      };
+      ['mousedown', 'mouseup', 'click', 'touchstart', 'touchend'].forEach((ev) => {
+        document.addEventListener(ev, fp._blocker, true);
+      });
+      let bd = document.getElementById('fp-backdrop');
+      if (!bd) {
+        bd = document.createElement('div');
+        bd.id = 'fp-backdrop';
+        document.body.appendChild(bd);
+      }
+      bd.classList.add('fp-backdrop--visible');
+    },
+    onClose(_d, _s, fp) {
+      if (!isTouch) return;
+      if (fp._blocker) {
+        ['mousedown', 'mouseup', 'click', 'touchstart', 'touchend'].forEach((ev) => {
+          document.removeEventListener(ev, fp._blocker, true);
+        });
+        fp._blocker = null;
+      }
+      const bd = document.getElementById('fp-backdrop');
+      if (bd) bd.classList.remove('fp-backdrop--visible');
     },
   };
   ['dataRecebimento', 'edit_dataRecebimento', 'emp_data'].forEach((id) => {
@@ -407,11 +464,15 @@ async function loadOptions() {
   EQUIP_DETALHE = {};
   EQUIP_PRECO = {};
   EQUIP_TIPO = {};
+  EQUIP_QTD_REG = {};
   (data['EQUIPAMENTO'] || []).forEach((o) => {
     if (o.detalhe) EQUIP_DETALHE[o.valor] = o.detalhe;
     if (o.preco != null) EQUIP_PRECO[o.valor] = o.preco;
     if (o.tipo_aquisicao) EQUIP_TIPO[o.valor] = o.tipo_aquisicao;
+    EQUIP_QTD_REG[o.valor] = o.qtd_registros ?? 0;
   });
+  INSUMO_QTD = {};
+  (data['INSUMOS'] || []).forEach((o) => { INSUMO_QTD[o.valor] = o.quantidade ?? 0; });
   INSUMOS = (data['INSUMOS'] || []).filter((o) => !o.oculto).map((o) => o.valor);
   renderAllSelects();
   renderListaOpcoes();
@@ -428,6 +489,7 @@ function renderListaOpcoes() {
   }
   const hidden = HIDDEN[lista] || [];
   const isEquip = lista === 'EQUIPAMENTO';
+  const isInsumo = lista === 'INSUMOS';
 
   const linhas = values.map((v) => {
     const ativo = hidden.indexOf(v) === -1;
@@ -455,14 +517,32 @@ function renderListaOpcoes() {
     const editar = '<button type="button" class="acao-link acao-editar ms-3" ' +
       'data-edit-opt data-val="' + vEsc + '" data-detalhe="' + escapeHtml(detalhe) + '"' + precoAttr + tipoAttr + '>' +
       '<i class="ph ph-pencil-simple"></i> Editar</button>';
+
+    let qtdCell = '';
+    if (isInsumo) {
+      const qtd = INSUMO_QTD[v] ?? 0;
+      qtdCell = '<td><div class="d-flex align-items-center gap-1" style="width:110px">' +
+        '<input type="number" class="form-control form-control-sm text-center" min="0" ' +
+        'data-qtd-insumo data-val="' + vEsc + '" value="' + qtd + '" style="width:70px">' +
+        '<span class="text-muted small">un</span></div></td>';
+    } else if (isEquip) {
+      const cnt = EQUIP_QTD_REG[v] ?? 0;
+      qtdCell = '<td><span class="badge bg-secondary bg-opacity-10 text-secondary fw-normal">' +
+        cnt + '</span></td>';
+    } else {
+      qtdCell = '<td></td>';
+    }
+
     return '<tr><td class="opt-nome">' + nomeCell + '</td>' +
+      qtdCell +
       '<td>' + status + '</td>' +
       '<td class="text-end">' + toggle + editar + '</td></tr>';
   }).join('');
 
+  const qtdHeader = isInsumo ? '<th>Qtd. em estoque</th>' : isEquip ? '<th>Registros</th>' : '<th></th>';
   container.innerHTML =
     '<div class="table-responsive"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
-    '<thead><tr><th>Opção</th><th>Status</th><th class="text-end">Ação</th></tr></thead>' +
+    '<thead><tr><th>Opção</th>' + qtdHeader + '<th>Status</th><th class="text-end">Ação</th></tr></thead>' +
     '<tbody>' + linhas + '</tbody></table></div>';
 }
 
@@ -481,7 +561,8 @@ function dadosFormulario(prefix) {
     dataRecebimento: trim(g('dataRecebimento')) || null,
     valor: trim(g('valor')) || null,
     insumo: trim(g('insumo')) || null,
-    tipo_aquisicao: trim(g('tipo_aquisicao')) || null
+    tipo_aquisicao: trim(g('tipo_aquisicao')) || null,
+    imagem_base64: g('imagem_base64') || null
   };
 }
 
@@ -512,9 +593,6 @@ function renderTabela() {
     return;
   }
   corpo.innerHTML = REGISTROS.map((r) => {
-    const valor = r.valor != null
-      ? 'R$ ' + Number(r.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-      : '';
     return '<tr>' +
     '<td title="' + escapeHtml(r.unidade) + '">' + escapeHtml(r.unidade) + '</td>' +
     '<td>' + escapeHtml(r.status) + '</td>' +
@@ -525,7 +603,6 @@ function renderTabela() {
     '<td>' + escapeHtml(r.equipamento) + '</td>' +
     '<td>' + escapeHtml(r.protocolo) + '</td>' +
     '<td>' + fmtData(r.dataRecebimento) + '</td>' +
-    '<td>' + escapeHtml(valor) + '</td>' +
     '<td title="' + escapeHtml(r.obs) + '">' + escapeHtml(r.obs) + '</td>' +
     '<td class="text-end">' +
       '<button type="button" class="btn btn-sm btn-outline-primary" data-edit="' +
@@ -560,8 +637,22 @@ function abrirEdicao(id) {
   }
   $('edit_valor').value = r.valor != null ? r.valor : '';
   $('edit_obs').value = r.obs || '';
+  resetFoto('edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', 'edit_fotoThumb');
+  api('GET', '/api/records/' + r.id + '/imagem').then((data) => {
+    if (data.imagem_base64) {
+      $('edit_imagem_base64').value = data.imagem_base64;
+      $('edit_fotoThumb').src = data.imagem_base64;
+      $('edit_fotoPreview').classList.remove('d-none');
+      $('edit_btnAbrirCamera').classList.add('d-none');
+    }
+  }).catch(() => {});
   $('edit_criadoPor').value = r.criadoPor || '—';
   $('edit_atualizadoPor').value = r.atualizadoPor || '—';
+  const jEl = $('edit_justificativa');
+  jEl.value = '';
+  jEl.disabled = true;
+  jEl.required = false;
+  jEl.placeholder = '';
   $('formEditar').classList.remove('was-validated');
   modalEditar.show();
 }
@@ -900,7 +991,7 @@ async function loadEmprestimos() {
   if (!container) return;
   container.innerHTML = '<span class="text-muted">Carregando...</span>';
   try {
-    const ativos = (await api('GET', '/api/loans')).filter((e) => e.status !== 'DEVOLVIDO');
+    const ativos = (await api('GET', '/api/loans')).filter((e) => e.status === 'EMPRESTADO');
     if (!ativos.length) {
       container.innerHTML = '<span class="text-muted">Nenhum empréstimo em aberto.</span>';
       return;
@@ -942,13 +1033,55 @@ function configurarFormEmprestimo() {
       obs: trim($('emp_obs').value)
     };
     const btn = $('btnEmprestar');
-    btn.disabled = true; btn.textContent = 'Emprestando...';
+
+    // Pré-verificação: busca origem e empréstimo ativo para mostrar modal correto.
+    btn.disabled = true; btn.textContent = 'Verificando...';
+    let confirmado = false;
     try {
-      await api('POST', '/api/loans', dados);
+      const qs = dados.ns ? '?ns=' + encodeURIComponent(dados.ns) : '';
+      const hist = await api('GET', '/api/pats/' + encodeURIComponent(dados.pat) + '/history' + qs);
+      const unidadeOriginal = hist.origens && hist.origens.length ? hist.origens[0].unidade : null;
+      const loans = await api('GET', '/api/loans');
+      const ativo = loans.find((e) => e.status === 'EMPRESTADO' &&
+        e.pat === dados.pat && (!dados.ns || !e.ns || e.ns === dados.ns));
+
+      const destino = dados.unidade;
+      const eOrigem = unidadeOriginal && destino.toUpperCase() === unidadeOriginal.toUpperCase();
+
+      if (eOrigem) {
+        confirmado = await uiConfirm(
+          'Emprestar para a unidade original registra\ncomo devolução do equipamento.',
+          { title: 'Devolver equipamento', okText: 'Confirmar devolução', danger: false,
+            transfer: { fromLabel: 'Atualmente em', toLabel: 'Devolver para',
+              from: ativo ? ativo.unidade : (unidadeOriginal || '—'), to: destino } });
+      } else if (ativo) {
+        confirmado = await uiConfirm(
+          'Este equipamento está em ' + ativo.unidade + '.\nDeseja transferi-lo para ' + destino + '?',
+          { title: 'Transferir equipamento', okText: 'Transferir', danger: false,
+            transfer: { fromLabel: 'Atualmente em', toLabel: 'Transferir para',
+              from: ativo.unidade, to: destino } });
+      } else {
+        confirmado = await uiConfirm(
+          'Emprestar ' + dados.pat + ' para ' + destino + '?',
+          { title: 'Novo empréstimo', okText: 'Emprestar', danger: false,
+            transfer: { fromLabel: 'Unidade original', toLabel: 'Emprestar para',
+              from: unidadeOriginal || '—', to: destino } });
+      }
+    } catch (err) {
+      showAlert('alertEmprestimos', 'danger', err.message);
+      btn.disabled = false; btn.textContent = 'Emprestar';
+      return;
+    }
+
+    if (!confirmado) { btn.disabled = false; btn.textContent = 'Emprestar'; return; }
+
+    btn.textContent = 'Emprestando...';
+    try {
+      const res = await api('POST', '/api/loans', dados);
       form.reset();
       form.classList.remove('was-validated');
       await loadEmprestimoForm();
-      showAlert('alertEmprestimos', 'success', 'Empréstimo registrado.');
+      showAlert('alertEmprestimos', 'success', res.devolvido ? 'Equipamento devolvido à unidade original.' : 'Empréstimo registrado.');
       await loadEmprestimos();
     } catch (err) {
       showAlert('alertEmprestimos', 'danger', err.message);
@@ -979,7 +1112,7 @@ function configurarFormEmprestimo() {
       return;
     }
     if (!(await uiConfirm(
-      'Tem certeza que deseja devolver o PAT ' + pat + '?',
+      'Tem certeza que deseja\ndevolver o PAT ' + pat + '?',
       {
         title: 'Devolver empréstimo', okText: 'Devolver',
         transfer: { from: unidade, to: origem || '—' }
@@ -1035,12 +1168,17 @@ function renderTimeline(h) {
     itens.push(tlItem('origem', 'ph-house-line', 'Sem registro de origem',
       'Este PAT não consta na lista de Registros.', null));
   }
-  (h.emprestimos || []).forEach((e) => {
+  (h.emprestimos || []).forEach((e, idx, arr) => {
     itens.push(tlItem('emprestado', 'ph-arrow-up-right',
       'Emprestado para ' + escapeHtml(e.unidade), e.obs ? escapeHtml(e.obs) : '', e.data));
     if (e.status === 'DEVOLVIDO') {
       itens.push(tlItem('devolvido', 'ph-arrow-u-down-left',
-        'Devolvido (voltou à origem)', '', e.dataDevolucao));
+        'Devolvido para Unidade de origem', '', e.dataDevolucao));
+    } else if (e.status === 'TRANSFERIDO') {
+      const proximo = arr[idx + 1];
+      const destino = proximo ? ' para ' + escapeHtml(proximo.unidade) : '';
+      itens.push(tlItem('transferido', 'ph-arrows-left-right',
+        'Transferido' + destino, '', e.dataDevolucao));
     } else {
       itens.push(tlItem('aberto', 'ph-clock',
         'Empréstimo em aberto', 'Atualmente em ' + escapeHtml(e.unidade), null));
@@ -1112,6 +1250,81 @@ function atualizarEquipDetalhe(equipVal, detId) {
   fillSelect(insumoId, isImp ? INSUMOS : [], '');
 }
 
+// ── Câmera ────────────────────────────────────────────────────────────────
+let _stream = null;
+let _editStream = null;
+
+function capturarFoto(videoId, canvasId, thumbId, previewId, cameraId, abrirId, inputId, streamRef, setStream) {
+  const video = $(videoId);
+  const canvas = $(canvasId);
+  const MAX = 800;
+  let w = video.videoWidth, h = video.videoHeight;
+  if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+  const b64 = canvas.toDataURL('image/jpeg', 0.7);
+  $(inputId).value = b64;
+  $(thumbId).src = b64;
+  $(previewId).classList.remove('d-none');
+  $(cameraId).classList.add('d-none');
+  streamRef.getTracks().forEach((t) => t.stop());
+  setStream(null);
+}
+
+function pararStream(streamRef, setStream) {
+  if (streamRef) { streamRef.getTracks().forEach((t) => t.stop()); setStream(null); }
+}
+
+function resetFoto(previewId, cameraId, abrirId, inputId, thumbId) {
+  $(inputId).value = '';
+  $(thumbId).src = '';
+  $(previewId).classList.add('d-none');
+  $(cameraId).classList.add('d-none');
+  $(abrirId).classList.remove('d-none');
+}
+
+async function abrirCamera(videoId, cameraId, abrirId, facingMode) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
+    $(videoId).srcObject = stream;
+    $(cameraId).classList.remove('d-none');
+    $(abrirId).classList.add('d-none');
+    return stream;
+  } catch {
+    alert('Não foi possível acessar a câmera. Verifique as permissões do navegador.');
+    return null;
+  }
+}
+
+function configurarCameraNovoRegistro() {
+  $('btnAbrirCamera').addEventListener('click', async () => {
+    _stream = await abrirCamera('fotoVideo', 'fotoCamera', 'btnAbrirCamera', 'environment');
+  });
+  $('btnCapturarFoto').addEventListener('click', () => {
+    if (!_stream) return;
+    capturarFoto('fotoVideo', 'fotoCanvas', 'fotoThumb', 'fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', _stream, (v) => { _stream = v; });
+  });
+  $('btnRefazerFoto').addEventListener('click', async () => {
+    resetFoto('fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', 'fotoThumb');
+    _stream = await abrirCamera('fotoVideo', 'fotoCamera', 'btnAbrirCamera', 'environment');
+  });
+}
+
+function configurarCameraEdicao() {
+  $('edit_btnAbrirCamera').addEventListener('click', async () => {
+    _editStream = await abrirCamera('edit_fotoVideo', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'environment');
+  });
+  $('edit_btnCapturarFoto').addEventListener('click', () => {
+    if (!_editStream) return;
+    capturarFoto('edit_fotoVideo', 'edit_fotoCanvas', 'edit_fotoThumb', 'edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', _editStream, (v) => { _editStream = v; });
+  });
+  $('edit_btnRefazerFoto').addEventListener('click', async () => {
+    resetFoto('edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', 'edit_fotoThumb');
+    _editStream = await abrirCamera('edit_fotoVideo', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'environment');
+  });
+}
+// ── Fim Câmera ────────────────────────────────────────────────────────────
+
 function configurarFormInventario() {
   const form = $('formInventario');
 
@@ -1153,6 +1366,8 @@ function configurarFormInventario() {
       if (fpMap['dataRecebimento']) fpMap['dataRecebimento'].clear();
       clearFormSelects();
       form.classList.remove('was-validated');
+      pararStream(_stream, (v) => { _stream = v; });
+      resetFoto('fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', 'fotoThumb');
       modalRegistrar.hide();
       await loadRecords();
     } catch (err) {
@@ -1195,6 +1410,21 @@ function configurarFormOpcao() {
       } catch (err) {
         showAlert('alertGerenciar', 'danger', 'Erro: ' + err.message);
       }
+    }
+  });
+
+  $('listaOpcoes').addEventListener('change', async (ev) => {
+    const input = ev.target.closest('[data-qtd-insumo]');
+    if (!input) return;
+    const val = input.getAttribute('data-val');
+    const qtd = parseInt(input.value, 10);
+    if (isNaN(qtd) || qtd < 0) { input.value = INSUMO_QTD[val] ?? 0; return; }
+    try {
+      await api('PUT', '/api/options/quantidade', { valor: val, quantidade: qtd });
+      INSUMO_QTD[val] = qtd;
+    } catch (err) {
+      showAlert('alertGerenciar', 'danger', 'Erro ao salvar quantidade: ' + err.message);
+      input.value = INSUMO_QTD[val] ?? 0;
     }
   });
 
@@ -1331,6 +1561,22 @@ function configurarFormUsuario() {
 function configurarFormEditar() {
   const form = $('formEditar');
 
+  function habilitarJustificativa() {
+    const jEl = $('edit_justificativa');
+    if (jEl.disabled) {
+      jEl.disabled = false;
+      jEl.required = true;
+      jEl.placeholder = 'Descreva o motivo da alteração...';
+    }
+  }
+
+  form.addEventListener('input', (ev) => {
+    if (ev.target.id !== 'edit_justificativa') habilitarJustificativa();
+  });
+  form.addEventListener('change', (ev) => {
+    if (ev.target.id !== 'edit_justificativa') habilitarJustificativa();
+  });
+
   $('edit_equipamento').addEventListener('change', (ev) => {
     atualizarEquipDetalhe(ev.target.value, 'edit_equipamento_detalhe');
   });
@@ -1339,10 +1585,17 @@ function configurarFormEditar() {
     ev.preventDefault();
     if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
     const id = $('edit_id').value;
+    const justificativa = trim($('edit_justificativa').value);
     const btn = $('btnSalvarEdicao');
     btn.disabled = true; btn.textContent = 'Salvando...';
     try {
-      await api('PUT', '/api/records/' + id, dadosFormulario('edit_'));
+      await api('PUT', '/api/records/' + id, { ...dadosFormulario('edit_'), justificativa });
+      const jEl = $('edit_justificativa');
+      jEl.value = '';
+      jEl.disabled = true;
+      jEl.required = false;
+      jEl.placeholder = '';
+      $('formEditar').classList.remove('was-validated');
       $('alertEditar').innerHTML = '<div class="alert alert-success py-2 mb-0">Registro atualizado com sucesso!</div>';
       setTimeout(() => { $('alertEditar').innerHTML = ''; }, 4000);
       await loadRecords();
@@ -1384,8 +1637,14 @@ async function abrirLog(registroId) {
         return '<tr><td>' + escapeHtml(data) + '</td><td><span class="badge bg-success">CRIADO</span></td>' +
           '<td colspan="2" class="text-muted">—</td><td>' + escapeHtml(l.usuario) + '</td></tr>';
       }
+      const tip = l.justificativa
+        ? ' data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="' + escapeHtml(l.justificativa) + '" style="cursor:help"'
+        : '';
       const fmtVal = (v) => isoParaBr(v) || v || '';
-      return '<tr><td>' + escapeHtml(data) + '</td><td><span class="badge bg-warning text-dark">ATUALIZADO</span></td>' +
+      return '<tr><td>' + escapeHtml(data) + '</td>' +
+        '<td><span class="badge bg-warning text-dark"' + tip + '>ATUALIZADO' +
+        (l.justificativa ? ' <i class="ph ph-chat-text"></i>' : '') +
+        '</span></td>' +
         '<td>' + escapeHtml(l.campo || '') + '</td>' +
         '<td><span class="text-danger text-decoration-line-through">' + escapeHtml(fmtVal(l.valorAnterior)) + '</span>' +
         ' <i class="ph ph-arrow-right"></i> ' +
@@ -1396,6 +1655,9 @@ async function abrirLog(registroId) {
       '<table class="table table-sm align-middle mb-0">' +
       '<thead><tr><th>DATA/HORA</th><th>AÇÃO</th><th>CAMPO</th><th>ALTERAÇÃO</th><th>USUÁRIO</th></tr></thead>' +
       '<tbody>' + linhas + '</tbody></table>';
+    $('logCorpo').querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+      new bootstrap.Tooltip(el, { trigger: 'hover' });
+    });
   } catch (err) {
     $('logCorpo').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
   }
@@ -1719,6 +1981,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('formInventario').classList.remove('was-validated');
     $('insumo_grupo').classList.add('hidden');
     fillSelect('insumo', [], '');
+    pararStream(_stream, (v) => { _stream = v; });
+    resetFoto('fotoPreview', 'fotoCamera', 'btnAbrirCamera', 'imagem_base64', 'fotoThumb');
+  });
+  $('modalEditar').addEventListener('hidden.bs.modal', () => {
+    pararStream(_editStream, (v) => { _editStream = v; });
+    resetFoto('edit_fotoPreview', 'edit_fotoCamera', 'edit_btnAbrirCamera', 'edit_imagem_base64', 'edit_fotoThumb');
   });
   $('modalPlanilha').addEventListener('hidden.bs.modal', () => {
     $('alertImport').innerHTML = '';
@@ -1730,6 +1998,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFlatpickr();
   configurarAuth();
   configurarFormInventario();
+  configurarCameraNovoRegistro();
+  configurarCameraEdicao();
   configurarFormOpcao();
   configurarFormUsuario();
   configurarFormEmprestimo();
