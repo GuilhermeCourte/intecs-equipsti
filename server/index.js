@@ -237,7 +237,8 @@ app.get('/api/records', exigirAuth, wrap(async (req, res) => {
     CONVERT(varchar(10), data_recebimento, 23) AS dataRecebimento, valor, obs,
     criado_por AS criadoPor, atualizado_por AS atualizadoPor,
     CONVERT(varchar(19), criado_em, 120) AS criadoEm,
-    CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
+    CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm,
+    CASE WHEN imagem_base64 IS NOT NULL THEN 1 ELSE 0 END AS temFoto
     FROM dbo.EQUIPSTI_registros ORDER BY id DESC`;
   if (req.query.all === '1') {
     const r = await query(selectFields, {});

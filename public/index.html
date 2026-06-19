@@ -10,7 +10,7 @@
     rel="stylesheet">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>Revalidação de Inventário</title>
+  <title>Gestão TI</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon.svg">
   <link
@@ -468,7 +468,7 @@
         <div class="auth-head">
           <span class="brand-mark"><img src="icons/icon.svg" alt=""></span>
           <h1>Acesso</h1>
-          <p>Revalidação de Inventário de TI</p>
+          <p>Gestão TI</p>
         </div>
       </aside>
 
@@ -499,7 +499,7 @@
           </form>
         </div>
 
-        <p class="auth-foot">Intecs · Inventário de TI</p>
+        <p class="auth-foot">Intecs · Gestão TI</p>
       </main>
 
     </div>
@@ -509,7 +509,7 @@
   <div id="appView" class="container hidden">
     <div class="card shadow-sm app-card app-card-wide">
       <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Revalidação de Inventário</h5>
+        <h5 class="mb-0">Gestão TI</h5>
         <div class="d-flex align-items-center gap-2">
           <small id="userEmail" class="d-none d-sm-inline"></small>
           <button class="btn btn-sm btn-light" id="btnSair">Sair</button>
@@ -559,7 +559,10 @@
               </div>
             </div>
             <div id="alertRegistros"></div>
-            <div class="d-flex justify-content-end mb-1">
+            <div class="d-flex justify-content-end gap-1 mb-1">
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltros" title="Limpar filtros">
+                <i class="ph ph-funnel-x fs-5"></i>
+              </button>
               <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarLista" title="Atualizar">
                 <i class="ph ph-arrow-clockwise fs-5"></i>
               </button>
@@ -578,6 +581,7 @@
                     <th class="th-filterable" data-col="7">PROTOCOLO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                     <th class="th-filterable" data-col="8">RECEBIMENTO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                     <th class="th-filterable" data-col="9">OBS <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable text-center" data-col="10">FOTO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                     <th class="text-end">Ações</th>
                   </tr>
                 </thead>
@@ -747,7 +751,7 @@
         </div>
       </div>
     </div>
-    <p class="text-center text-muted small">Intecs · Inventário de TI</p>
+    <p class="text-center text-muted small">Intecs · Gestão TI</p>
   </div>
 
   <!-- ===================== MODAL REGISTRAR ===================== -->

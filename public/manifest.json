@@ -1,7 +1,7 @@
 {
-  "name": "Revalidação de Inventário",
-  "short_name": "Inventário",
-  "description": "Revalidação de inventário de equipamentos de TI",
+  "name": "Gestão TI",
+  "short_name": "Gestão TI",
+  "description": "Gestão de equipamentos de TI",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

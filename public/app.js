@@ -1,5 +1,5 @@
 // ============================================================
-//  App de Revalidação de Inventário — cliente da API (Node + SQL Server)
+//  App de Gestão TI — cliente da API (Node + SQL Server)
 // ============================================================
 
 // Mesma origem: localmente o Node serve front + API (porta 3000) e na Vercel
@@ -595,6 +595,26 @@ const PAGE_SIZE = 50;
 let _recOffset = 0;
 let _recLoading = false;
 let _recAllLoaded = false;
+let _todosRegistros = [];
+let _todosCarregados = false;
+let _todosCarregando = null;
+
+async function carregarTodosParaFiltro() {
+  if (_todosCarregados) return;
+  if (_todosCarregando) return _todosCarregando;
+  _todosCarregando = api('GET', '/api/records?all=1').then(r => {
+    _todosRegistros = r;
+    _todosCarregados = true;
+    _todosCarregando = null;
+  }).catch(() => { _todosCarregando = null; });
+  return _todosCarregando;
+}
+
+function invalidarCacheTodos() {
+  _todosRegistros = [];
+  _todosCarregados = false;
+  _todosCarregando = null;
+}
 
 async function loadRecords(reset = true) {
   if (_recLoading) return;
@@ -649,6 +669,7 @@ function rowHtml(r) {
     '<td>' + escapeHtml(r.protocolo) + '</td>' +
     '<td>' + fmtData(r.dataRecebimento) + '</td>' +
     '<td title="' + escapeHtml(r.obs) + '">' + escapeHtml(r.obs) + '</td>' +
+    '<td class="text-center">' + (r.temFoto ? '<i class="ph ph-camera-fill text-primary"></i>' : '<span class="text-muted">—</span>') + '</td>' +
     '<td class="text-end">' +
       '<button type="button" class="btn btn-sm btn-outline-primary" data-edit="' +
         escapeHtml(r.id) + '">Editar</button>' +
@@ -658,12 +679,14 @@ function rowHtml(r) {
 function renderTabela() {
   const corpo = $('corpoTabela');
   const temFiltro = Object.keys(colFilters).length > 0;
-  const filtered = temFiltro ? REGISTROS.filter(passaFiltros) : REGISTROS;
+  const fonte = temFiltro && _todosCarregados ? _todosRegistros : REGISTROS;
+  const filtered = temFiltro ? fonte.filter(passaFiltros) : REGISTROS;
+  $('sentinelTabela').classList.toggle('d-none', _recAllLoaded || temFiltro);
   if (!filtered.length) {
-    const msg = temFiltro && REGISTROS.length
+    const msg = temFiltro
       ? 'Nenhum registro corresponde ao filtro ativo.'
       : 'Nenhum registro cadastrado.';
-    corpo.innerHTML = '<tr><td colspan="11" class="text-muted">' + msg + '</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="12" class="text-muted">' + msg + '</td></tr>';
     return;
   }
   corpo.innerHTML = filtered.map(rowHtml).join('');
@@ -671,9 +694,8 @@ function renderTabela() {
 }
 
 function appendTabela(registros) {
-  const temFiltro = Object.keys(colFilters).length > 0;
-  const filtered = temFiltro ? registros.filter(passaFiltros) : registros;
-  if (filtered.length) $('corpoTabela').insertAdjacentHTML('beforeend', filtered.map(rowHtml).join(''));
+  if (Object.keys(colFilters).length > 0) return;
+  $('corpoTabela').insertAdjacentHTML('beforeend', registros.map(rowHtml).join(''));
 }
 
 function carregarFotosEdicao(id) {
@@ -737,19 +759,21 @@ function abrirEdicao(id) {
 // ============================================================
 //  Filtros de coluna (tabela Registros)
 // ============================================================
-const COL_FIELDS = ['unidade','status','setor','usuario','ns','pat','equipamento','protocolo','dataRecebimento','obs'];
+const COL_FIELDS = ['unidade','status','setor','usuario','ns','pat','equipamento','protocolo','dataRecebimento','obs','temFoto'];
 
 function colVal(r, col) {
   const f = COL_FIELDS[col];
   if (!f) return '';
   const v = r[f];
   if (v == null || String(v).trim() === '') return '';
-  return f === 'dataRecebimento' ? fmtData(v) : String(v);
+  if (f === 'dataRecebimento') return fmtData(v);
+  if (f === 'temFoto') return Number(v) ? 'Sim' : 'Não';
+  return String(v);
 }
 
 function uniqueColVals(col) {
   const seen = new Set(), out = [];
-  for (const r of REGISTROS) {
+  for (const r of (_todosCarregados ? _todosRegistros : REGISTROS)) {
     const v = colVal(r, col);
     if (!seen.has(v)) { seen.add(v); out.push(v); }
   }
@@ -827,9 +851,10 @@ function fdRenderList() {
   });
 }
 
-function fdAbrir(col, thEl) {
+async function fdAbrir(col, thEl) {
   criarFilterDropdown();
   if (_fdOutside) { document.removeEventListener('mousedown', _fdOutside); _fdOutside = null; }
+  await carregarTodosParaFiltro();
   _fdCol = col;
   _fdAllVals = uniqueColVals(col);
   const atual = colFilters[String(col)];
@@ -1119,7 +1144,7 @@ async function importarXlsx() {
       '<ul class="mt-2 mb-0 ps-3 small">' + listaErros + '</ul>' +
       '</div>';
   }
-  await loadRecords(true);
+  invalidarCacheTodos(); await loadRecords(true);
 }
 
 // ============================================================
@@ -1180,7 +1205,7 @@ async function loadUsuarios() {
 // ============================================================
 // Preenche os selects do formulário de empréstimo (PAT vem dos registros).
 async function loadEmprestimoForm() {
-  fillSelect('emp_unidade', activeValues('UNIDADE'));
+  fillSelect('emp_unidade', activeValues('UNIDADE'), '');
   try {
     const pats = await api('GET', '/api/pats');
     fillSelect('emp_pat', pats);
@@ -1305,7 +1330,7 @@ function configurarFormEmprestimo() {
               from: ativo.unidade, to: destino } });
       } else {
         confirmado = await uiConfirm(
-          'Emprestar ' + dados.pat + ' para ' + destino + '?',
+          'Emprestar PAT ' + dados.pat + ' para ' + destino + '?',
           { title: 'Novo empréstimo', okText: 'Emprestar', danger: false,
             transfer: { fromLabel: 'Unidade original', toLabel: 'Emprestar para',
               from: unidadeOriginal || '—', to: destino } });
@@ -1454,7 +1479,7 @@ function configurarAuth() {
       const data = await api('POST', '/api/auth/login', { email, senha });
       TOKEN = data.token;
       localStorage.setItem('token', TOKEN);
-      await entrarNoApp(data.email);
+      await entrarNoApp(data.email, false);
     } catch (err) {
       showAlert('alertAuth', 'danger', err.message);
     } finally {
@@ -1667,7 +1692,7 @@ function configurarFormInventario() {
       $('foto_3_slot').classList.add('d-none');
       $('btnAddFoto').classList.remove('d-none');
       modalRegistrar.hide();
-      await loadRecords(true);
+      invalidarCacheTodos(); await loadRecords(true);
     } catch (err) {
       showAlert('alertRegistrar', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
@@ -1896,7 +1921,7 @@ function configurarFormEditar() {
       $('formEditar').classList.remove('was-validated');
       $('alertEditar').innerHTML = '<div class="alert alert-success py-2 mb-0">Registro atualizado com sucesso!</div>';
       setTimeout(() => { $('alertEditar').innerHTML = ''; }, 4000);
-      await loadRecords(true);
+      invalidarCacheTodos(); await loadRecords(true);
     } catch (err) {
       showAlert('alertRegistros', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
@@ -2160,16 +2185,23 @@ function configurarNovoChamado() {
 // ============================================================
 let dadosCarregados = false;
 
-async function entrarNoApp(email) {
+async function entrarNoApp(email, restaurarAba = false) {
   $('authView').classList.add('hidden');
   $('appView').classList.remove('hidden');
   $('userEmail').textContent = email || '';
+  if (restaurarAba) {
+    const abaId = localStorage.getItem('abaAtiva');
+    if (abaId && abaId !== 'tab-registros') {
+      const abaEl = $(abaId);
+      if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
+    }
+  }
   requestAnimationFrame(() => posicionarSlider(false));
   if (dadosCarregados) return;
   dadosCarregados = true;
   try {
     await loadOptions();
-    await loadRecords(true);
+    invalidarCacheTodos(); await loadRecords(true);
   } catch (err) {
     showAlert('alertRegistrar', 'danger', 'Erro ao carregar dados: ' + err.message);
   }
@@ -2321,11 +2353,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarNovoChamado();
 
   document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
-    btn.addEventListener('shown.bs.tab', () => posicionarSlider());
+    btn.addEventListener('shown.bs.tab', () => {
+      posicionarSlider();
+      localStorage.setItem('abaAtiva', btn.id);
+    });
   });
 
   $('tab-registros').addEventListener('shown.bs.tab', () => loadRecords(true));
-  $('btnAtualizarLista').addEventListener('click', () => loadRecords(true));
+  $('btnAtualizarLista').addEventListener('click', () => { invalidarCacheTodos(); loadRecords(true); });
+  $('btnLimparFiltros').addEventListener('click', () => { colFilters = {}; renderTabela(); });
   new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) loadRecords(false);
   }, { threshold: 0.1 }).observe($('sentinelTabela'));
@@ -2345,7 +2381,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (TOKEN) {
     try {
       const me = await api('GET', '/api/auth/me');
-      await entrarNoApp(me.email);
+      await entrarNoApp(me.email, true);
     } catch {
       sairDoApp();
     }
