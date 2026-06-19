@@ -232,16 +232,20 @@ function validarRegistro(d) {
 }
 
 app.get('/api/records', exigirAuth, wrap(async (req, res) => {
-  const limit  = Math.min(Math.max(parseInt(req.query.limit)  || 50, 1), 200);
-  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
-  const r = await query(`SELECT id, unidade, status, setor, usuario, ns,
+  const selectFields = `SELECT id, unidade, status, setor, usuario, ns,
     pat, equipamento, equipamento_detalhe AS equipamentoDetalhe, insumo, tipo_aquisicao AS tipoAquisicao, protocolo,
     CONVERT(varchar(10), data_recebimento, 23) AS dataRecebimento, valor, obs,
     criado_por AS criadoPor, atualizado_por AS atualizadoPor,
     CONVERT(varchar(19), criado_em, 120) AS criadoEm,
     CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
-    FROM dbo.EQUIPSTI_registros ORDER BY id DESC
-    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+    FROM dbo.EQUIPSTI_registros ORDER BY id DESC`;
+  if (req.query.all === '1') {
+    const r = await query(selectFields, {});
+    return res.json(r.recordset);
+  }
+  const limit  = Math.min(Math.max(parseInt(req.query.limit)  || 50, 1), 200);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+  const r = await query(`${selectFields} OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
     { offset: { type: sql.Int, value: offset }, limit: { type: sql.Int, value: limit } });
   res.json(r.recordset);
 }));

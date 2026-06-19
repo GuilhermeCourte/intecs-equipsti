@@ -222,6 +222,20 @@ function escapeHtml(v) {
 
 function trim(v) { return String(v == null ? '' : v).trim(); }
 
+function formatarMoeda(val) {
+  if (val === '' || val == null) return '';
+  const num = Number(val);
+  if (isNaN(num)) return '';
+  return 'R$ ' + num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function parseMoeda(str) {
+  if (!str) return null;
+  const clean = String(str).replace(/R\$\s?/g, '').replace(/\./g, '').replace(',', '.').trim();
+  const num = parseFloat(clean);
+  return isNaN(num) ? null : num;
+}
+
 function initChoices() {
   if (typeof Choices === 'undefined') return;
   CHOICES_IDS.forEach((id) => {
@@ -568,7 +582,7 @@ function dadosFormulario(prefix) {
     obs: trim(g('obs')),
     protocolo: trim(g('protocolo')),
     dataRecebimento: trim(g('dataRecebimento')) || null,
-    valor: trim(g('valor')) || null,
+    valor: parseMoeda(g('valor')),
     insumo: trim(g('insumo')) || null,
     tipo_aquisicao: trim(g('tipo_aquisicao')) || null,
     imagem_base64:  g('foto_1_base64') || null,
@@ -662,6 +676,26 @@ function appendTabela(registros) {
   if (filtered.length) $('corpoTabela').insertAdjacentHTML('beforeend', filtered.map(rowHtml).join(''));
 }
 
+function carregarFotosEdicao(id) {
+  [1, 2, 3].forEach((n) => resetSlotFoto('edit_', n));
+  $('edit_foto_1_slot').classList.add('d-none');
+  $('edit_foto_2_slot').classList.add('d-none');
+  $('edit_foto_3_slot').classList.add('d-none');
+  $('edit_btnAddFoto').classList.remove('d-none');
+  api('GET', '/api/records/' + id + '/imagem').then((data) => {
+    ['imagem_base64', 'imagem2_base64', 'imagem3_base64'].forEach((campo, i) => {
+      const n = i + 1;
+      if (data[campo]) {
+        $(`edit_foto_${n}_base64`).value = data[campo];
+        $(`edit_foto_${n}_thumb`).src = data[campo];
+        $(`edit_foto_${n}_preview`).classList.remove('d-none');
+        $(`edit_foto_${n}_slot`).classList.remove('d-none');
+      }
+    });
+    atualizarBtnAddFoto('edit_');
+  }).catch(() => {});
+}
+
 function abrirEdicao(id) {
   const r = REGISTROS.filter((x) => String(x.id) === String(id))[0];
   if (!r) return;
@@ -686,25 +720,9 @@ function abrirEdicao(id) {
   } else {
     $('edit_dataRecebimento').value = r.dataRecebimento || '';
   }
-  $('edit_valor').value = r.valor != null ? r.valor : '';
+  $('edit_valor').value = r.valor != null ? formatarMoeda(r.valor) : '';
   $('edit_obs').value = r.obs || '';
-  [1, 2, 3].forEach((n) => resetSlotFoto('edit_', n));
-  $('edit_foto_1_slot').classList.add('d-none');
-  $('edit_foto_2_slot').classList.add('d-none');
-  $('edit_foto_3_slot').classList.add('d-none');
-  $('edit_btnAddFoto').classList.remove('d-none');
-  api('GET', '/api/records/' + r.id + '/imagem').then((data) => {
-    ['imagem_base64', 'imagem2_base64', 'imagem3_base64'].forEach((campo, i) => {
-      const n = i + 1;
-      if (data[campo]) {
-        $(`edit_foto_${n}_base64`).value = data[campo];
-        $(`edit_foto_${n}_thumb`).src = data[campo];
-        $(`edit_foto_${n}_preview`).classList.remove('d-none');
-        $(`edit_foto_${n}_slot`).classList.remove('d-none');
-      }
-    });
-    atualizarBtnAddFoto('edit_');
-  }).catch(() => {});
+  carregarFotosEdicao(r.id);
   $('edit_criadoPor').value = r.criadoPor || '—';
   $('edit_atualizadoPor').value = r.atualizadoPor || '—';
   const jEl = $('edit_justificativa');
@@ -914,29 +932,41 @@ function baixarModelo() {
   XLSX.writeFile(wb, 'modelo_inventario.xlsx');
 }
 
-function exportarXlsx() {
-  if (!REGISTROS.length) {
-    showAlert('alertRegistros', 'warning', 'Nenhum registro para exportar.');
-    return;
+async function exportarXlsx() {
+  const btnExport = $('btnExportarXlsx');
+  const textoOriginal = btnExport.innerHTML;
+  btnExport.disabled = true;
+  btnExport.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Exportando...';
+  try {
+    const todos = await api('GET', '/api/records?all=1');
+    if (!todos.length) {
+      showAlert('alertRegistros', 'warning', 'Nenhum registro para exportar.');
+      return;
+    }
+    const todasColunas = [...COLUNAS_XLSX, ...COLUNAS_EXPORT_EXTRA];
+    const camposData = new Set(['dataRecebimento', 'criadoEm', 'atualizadoEm']);
+    const linhas = todos.map((r) => todasColunas.map((c) => {
+      const v = r[c.field];
+      if (v == null || v === '') return '';
+      if (camposData.has(c.field)) return isoParaBr(String(v));
+      return v;
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([todasColunas.map((c) => c.header), ...linhas]);
+    ws['!cols'] = todasColunas.map(() => ({ wch: 22 }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Inventário');
+    const agora = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const nome = 'inventario_' + agora.getFullYear() + pad(agora.getMonth() + 1) +
+      pad(agora.getDate()) + '_' + pad(agora.getHours()) + pad(agora.getMinutes()) + '.xlsx';
+    XLSX.writeFile(wb, nome);
+    showAlert('alertRegistros', 'success', 'Exportado: ' + todos.length + ' registros.');
+  } catch (err) {
+    showAlert('alertRegistros', 'danger', 'Erro ao exportar: ' + err.message);
+  } finally {
+    btnExport.disabled = false;
+    btnExport.innerHTML = textoOriginal;
   }
-  const todasColunas = [...COLUNAS_XLSX, ...COLUNAS_EXPORT_EXTRA];
-  const camposData = new Set(['dataRecebimento', 'criadoEm', 'atualizadoEm']);
-  const linhas = REGISTROS.map((r) => todasColunas.map((c) => {
-    const v = r[c.field];
-    if (v == null || v === '') return '';
-    if (camposData.has(c.field)) return isoParaBr(String(v));
-    return v;
-  }));
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([todasColunas.map((c) => c.header), ...linhas]);
-  ws['!cols'] = todasColunas.map(() => ({ wch: 22 }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Inventário');
-  const agora = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  const nome = 'inventario_' + agora.getFullYear() + pad(agora.getMonth() + 1) +
-    pad(agora.getDate()) + '_' + pad(agora.getHours()) + pad(agora.getMinutes()) + '.xlsx';
-  XLSX.writeFile(wb, nome);
-  showAlert('alertRegistros', 'success', 'Exportado: ' + REGISTROS.length + ' registros.');
 }
 
 async function importarXlsx() {
@@ -1448,7 +1478,7 @@ function atualizarEquipDetalhe(equipVal, detId) {
   const precoId = detId === 'equipamento_detalhe' ? 'valor' : 'edit_valor';
   const precoEl = $(precoId);
   if (precoEl) {
-    precoEl.value = EQUIP_PRECO[equipVal] != null ? EQUIP_PRECO[equipVal] : '';
+    precoEl.value = EQUIP_PRECO[equipVal] != null ? formatarMoeda(EQUIP_PRECO[equipVal]) : '';
     precoEl.readOnly = true;
   }
 
@@ -2234,7 +2264,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.modal').forEach(el => {
     el.addEventListener('hidePrevented.bs.modal', () => el.classList.remove('modal-static'));
   });
-  $('btnVoltarLog').addEventListener('click', () => { modalLog.hide(); modalEditar.show(); });
+  $('btnVoltarLog').addEventListener('click', () => {
+    const id = $('edit_id').value;
+    modalLog.hide();
+    modalEditar.show();
+    if (id) carregarFotosEdicao(id);
+  });
   $('askOk').addEventListener('click', () => finishAsk(true));
   $('askCancel').addEventListener('click', () => finishAsk(false));
   $('askOverlay').addEventListener('focusin', (e) => e.stopPropagation());
