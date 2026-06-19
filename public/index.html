@@ -255,6 +255,28 @@
     .acao-link:hover { text-decoration: underline; }
     .acao-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
 
+    /* ---------- Filtros de coluna ---------- */
+    .th-filterable { cursor: pointer; user-select: none; white-space: nowrap; }
+    .th-filterable:hover { background: var(--bg-soft) !important; }
+    .col-filter-icon { font-size: .8rem; opacity: .2; margin-left: .3rem; vertical-align: middle; transition: opacity .15s; }
+    .th-filterable:hover .col-filter-icon { opacity: .5; }
+    .col-filter-ativo { font-weight: 700 !important; }
+    .col-filter-ativo .col-filter-icon { opacity: 1; }
+    #colFilterDropdown {
+      position: fixed; z-index: 1055; background: #fff;
+      border: 1px solid var(--line); border-radius: 12px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.18);
+      width: 280px; display: flex; flex-direction: column;
+    }
+    #fdList { overflow-y: auto; max-height: 220px; padding: 0 .75rem; }
+    .col-filter-item {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .45rem 0; border-bottom: 1px solid #f4f4f5;
+      font-size: .9rem; cursor: pointer; margin: 0;
+    }
+    .col-filter-item:last-child { border-bottom: none; }
+    .col-filter-item input[type=checkbox] { flex-shrink: 0; cursor: pointer; }
+
     /* ---------- Abas (liquid slider) ---------- */
     .app-tabs {
       --gap: 5px;
@@ -542,12 +564,20 @@
                 <i class="ph ph-arrow-clockwise fs-5"></i>
               </button>
             </div>
-            <div class="table-scroll-x">
+            <div class="table-scroll-x" id="tabelaScroll">
               <table class="table table-striped table-hover align-middle">
                 <thead class="table-light">
                   <tr>
-                    <th>UNIDADE</th><th>STATUS</th><th>SETOR</th><th>USUARIO</th><th>N/S</th>
-                    <th>PAT</th><th>EQUIP.</th><th>PROTOCOLO</th><th>RECEBIMENTO</th><th>OBS</th>
+                    <th class="th-filterable" data-col="0">UNIDADE <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="1">STATUS <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="2">SETOR <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="3">USUARIO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="4">N/S <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="5">PAT <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="6">EQUIP. <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="7">PROTOCOLO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="8">RECEBIMENTO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                    <th class="th-filterable" data-col="9">OBS <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                     <th class="text-end">Ações</th>
                   </tr>
                 </thead>
@@ -555,6 +585,9 @@
                   <tr><td colspan="13" class="text-muted">Carregando...</td></tr>
                 </tbody>
               </table>
+            </div>
+            <div id="sentinelTabela" class="d-none text-center py-3 text-muted small">
+              <div class="spinner-border spinner-border-sm me-1"></div> Carregando mais...
             </div>
           </div>
 
@@ -814,22 +847,25 @@
               <label class="form-label">FOTOS DO EQUIPAMENTO</label>
               <div class="row g-2 align-items-start">
                 <div class="col-4 d-none" id="foto_1_slot">
-                  <div id="foto_1_preview" class="d-none">
+                  <div id="foto_1_preview" class="d-none position-relative">
                     <img id="foto_1_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="btnDeletarFoto_1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="btnRefazerFoto_1"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="foto_1_base64">
                 </div>
                 <div class="col-4 d-none" id="foto_2_slot">
-                  <div id="foto_2_preview" class="d-none">
+                  <div id="foto_2_preview" class="d-none position-relative">
                     <img id="foto_2_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="btnDeletarFoto_2" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="btnRefazerFoto_2"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="foto_2_base64">
                 </div>
                 <div class="col-4 d-none" id="foto_3_slot">
-                  <div id="foto_3_preview" class="d-none">
+                  <div id="foto_3_preview" class="d-none position-relative">
                     <img id="foto_3_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="btnDeletarFoto_3" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="btnRefazerFoto_3"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="foto_3_base64">
@@ -1017,22 +1053,25 @@
               <label class="form-label">FOTOS DO EQUIPAMENTO</label>
               <div class="row g-2 align-items-start">
                 <div class="col-4 d-none" id="edit_foto_1_slot">
-                  <div id="edit_foto_1_preview" class="d-none">
+                  <div id="edit_foto_1_preview" class="d-none position-relative">
                     <img id="edit_foto_1_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_1"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="edit_foto_1_base64">
                 </div>
                 <div class="col-4 d-none" id="edit_foto_2_slot">
-                  <div id="edit_foto_2_preview" class="d-none">
+                  <div id="edit_foto_2_preview" class="d-none position-relative">
                     <img id="edit_foto_2_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_2" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_2"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="edit_foto_2_base64">
                 </div>
                 <div class="col-4 d-none" id="edit_foto_3_slot">
-                  <div id="edit_foto_3_preview" class="d-none">
+                  <div id="edit_foto_3_preview" class="d-none position-relative">
                     <img id="edit_foto_3_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_3" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_3"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="edit_foto_3_base64">

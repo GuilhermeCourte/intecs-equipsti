@@ -58,6 +58,15 @@ let modalChamadoDetalhe = null;
 let _chamadoDetalheAtual = null;
 const choicesMap = {};
 
+// --- Filtros de coluna ---
+let colFilters  = {};   // col(string) → Set<string>; ausente = sem filtro
+let _fdCol      = -1;
+let _fdPendente = null;
+let _fdAllVals  = [];
+let _fdEl       = null;
+let _fdOutside  = null;
+let _fdScroll   = null;
+
 // ============================================================
 //  Utilidades de UI
 // ============================================================
@@ -568,15 +577,41 @@ function dadosFormulario(prefix) {
   };
 }
 
-async function loadRecords() {
-  const corpo = $('corpoTabela');
-  corpo.innerHTML = '<tr><td colspan="9" class="text-muted">Carregando...</td></tr>';
+const PAGE_SIZE = 50;
+let _recOffset = 0;
+let _recLoading = false;
+let _recAllLoaded = false;
+
+async function loadRecords(reset = true) {
+  if (_recLoading) return;
+  if (!reset && _recAllLoaded) return;
+
+  if (reset) {
+    _recOffset = 0;
+    _recAllLoaded = false;
+    REGISTROS = [];
+    $('corpoTabela').innerHTML = '<tr><td colspan="14" class="text-muted">Carregando...</td></tr>';
+    $('sentinelTabela').classList.add('d-none');
+  }
+
+  _recLoading = true;
   try {
-    REGISTROS = await api('GET', '/api/records');
-    renderTabela();
+    const novos = await api('GET', '/api/records?limit=' + PAGE_SIZE + '&offset=' + _recOffset);
+    if (reset) {
+      REGISTROS = novos;
+      renderTabela();
+    } else {
+      REGISTROS = [...REGISTROS, ...novos];
+      appendTabela(novos);
+    }
+    _recOffset += novos.length;
+    _recAllLoaded = novos.length < PAGE_SIZE;
+    $('sentinelTabela').classList.toggle('d-none', _recAllLoaded);
   } catch (err) {
     showAlert('alertRegistros', 'danger', 'Erro ao carregar registros: ' + err.message);
-    corpo.innerHTML = '<tr><td colspan="9" class="text-danger">Falha ao carregar.</td></tr>';
+    if (reset) $('corpoTabela').innerHTML = '<tr><td colspan="14" class="text-danger">Falha ao carregar.</td></tr>';
+  } finally {
+    _recLoading = false;
   }
 }
 
@@ -588,14 +623,8 @@ function patLink(pat, ns) {
   return '<button type="button" class="pat-link" data-hist="' + e + '"' + nsAttr + '>' + e + '</button>';
 }
 
-function renderTabela() {
-  const corpo = $('corpoTabela');
-  if (!REGISTROS.length) {
-    corpo.innerHTML = '<tr><td colspan="14" class="text-muted">Nenhum registro cadastrado.</td></tr>';
-    return;
-  }
-  corpo.innerHTML = REGISTROS.map((r) => {
-    return '<tr>' +
+function rowHtml(r) {
+  return '<tr>' +
     '<td title="' + escapeHtml(r.unidade) + '">' + escapeHtml(r.unidade) + '</td>' +
     '<td>' + escapeHtml(r.status) + '</td>' +
     '<td>' + escapeHtml(r.setor) + '</td>' +
@@ -610,7 +639,27 @@ function renderTabela() {
       '<button type="button" class="btn btn-sm btn-outline-primary" data-edit="' +
         escapeHtml(r.id) + '">Editar</button>' +
     '</td></tr>';
-  }).join('');
+}
+
+function renderTabela() {
+  const corpo = $('corpoTabela');
+  const temFiltro = Object.keys(colFilters).length > 0;
+  const filtered = temFiltro ? REGISTROS.filter(passaFiltros) : REGISTROS;
+  if (!filtered.length) {
+    const msg = temFiltro && REGISTROS.length
+      ? 'Nenhum registro corresponde ao filtro ativo.'
+      : 'Nenhum registro cadastrado.';
+    corpo.innerHTML = '<tr><td colspan="11" class="text-muted">' + msg + '</td></tr>';
+    return;
+  }
+  corpo.innerHTML = filtered.map(rowHtml).join('');
+  atualizarThFiltro();
+}
+
+function appendTabela(registros) {
+  const temFiltro = Object.keys(colFilters).length > 0;
+  const filtered = temFiltro ? registros.filter(passaFiltros) : registros;
+  if (filtered.length) $('corpoTabela').insertAdjacentHTML('beforeend', filtered.map(rowHtml).join(''));
 }
 
 function abrirEdicao(id) {
@@ -651,7 +700,6 @@ function abrirEdicao(id) {
         $(`edit_foto_${n}_base64`).value = data[campo];
         $(`edit_foto_${n}_thumb`).src = data[campo];
         $(`edit_foto_${n}_preview`).classList.remove('d-none');
-        $(`edit_btnAbrirCamera_${n}`).classList.add('d-none');
         $(`edit_foto_${n}_slot`).classList.remove('d-none');
       }
     });
@@ -666,6 +714,160 @@ function abrirEdicao(id) {
   jEl.placeholder = '';
   $('formEditar').classList.remove('was-validated');
   modalEditar.show();
+}
+
+// ============================================================
+//  Filtros de coluna (tabela Registros)
+// ============================================================
+const COL_FIELDS = ['unidade','status','setor','usuario','ns','pat','equipamento','protocolo','dataRecebimento','obs'];
+
+function colVal(r, col) {
+  const f = COL_FIELDS[col];
+  if (!f) return '';
+  const v = r[f];
+  if (v == null || String(v).trim() === '') return '';
+  return f === 'dataRecebimento' ? fmtData(v) : String(v);
+}
+
+function uniqueColVals(col) {
+  const seen = new Set(), out = [];
+  for (const r of REGISTROS) {
+    const v = colVal(r, col);
+    if (!seen.has(v)) { seen.add(v); out.push(v); }
+  }
+  return out.sort((a, b) => a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'pt-BR'));
+}
+
+function passaFiltros(r) {
+  for (const [k, sel] of Object.entries(colFilters)) {
+    if (!sel.has(colVal(r, Number(k)))) return false;
+  }
+  return true;
+}
+
+function atualizarThFiltro() {
+  document.querySelectorAll('#tabelaScroll thead th[data-col]').forEach(th => {
+    const ativo = colFilters[th.getAttribute('data-col')] != null;
+    th.classList.toggle('col-filter-ativo', ativo);
+  });
+}
+
+function criarFilterDropdown() {
+  if (_fdEl) return;
+  _fdEl = document.createElement('div');
+  _fdEl.id = 'colFilterDropdown';
+  _fdEl.style.display = 'none';
+  _fdEl.innerHTML =
+    '<div style="padding:.75rem .75rem .5rem">' +
+      '<div class="input-group input-group-sm mb-2">' +
+        '<span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>' +
+        '<input type="text" class="form-control" id="fdSearch" placeholder="Buscar...">' +
+      '</div>' +
+      '<div class="d-flex justify-content-between align-items-center" style="font-size:.8rem">' +
+        '<a href="#" id="fdSelAll" class="text-decoration-none fw-semibold">Selecionar tudo</a>' +
+        '<a href="#" id="fdClear" class="text-decoration-none">Limpar</a>' +
+      '</div>' +
+    '</div>' +
+    '<hr class="my-0">' +
+    '<div id="fdList"></div>' +
+    '<hr class="my-0">' +
+    '<div style="padding:.6rem .75rem;display:flex;justify-content:flex-end;gap:.5rem">' +
+      '<button type="button" class="btn btn-outline-secondary btn-sm" id="fdCancel">Cancelar</button>' +
+      '<button type="button" class="btn btn-primary btn-sm" id="fdOk">OK</button>' +
+    '</div>';
+  document.body.appendChild(_fdEl);
+
+  _fdEl.querySelector('#fdSearch').addEventListener('input', fdRenderList);
+  _fdEl.querySelector('#fdSelAll').addEventListener('click', (e) => {
+    e.preventDefault();
+    _fdAllVals.forEach(v => _fdPendente.add(v));
+    fdRenderList();
+  });
+  _fdEl.querySelector('#fdClear').addEventListener('click', (e) => {
+    e.preventDefault();
+    _fdPendente.clear();
+    fdRenderList();
+  });
+  _fdEl.querySelector('#fdOk').addEventListener('click', fdAplicar);
+  _fdEl.querySelector('#fdCancel').addEventListener('click', fdFechar);
+}
+
+function fdRenderList() {
+  const busca = _fdEl.querySelector('#fdSearch').value.toLowerCase();
+  const visiveis = busca
+    ? _fdAllVals.filter(v => (v === '' ? '(espaços em branco)' : v.toLowerCase()).includes(busca))
+    : _fdAllVals.slice();
+  const lista = _fdEl.querySelector('#fdList');
+  lista.innerHTML = visiveis.map((v, i) => {
+    const chk = _fdPendente.has(v) ? ' checked' : '';
+    const lbl = v === '' ? '<em class="text-muted">(Espaços em branco)</em>' : escapeHtml(v);
+    return '<label class="col-filter-item"><input type="checkbox" data-idx="' + i + '"' + chk + '> ' + lbl + '</label>';
+  }).join('');
+  lista.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    const v = visiveis[Number(cb.dataset.idx)];
+    cb.addEventListener('change', () => { if (cb.checked) _fdPendente.add(v); else _fdPendente.delete(v); });
+  });
+}
+
+function fdAbrir(col, thEl) {
+  criarFilterDropdown();
+  if (_fdOutside) { document.removeEventListener('mousedown', _fdOutside); _fdOutside = null; }
+  _fdCol = col;
+  _fdAllVals = uniqueColVals(col);
+  const atual = colFilters[String(col)];
+  _fdPendente = atual ? new Set(atual) : new Set(_fdAllVals);
+  _fdEl.querySelector('#fdSearch').value = '';
+  fdRenderList();
+  const rect = thEl.getBoundingClientRect();
+  _fdEl.style.display = 'flex';
+  _fdEl.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 290)) + 'px';
+  _fdEl.style.top = (rect.bottom + 4) + 'px';
+  setTimeout(() => {
+    _fdOutside = (e) => {
+      if (!_fdEl.contains(e.target) && !e.target.closest('th[data-col]')) fdFechar();
+    };
+    document.addEventListener('mousedown', _fdOutside);
+    _fdScroll = () => fdFechar();
+    window.addEventListener('scroll', _fdScroll, { passive: true });
+    $('tabelaScroll').addEventListener('scroll', _fdScroll, { passive: true });
+  }, 10);
+}
+
+function fdFechar() {
+  if (_fdEl) _fdEl.style.display = 'none';
+  if (_fdOutside) { document.removeEventListener('mousedown', _fdOutside); _fdOutside = null; }
+  if (_fdScroll) {
+    window.removeEventListener('scroll', _fdScroll);
+    const ts = $('tabelaScroll');
+    if (ts) ts.removeEventListener('scroll', _fdScroll);
+    _fdScroll = null;
+  }
+  _fdCol = -1; _fdPendente = null;
+}
+
+function fdAplicar() {
+  const col = String(_fdCol);
+  if (_fdPendente.size === 0) {
+    colFilters[col] = new Set(); // mostra nada
+  } else if (_fdPendente.size >= _fdAllVals.length) {
+    delete colFilters[col]; // todos selecionados = sem filtro
+  } else {
+    colFilters[col] = new Set(_fdPendente);
+  }
+  fdFechar();
+  renderTabela();
+  atualizarThFiltro();
+}
+
+function configurarFiltrosTabela() {
+  document.querySelector('#tabelaScroll thead').addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-col]');
+    if (!th) return;
+    const col = Number(th.getAttribute('data-col'));
+    if (_fdCol === col) { fdFechar(); return; }
+    fdFechar();
+    fdAbrir(col, th);
+  });
 }
 
 // ============================================================
@@ -887,7 +1089,7 @@ async function importarXlsx() {
       '<ul class="mt-2 mb-0 ps-3 small">' + listaErros + '</ul>' +
       '</div>';
   }
-  await loadRecords();
+  await loadRecords(true);
 }
 
 // ============================================================
@@ -1281,6 +1483,27 @@ function atualizarBtnAddFoto(p) {
   $(p + 'btnAddFoto').classList.toggle('d-none', slot3Visivel);
 }
 
+function deletarFoto(prefix, n) {
+  // Desloca fotos dos slots superiores para baixo
+  for (let i = n; i <= 2; i++) {
+    const src = $(prefix + 'foto_' + (i + 1) + '_base64').value;
+    if (src) {
+      $(prefix + 'foto_' + i + '_base64').value = src;
+      $(prefix + 'foto_' + i + '_thumb').src = $(prefix + 'foto_' + (i + 1) + '_thumb').src;
+      $(prefix + 'foto_' + i + '_preview').classList.remove('d-none');
+    } else {
+      resetSlotFoto(prefix, i);
+      $(prefix + 'foto_' + i + '_slot').classList.add('d-none');
+    }
+  }
+  // Limpa e esconde sempre o último slot
+  resetSlotFoto(prefix, 3);
+  $(prefix + 'foto_3_slot').classList.add('d-none');
+  // Dispara change para habilitar justificativa no form de edição
+  $(prefix + 'foto_1_base64').dispatchEvent(new Event('change', { bubbles: true }));
+  atualizarBtnAddFoto(prefix);
+}
+
 function fecharCameraOverlay(captured) {
   if (_camStream) { _camStream.getTracks().forEach((t) => t.stop()); _camStream = null; }
   if (!captured && _camCtx && _camCtx.isNew) {
@@ -1334,9 +1557,9 @@ function inicializarCameraOverlay() {
 function configurarCameraNovoRegistro() {
   [1, 2, 3].forEach((n) => {
     $('btnRefazerFoto_' + n).addEventListener('click', async () => {
-      resetSlotFoto('', n);
       await abrirCameraOverlay('', n, false);
     });
+    $('btnDeletarFoto_' + n).addEventListener('click', () => deletarFoto('', n));
   });
   $('btnAddFoto').addEventListener('click', async () => {
     if (_camStream) return;
@@ -1351,9 +1574,9 @@ function configurarCameraNovoRegistro() {
 function configurarCameraEdicao() {
   [1, 2, 3].forEach((n) => {
     $('edit_btnRefazerFoto_' + n).addEventListener('click', async () => {
-      resetSlotFoto('edit_', n);
       await abrirCameraOverlay('edit_', n, false);
     });
+    $('edit_btnDeletarFoto_' + n).addEventListener('click', () => deletarFoto('edit_', n));
   });
   $('edit_btnAddFoto').addEventListener('click', async () => {
     if (_camStream) return;
@@ -1414,7 +1637,7 @@ function configurarFormInventario() {
       $('foto_3_slot').classList.add('d-none');
       $('btnAddFoto').classList.remove('d-none');
       modalRegistrar.hide();
-      await loadRecords();
+      await loadRecords(true);
     } catch (err) {
       showAlert('alertRegistrar', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
@@ -1643,7 +1866,7 @@ function configurarFormEditar() {
       $('formEditar').classList.remove('was-validated');
       $('alertEditar').innerHTML = '<div class="alert alert-success py-2 mb-0">Registro atualizado com sucesso!</div>';
       setTimeout(() => { $('alertEditar').innerHTML = ''; }, 4000);
-      await loadRecords();
+      await loadRecords(true);
     } catch (err) {
       showAlert('alertRegistros', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
@@ -1916,7 +2139,7 @@ async function entrarNoApp(email) {
   dadosCarregados = true;
   try {
     await loadOptions();
-    await loadRecords();
+    await loadRecords(true);
   } catch (err) {
     showAlert('alertRegistrar', 'danger', 'Erro ao carregar dados: ' + err.message);
   }
@@ -2058,6 +2281,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarFormUsuario();
   configurarFormEmprestimo();
   configurarFormEditar();
+  configurarFiltrosTabela();
   configurarDetalheChamado();
   configurarNovoChamado();
 
@@ -2065,8 +2289,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn.addEventListener('shown.bs.tab', () => posicionarSlider());
   });
 
-  $('tab-registros').addEventListener('shown.bs.tab', loadRecords);
-  $('btnAtualizarLista').addEventListener('click', loadRecords);
+  $('tab-registros').addEventListener('shown.bs.tab', () => loadRecords(true));
+  $('btnAtualizarLista').addEventListener('click', () => loadRecords(true));
+  new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) loadRecords(false);
+  }, { threshold: 0.1 }).observe($('sentinelTabela'));
   $('btnBaixarModelo').addEventListener('click', baixarModelo);
   $('btnExportarXlsx').addEventListener('click', exportarXlsx);
   $('btnImportar').addEventListener('click', importarXlsx);
