@@ -749,6 +749,57 @@ app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
   res.status(201).json(result.data);
 }));
 
+// ===================== DASHBOARD =====================
+app.get('/api/dashboard', exigirAuth, wrap(async (req, res) => {
+  const [rEquip, rTotal, rEmp, rEmpTotal, rInsumos] = await Promise.all([
+    query(`
+      SELECT
+        unidade,
+        COUNT(*) AS total,
+        SUM(CASE WHEN tipo_aquisicao = 'LOCADO' THEN 1 ELSE 0 END) AS locados,
+        SUM(CASE WHEN tipo_aquisicao = 'LOCADO' THEN ISNULL(valor, 0) ELSE 0 END) AS valor_locacao
+      FROM dbo.EQUIPSTI_registros
+      GROUP BY unidade
+      ORDER BY unidade
+    `),
+    query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN tipo_aquisicao = 'LOCADO' THEN 1 ELSE 0 END) AS locados,
+        SUM(CASE WHEN tipo_aquisicao = 'LOCADO' THEN ISNULL(valor, 0) ELSE 0 END) AS valor_locacao
+      FROM dbo.EQUIPSTI_registros
+    `),
+    query(`
+      SELECT unidade, COUNT(*) AS emprestados
+      FROM dbo.EQUIPSTI_emprestimos
+      WHERE status = 'EMPRESTADO'
+      GROUP BY unidade
+    `),
+    query(`SELECT COUNT(*) AS emprestados FROM dbo.EQUIPSTI_emprestimos WHERE status = 'EMPRESTADO'`),
+    query(`SELECT ISNULL(SUM(quantidade), 0) AS total_insumos FROM dbo.EQUIPSTI_opcoes WHERE lista = 'INSUMOS'`),
+  ]);
+
+  const empMap = {};
+  for (const row of rEmp.recordset) empMap[row.unidade] = row.emprestados;
+
+  res.json({
+    geral: {
+      total_equipamentos: rTotal.recordset[0].total,
+      locados: rTotal.recordset[0].locados,
+      valor_locacao: Number(rTotal.recordset[0].valor_locacao) || 0,
+      emprestados: rEmpTotal.recordset[0].emprestados,
+      total_insumos: rInsumos.recordset[0].total_insumos,
+    },
+    por_unidade: rEquip.recordset.map(r => ({
+      unidade: r.unidade,
+      total: r.total,
+      locados: r.locados,
+      valor_locacao: Number(r.valor_locacao) || 0,
+      emprestados: empMap[r.unidade] || 0,
+    })),
+  });
+}));
+
 // ===================== ESTÁTICO (front-end vanilla) =====================
 // Usado no desenvolvimento local; na Vercel os estáticos são servidos pela CDN.
 app.use(express.static(PUBLIC_DIR));

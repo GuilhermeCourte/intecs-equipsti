@@ -23,6 +23,8 @@
     href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
     rel="stylesheet" crossorigin="anonymous">
   <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js" crossorigin="anonymous"></script>
   <style>
     /* ============================================================
        Tema monocromático (referência REF_DESIGN.png)
@@ -47,6 +49,8 @@
       font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       color: var(--ink);
     }
+    html { scrollbar-width: none; }
+    html::-webkit-scrollbar { display: none; }
 
     .hidden { display: none !important; }
     .form-label { font-weight: 600; font-size: .85rem; letter-spacing: .3px; color: #555; }
@@ -285,7 +289,10 @@
 
       position: sticky; top: 0; z-index: 1020;
       display: flex; gap: 0; flex-wrap: nowrap; overflow-x: auto;
-      background: var(--bg-soft); border: 1px solid var(--line);
+      background: rgba(255,255,255,.82);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(228,228,228,.7);
+      box-shadow: 0 2px 12px rgba(0,0,0,.04);
       padding: var(--gap); border-radius: 14px;
       margin: -0.25rem 0 1.25rem;
       scrollbar-width: none; -ms-overflow-style: none;
@@ -456,6 +463,241 @@
       #askText { white-space: pre-line; }
       #askDialog { max-width: 300px; padding: 1.2rem; }
     }
+
+    /* ============================================================
+       Dashboard
+       ============================================================ */
+    :root {
+      --dash-blue:   #4f7cf5;
+      --dash-orange: #ff8c42;
+      --dash-green:  #16a34a;
+    }
+
+    /* Header */
+    .dash-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.4rem;
+    }
+    .dash-title {
+      font-size: 1.65rem;
+      font-weight: 800;
+      letter-spacing: -.5px;
+      margin: 0 0 .2rem;
+      line-height: 1.1;
+    }
+    .dash-subtitle {
+      font-size: .82rem;
+      color: var(--muted);
+      margin: 0;
+    }
+    .btn-dash-refresh {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .42rem .75rem;
+      font-size: .85rem;
+      font-weight: 600;
+      border: 1.5px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ink);
+      white-space: nowrap;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    .btn-dash-refresh:hover { background: var(--bg-soft); }
+    #dashFiltroMenu .dash-check-item {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      padding: .45rem .9rem;
+      font-size: .82rem;
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+      transition: background .1s;
+    }
+    #dashFiltroMenu .dash-check-item:hover { background: var(--bg-soft); }
+    #dashFiltroMenu .dash-check-item input[type="checkbox"] {
+      accent-color: var(--ink);
+      width: 15px; height: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #dashFiltroMenu .dash-check-divider {
+      border-top: 1px solid var(--line);
+      margin: .3rem 0;
+    }
+
+    /* Stats row */
+    .dash-stats-row {
+      display: flex;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+    .dash-stat {
+      flex: 1;
+      padding: 1.1rem 1.2rem;
+      border-right: 1px solid var(--line);
+      min-width: 0;
+    }
+    .dash-stat:last-child { border-right: none; }
+    .dash-stat-top {
+      display: flex;
+      align-items: center;
+      gap: .35rem;
+      font-size: .75rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: .45rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dash-stat-value {
+      font-size: 1.75rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -.5px;
+      margin-bottom: .35rem;
+    }
+    .dash-stat-value--green { color: var(--dash-green); }
+    .dash-stat-sub {
+      font-size: .72rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .dash-stat-sub--orange { color: var(--dash-orange); }
+    .dash-stat-sub--blue { color: var(--dash-blue); }
+
+    /* Composition bar */
+    .dash-bar-wrap { margin-bottom: 1rem; }
+    .dash-bar-track {
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--line);
+      display: flex;
+      margin-bottom: .55rem;
+    }
+    .dash-bar-seg {
+      height: 100%;
+      transition: width .5s ease;
+    }
+    .dash-bar-seg--blue   { background: var(--dash-blue); }
+    .dash-bar-seg--ink    { background: var(--ink); }
+    .dash-bar-seg--orange { background: var(--dash-orange); }
+    .dash-bar-legend {
+      display: flex;
+      gap: 1rem;
+      font-size: .72rem;
+      font-weight: 500;
+      color: var(--muted);
+      align-items: center;
+    }
+    .dash-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: .3rem;
+      flex-shrink: 0;
+    }
+    .dash-dot--blue   { background: var(--dash-blue); }
+    .dash-dot--ink    { background: var(--ink); }
+    .dash-dot--orange { background: var(--dash-orange); }
+
+    /* Panels (chart + table) */
+    .dash-panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+    .dash-panel:last-child { margin-bottom: 0; }
+    .dash-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .9rem 1.1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .dash-panel-title {
+      font-size: .9rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+    }
+    .dash-panel-sub {
+      font-size: .72rem;
+      color: var(--dash-blue);
+      font-weight: 500;
+      margin-top: .15rem;
+    }
+    .dash-panel-legend {
+      display: flex;
+      gap: .75rem;
+      font-size: .72rem;
+      font-weight: 500;
+      color: var(--muted);
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .dash-legend-item {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      cursor: pointer;
+      border-radius: 999px;
+      padding: .2rem .5rem;
+      transition: background .15s, opacity .15s;
+      user-select: none;
+    }
+    .dash-legend-item:hover { background: var(--bg-soft); }
+    .dash-legend-item.is-hidden { opacity: .35; }
+    .dash-chart-wrap {
+      padding: .75rem 1.1rem;
+      height: 200px;
+    }
+    /* Table */
+    .dash-table { margin-bottom: 0; }
+    .dash-table thead th {
+      font-size: .68rem;
+      letter-spacing: .5px;
+      color: var(--muted);
+      font-weight: 600;
+      background: var(--bg-soft);
+      border-top: none;
+      padding: .55rem 1.1rem;
+    }
+    .dash-table tbody td { padding: .55rem 1.1rem; font-size: .82rem; }
+    .dash-table tbody tr:last-child td { border-bottom: 0; }
+    .dash-table tfoot td {
+      padding: .6rem 1.1rem;
+      font-weight: 700;
+      font-size: .82rem;
+      border-top: 2px solid var(--line);
+      background: var(--bg-soft);
+    }
+
+    /* Mobile */
+    @media (max-width: 575.98px) {
+      .dash-stats-row { flex-wrap: wrap; }
+      .dash-stat { flex: 1 1 50%; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
+      .dash-stat:nth-child(2n) { border-right: none; }
+      .dash-stat:last-child { flex: 1 1 100%; border-right: none; border-bottom: none; }
+      .dash-stat:nth-last-child(2):nth-child(odd) { border-bottom: none; }
+      .dash-stat-value { font-size: 1.35rem; }
+      .dash-title { font-size: 1.35rem; }
+    }
   </style>
 </head>
 <body>
@@ -518,7 +760,11 @@
       <div class="card-body">
 
         <div class="app-tabs" role="tablist">
-          <button class="nav-link active" id="tab-registros" data-bs-toggle="tab"
+          <button class="nav-link active" id="tab-dashboard" data-bs-toggle="tab"
+            data-bs-target="#pane-dashboard" type="button" role="tab">
+            <i class="ph ph-squares-four"></i> Dashboard
+          </button>
+          <button class="nav-link" id="tab-registros" data-bs-toggle="tab"
             data-bs-target="#pane-registros" type="button" role="tab">
             <i class="ph ph-table"></i> Registros
           </button>
@@ -543,8 +789,105 @@
 
         <div class="tab-content">
 
+          <!-- ABA DASHBOARD -->
+          <div class="tab-pane fade show active" id="pane-dashboard" role="tabpanel">
+            <div id="alertDashboard"></div>
+
+            <!-- Header -->
+            <div class="dash-header">
+              <div>
+                <h2 class="dash-title">Visão Geral</h2>
+                <p class="dash-subtitle d-none d-sm-block">Inventário de equipamentos, locações e insumos.</p>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <div class="dropdown">
+                  <button class="btn-dash-refresh" type="button" id="dashFiltroBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="width:120px;justify-content:flex-start;overflow:hidden;">
+                    <i class="ph ph-funnel-simple" style="flex-shrink:0"></i> <span id="dashFiltroLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Todas</span>
+                  </button>
+                  <ul class="dropdown-menu shadow-sm" id="dashFiltroMenu" style="min-width:200px;max-height:280px;overflow-y:auto;border-radius:12px;border:1px solid var(--line);padding:.4rem 0;">
+                  </ul>
+                </div>
+                <button class="btn-dash-refresh" id="btnAtualizarDashboard">
+                  <i class="ph ph-arrow-clockwise"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Loading -->
+            <div id="dashboardLoading" class="text-center py-5 text-muted">
+              <i class="ph ph-spinner ph-spin fs-3"></i><br>Carregando dados...
+            </div>
+
+            <div id="dashboardContent" class="hidden">
+
+              <!-- Stats row -->
+              <div class="dash-stats-row">
+                <div class="dash-stat">
+                  <div class="dash-stat-top"><i class="ph ph-desktop-tower"></i> Equipamentos</div>
+                  <div class="dash-stat-value" id="dash-total-equip">—</div>
+                </div>
+                <div class="dash-stat">
+                  <div class="dash-stat-top"><i class="ph ph-hand-arrow-up"></i> Emprestados</div>
+                  <div class="dash-stat-value" id="dash-emprestados">—</div>
+                </div>
+                <div class="dash-stat">
+                  <div class="dash-stat-top"><i class="ph ph-package"></i> Insumos em Estoque</div>
+                  <div class="dash-stat-value" id="dash-insumos">—</div>
+                </div>
+                <div class="dash-stat">
+                  <div class="dash-stat-top"><i class="ph ph-currency-dollar"></i> Valor de Locação</div>
+                  <div class="dash-stat-value dash-stat-value--green" id="dash-valor-locacao">—</div>
+                </div>
+                <div class="dash-stat">
+                  <div class="dash-stat-top"><i class="ph ph-headset"></i> Chamados MSA</div>
+                  <div class="dash-stat-value" id="dash-chamados-abertos">— <span style="font-size:.85rem;font-weight:500;color:var(--dash-orange)">em aberto</span></div>
+                </div>
+              </div>
+
+              <!-- Chart -->
+              <div class="dash-panel">
+                <div class="dash-panel-head">
+                  <div>
+                    <div class="dash-panel-title"><i class="ph ph-chart-bar"></i> Equipamentos por Unidade</div>
+                    <div class="dash-panel-sub" id="dashChartSub">—</div>
+                  </div>
+                  <div class="dash-panel-legend" id="dashChartLegend">
+                    <span class="dash-legend-item" data-idx="0"><span class="dash-dot dash-dot--blue"></span>Equipamentos</span>
+                    <span class="dash-legend-item" data-idx="1"><span class="dash-dot dash-dot--orange"></span>Emprestados</span>
+                  </div>
+                </div>
+                <div class="dash-chart-wrap">
+                  <canvas id="chartUnidades"></canvas>
+                </div>
+              </div>
+
+              <!-- Table -->
+              <div class="dash-panel">
+                <div class="dash-panel-head">
+                  <div class="dash-panel-title"><i class="ph ph-list-bullets"></i> Detalhe por Unidade</div>
+                </div>
+                <div class="table-responsive">
+                  <table class="dash-table table align-middle">
+                    <thead>
+                      <tr>
+                        <th>Unidade</th>
+                        <th class="text-end">Equipamentos</th>
+                        <th class="text-end">Locados</th>
+                        <th class="text-end">Emprestados</th>
+                        <th class="text-end">Valor Locação</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dashTbody"></tbody>
+                    <tfoot id="dashTfoot"></tfoot>
+                  </table>
+                </div>
+              </div>
+
+            </div><!-- /dashboardContent -->
+          </div>
+
           <!-- ABA REGISTROS -->
-          <div class="tab-pane fade show active" id="pane-registros" role="tabpanel">
+          <div class="tab-pane fade" id="pane-registros" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Cadastre ou altere equipamentos.</p>
               <div class="d-flex gap-2">

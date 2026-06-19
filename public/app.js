@@ -2181,6 +2181,256 @@ function configurarNovoChamado() {
 }
 
 // ============================================================
+//  Dashboard
+// ============================================================
+let _chartUnidades = null;
+let _dashData = null;
+
+function fmtMoeda(v) {
+  return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+let _dashFiltroSelecionadas = new Set();
+
+function getSelectedUnidades() {
+  return Array.from(_dashFiltroSelecionadas);
+}
+
+function atualizarLabelFiltro() {
+  const n = _dashFiltroSelecionadas.size;
+  const el = $('dashFiltroLabel');
+  if (n === 0) {
+    el.textContent = 'Todas';
+  } else if (n === 1) {
+    el.textContent = Array.from(_dashFiltroSelecionadas)[0];
+  } else {
+    el.innerHTML = n + ' <span style="font-size:.7rem;opacity:.75">unidades</span>';
+  }
+}
+
+function popularFiltroDashboard(unidades) {
+  const menu = $('dashFiltroMenu');
+  menu.innerHTML = '';
+
+  // Opção "Todas"
+  const liTodas = document.createElement('li');
+  liTodas.innerHTML = `<label class="dash-check-item"><input type="checkbox" id="dashChkTodas" ${_dashFiltroSelecionadas.size === 0 ? 'checked' : ''}> Todas</label>`;
+  menu.appendChild(liTodas);
+
+  const divider = document.createElement('li');
+  divider.innerHTML = '<div class="dash-check-divider"></div>';
+  menu.appendChild(divider);
+
+  unidades.forEach(u => {
+    const val = u.unidade || '';
+    const li = document.createElement('li');
+    li.innerHTML = `<label class="dash-check-item"><input type="checkbox" data-unidade="${escapeHtml(val)}" ${_dashFiltroSelecionadas.has(val) ? 'checked' : ''}> ${escapeHtml(u.unidade || '(sem unidade)')}</label>`;
+    menu.appendChild(li);
+  });
+
+  menu.addEventListener('change', (ev) => {
+    const chk = ev.target;
+    if (chk.id === 'dashChkTodas') {
+      if (chk.checked) {
+        _dashFiltroSelecionadas.clear();
+        menu.querySelectorAll('[data-unidade]').forEach(c => c.checked = false);
+      } else {
+        chk.checked = true;
+      }
+    } else if (chk.dataset.unidade !== undefined) {
+      if (chk.checked) _dashFiltroSelecionadas.add(chk.dataset.unidade);
+      else _dashFiltroSelecionadas.delete(chk.dataset.unidade);
+      $('dashChkTodas').checked = _dashFiltroSelecionadas.size === 0;
+    }
+    atualizarLabelFiltro();
+    if (_dashData) renderDashboard(_dashData, getSelectedUnidades());
+  }, { capture: false });
+}
+
+function renderDashboard(d, filtros) {
+  const ativos = Array.isArray(filtros) ? filtros : [];
+  const unidades = ativos.length
+    ? d.por_unidade.filter(u => ativos.includes(u.unidade || ''))
+    : d.por_unidade;
+
+  const g = ativos.length
+    ? {
+        total_equipamentos: unidades.reduce((s, u) => s + u.total, 0),
+        locados:            unidades.reduce((s, u) => s + u.locados, 0),
+        valor_locacao:      unidades.reduce((s, u) => s + u.valor_locacao, 0),
+        emprestados:        unidades.reduce((s, u) => s + u.emprestados, 0),
+        total_insumos:      d.geral.total_insumos,
+      }
+    : d.geral;
+
+  // Stats
+  $('dash-total-equip').textContent = g.total_equipamentos;
+
+  $('dash-valor-locacao').textContent = fmtMoeda(g.valor_locacao);
+  $('dash-emprestados').textContent = g.emprestados;
+  $('dash-insumos').textContent = g.total_insumos;
+
+  // Chart sub-label
+  $('dashChartSub').textContent = unidades.length + (unidades.length === 1 ? ' unidade' : ' unidades');
+
+  // Chart
+  const labels    = unidades.map(u => u.unidade || '(sem unidade)');
+  const dataEquip = unidades.map(u => u.total);
+  const dataEmp   = unidades.map(u => u.emprestados);
+
+  if (_chartUnidades) _chartUnidades.destroy();
+  const ctx = $('chartUnidades').getContext('2d');
+  _chartUnidades = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Equipamentos',
+          data: dataEquip,
+          backgroundColor: '#4f7cf5',
+          borderRadius: 6,
+          borderSkipped: false,
+        },
+        ...(dataEmp.some(v => v > 0) ? [{
+          label: 'Emprestados',
+          data: dataEmp,
+          backgroundColor: '#ff8c42',
+          borderRadius: 6,
+          borderSkipped: false,
+        }] : []),
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 0 },
+      animations: {
+        y: {
+          easing: 'easeOutQuart',
+          duration: 700,
+          from: (ctx) => {
+            if (ctx.type === 'data' && ctx.mode === 'default') {
+              return ctx.chart.scales.y.getPixelForValue(0);
+            }
+          },
+        },
+        x:      { duration: 0 },
+        radius: { duration: 0 },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#fff',
+          titleColor: '#2b2b2b',
+          bodyColor: '#555',
+          borderColor: '#e4e4e4',
+          borderWidth: 1,
+          padding: 10,
+          bodyFont: { family: 'Poppins', size: 12 },
+          titleFont: { family: 'Poppins', size: 12, weight: '700' },
+        },
+        datalabels: {
+          anchor: 'end',
+          align: 'end',
+          offset: 2,
+          font: { family: 'Poppins', size: 11, weight: '600' },
+          color: '#2b2b2b',
+          formatter: (v) => v > 0 ? v : '',
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { family: 'Poppins', size: 11 }, color: '#9a9a9a' },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          ticks: { font: { family: 'Poppins', size: 11 }, color: '#9a9a9a', precision: 0 },
+          grid: { color: '#f0f0f0' },
+          border: { display: false },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+
+  // Legenda clicável
+  const legendEl = $('dashChartLegend');
+  const newLegend = legendEl.cloneNode(true); // remove listeners anteriores
+  legendEl.parentNode.replaceChild(newLegend, legendEl);
+  newLegend.querySelectorAll('.dash-legend-item').forEach(item => {
+    const idx = Number(item.dataset.idx);
+    // Mostra apenas itens cujo dataset existe
+    if (idx >= _chartUnidades.data.datasets.length) {
+      item.style.display = 'none';
+    } else {
+      item.style.display = '';
+      item.addEventListener('click', () => {
+        const visible = _chartUnidades.isDatasetVisible(idx);
+        _chartUnidades.setDatasetVisibility(idx, !visible);
+        _chartUnidades.update();
+        item.classList.toggle('is-hidden', visible);
+      });
+    }
+  });
+
+  // Table
+  $('dashTbody').innerHTML = unidades.map(u => `
+    <tr>
+      <td class="fw-semibold">${escapeHtml(u.unidade || '(sem unidade)')}</td>
+      <td class="text-end">${u.total}</td>
+      <td class="text-end" style="color:var(--dash-blue)">${u.locados}</td>
+      <td class="text-end" style="color:var(--dash-orange)">${u.emprestados}</td>
+      <td class="text-end" style="color:var(--dash-green);font-weight:600">${fmtMoeda(u.valor_locacao)}</td>
+    </tr>
+  `).join('');
+  $('dashTfoot').innerHTML = `
+    <tr>
+      <td>Total${ativos.length ? ' (seleção)' : ' geral'}</td>
+      <td class="text-end">${g.total_equipamentos}</td>
+      <td class="text-end">${g.locados}</td>
+      <td class="text-end">${g.emprestados}</td>
+      <td class="text-end">${fmtMoeda(g.valor_locacao)}</td>
+    </tr>
+  `;
+}
+
+async function carregarDashboard() {
+  $('dashboardLoading').classList.remove('hidden');
+  $('dashboardContent').classList.add('hidden');
+  $('alertDashboard').innerHTML = '';
+  try {
+    const [d, chamadosRaw] = await Promise.all([
+      api('GET', '/api/dashboard'),
+      api('GET', '/api/chamados').catch(() => null),
+    ]);
+    _dashData = d;
+
+    // Conta chamados abertos (St !== 'Resolvido')
+    const listaChamados = chamadosRaw
+      ? (Array.isArray(chamadosRaw) ? chamadosRaw : (chamadosRaw.root ?? chamadosRaw.Lista ?? chamadosRaw.lista ?? []))
+      : [];
+    const chamadosAbertos = listaChamados.filter(c => c.St !== 'Resolvido').length;
+    $('dash-chamados-abertos').innerHTML = chamadosRaw
+      ? `${chamadosAbertos} <span style="font-size:.85rem;font-weight:500;color:var(--dash-orange)">em aberto</span>`
+      : '—';
+
+    // Popula o filtro de unidades
+    popularFiltroDashboard(d.por_unidade);
+
+    renderDashboard(d, getSelectedUnidades());
+
+    $('dashboardLoading').classList.add('hidden');
+    $('dashboardContent').classList.remove('hidden');
+  } catch (err) {
+    $('dashboardLoading').classList.add('hidden');
+    showAlert('alertDashboard', 'danger', 'Erro ao carregar dashboard: ' + err.message);
+  }
+}
+
+
+// ============================================================
 //  Sessão / inicialização
 // ============================================================
 let dadosCarregados = false;
@@ -2191,7 +2441,7 @@ async function entrarNoApp(email, restaurarAba = false) {
   $('userEmail').textContent = email || '';
   if (restaurarAba) {
     const abaId = localStorage.getItem('abaAtiva');
-    if (abaId && abaId !== 'tab-registros') {
+    if (abaId && abaId !== 'tab-dashboard') {
       const abaEl = $(abaId);
       if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
     }
@@ -2201,9 +2451,12 @@ async function entrarNoApp(email, restaurarAba = false) {
   dadosCarregados = true;
   try {
     await loadOptions();
-    invalidarCacheTodos(); await loadRecords(true);
+    // Carrega dashboard se for a aba ativa (ou padrão)
+    const abaAtiva = localStorage.getItem('abaAtiva') || 'tab-dashboard';
+    if (!restaurarAba || abaAtiva === 'tab-dashboard') carregarDashboard();
+    // Não pré-carrega registros na inicialização; são carregados ao entrar na aba
   } catch (err) {
-    showAlert('alertRegistrar', 'danger', 'Erro ao carregar dados: ' + err.message);
+    showAlert('alertDashboard', 'danger', 'Erro ao carregar dados: ' + err.message);
   }
 }
 
@@ -2285,6 +2538,7 @@ function posicionarSlider(animar = true) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
   modalEditar = new bootstrap.Modal($('modalEditar'));
   modalMsg = new bootstrap.Modal($('modalMsg'));
   modalAsk = null; // substituído por dialog custom (#askOverlay)
@@ -2359,6 +2613,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
+  $('tab-dashboard').addEventListener('shown.bs.tab', carregarDashboard);
+  $('btnAtualizarDashboard').addEventListener('click', carregarDashboard);
+  window.addEventListener('scroll', () => {
+    const btn = $('dashFiltroBtn');
+    if (btn) bootstrap.Dropdown.getInstance(btn)?.hide();
+  }, { passive: true });
   $('tab-registros').addEventListener('shown.bs.tab', () => loadRecords(true));
   $('btnAtualizarLista').addEventListener('click', () => { invalidarCacheTodos(); loadRecords(true); });
   $('btnLimparFiltros').addEventListener('click', () => { colFilters = {}; renderTabela(); });
