@@ -27,12 +27,13 @@ async function api(method, path, body) {
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
 const FORM_SELECTS = ['unidade', 'status', 'setor', 'equipamento'];
 const SELECT_TO_LIST = { unidade: 'UNIDADE', status: 'STATUS', setor: 'SETOR', equipamento: 'EQUIPAMENTO' };
-const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat']);
+const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat', 'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns']);
 const CHOICES_IDS = [
   'unidade', 'status', 'setor', 'equipamento',
   'edit_unidade', 'edit_status', 'edit_setor', 'edit_equipamento',
   'insumo', 'edit_insumo',
-  'listaAlvo', 'emp_pat', 'emp_unidade'
+  'listaAlvo', 'emp_pat', 'emp_unidade',
+  'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns'
 ];
 
 // ---------- Estado em memória ----------
@@ -1990,20 +1991,19 @@ async function abrirLog(registroId) {
 //  Detalhe + Interação do Chamado
 // ============================================================
 function renderDetalheChamado(data) {
-  const tc  = data.TChamado  || {};
+  const tc   = data.TChamado || {};
   const conv = (data.TConversa?.root) || [];
-  let html = '';
 
   // --- Cabeçalho ---
-  html += '<div class="p-3 mb-0" style="background:var(--bg-soft);border-bottom:1px solid var(--line)">';
+  let html = '<div class="p-3" style="background:var(--bg-soft);border-bottom:1px solid var(--line)">';
   html += '<div class="row g-2 small">';
   const info = [
-    ['Código',   tc.Codigo],
-    ['Assunto',  tc.Assunto],
-    ['Status',   tc.AcaoStatusCodigo ? tc.AcaoStatusCodigo.replace(/^\d+\s*-\s*/,'') : ''],
-    ['Criado em', tc.DataCriacao ? tc.DataCriacao.split('/').reverse().join('/') + ' ' + (tc.HoraCriacao||'') : ''],
-    ['Tipo',      tc.TipoOcorrencia],
-    ['Ações',     tc.TotalAcoes != null ? String(tc.TotalAcoes) : ''],
+    ['Código',      tc.Codigo],
+    ['PAT',         data._pat || ''],
+    ['Status',      data._st || tc.AcaoStatus || ''],
+    ['Assunto',     tc.Assunto],
+    ['Equipamento', data._equipamento || ''],
+    ['Criado em',   tc.DataCriacao ? tc.DataCriacao + ' ' + (tc.HoraCriacao || '') : ''],
   ];
   info.forEach(([l, v]) => {
     if (!v) return;
@@ -2011,38 +2011,77 @@ function renderDetalheChamado(data) {
   });
   html += '</div></div>';
 
-  // --- Histórico de conversa (TConversa) ---
-  if (conv.length) {
-    html += '<div class="p-3 border-bottom"><h6 class="mb-3">Histórico</h6>';
-    conv.forEach(item => {
-      const isCliente = !item.Operador || item.Solicitacao === 'Portal';
-      const quem = escapeHtml(item.Operador || 'Cliente');
-      const dt = escapeHtml((item.DataCriacao || '') + (item.HoraCriacao ? ' ' + item.HoraCriacao : ''));
-      html += `<div class="mb-2 p-2 rounded border${isCliente ? '' : ' border-primary'}">`;
-      html += `<div class="d-flex justify-content-between small text-muted mb-1"><span>${quem}</span><span>${dt}</span></div>`;
-      html += `<div class="small">${item.Descricao || ''}</div>`;
-      html += '</div>';
-    });
-    html += '</div>';
+  // --- Chat ---
+  html += '<div class="p-3 d-flex flex-column gap-3">';
+
+  // Bolha auxiliar — tecnico=direita, cliente=esquerda
+  function bubble(lado, icone, quem, dt, conteudo, extra) {
+    const dir = lado === 'tecnico' ? 'align-self-end' : 'align-self-start';
+    const bg  = lado === 'tecnico' ? 'background:#e9fbe9;border-color:#a3d9a5'
+                                   : lado === 'cliente' ? 'background:#e8f0fe;border-color:#b3c7f7'
+                                   : 'background:#f8f9fa;border-color:#dee2e6';
+    const dtHtml = dt ? `<span class="text-muted" style="font-size:.75rem">${escapeHtml(dt)}</span>` : '';
+    const metaDir = lado === 'tecnico' ? 'justify-content-end' : '';
+    return `<div class="${dir}" style="max-width:85%">
+      <div class="d-flex align-items-center gap-1 mb-1 ${metaDir}">
+        <i class="ph ${icone}" style="font-size:.85rem;opacity:.6"></i>
+        <span class="fw-600 small">${escapeHtml(quem)}</span>
+        ${dtHtml}
+      </div>
+      <div class="rounded border p-2 small" style="${bg};overflow-x:auto">${conteudo}</div>
+      ${extra || ''}
+    </div>`;
   }
 
-  // --- Última ação do técnico (AcaoDescricao) ---
+  const bubbles = [];
+
+  // Abertura do chamado (cliente — esquerda)
+  if (tc.Descricao) {
+    const dtAbertura = tc.DataCriacao
+      ? tc.DataCriacao + (tc.HoraCriacao ? ' ' + tc.HoraCriacao.slice(0, 5) : '')
+      : '';
+    bubbles.push(bubble('cliente', 'ph-user', tc.Usuario || 'Cliente', dtAbertura,
+      `<pre style="white-space:pre-wrap;margin:0;font-family:inherit">${escapeHtml(tc.Descricao)}</pre>`));
+  }
+
+  // Interações do portal (TConversa) — cliente=esquerda, tecnico=direita
+  conv.forEach(item => {
+    const isCliente = !item.Operador || item.Solicitacao === 'Portal';
+    const lado = isCliente ? 'cliente' : 'tecnico';
+    const icone = isCliente ? 'ph-user' : 'ph-wrench';
+    const quem = item.Operador || 'Cliente';
+    const dt = (item.DataCriacao || '') + (item.HoraCriacao ? ' ' + String(item.HoraCriacao).slice(0, 5) : '');
+    const corpo = item.Descricao
+      ? `<pre style="white-space:pre-wrap;margin:0;font-family:inherit">${escapeHtml(item.Descricao)}</pre>`
+      : '';
+    bubbles.push(bubble(lado, icone, quem, dt, corpo));
+  });
+
+  // Última ação do técnico (direita)
   const acaoHtml = (tc.AcaoDescricao || '').replace(/<p>(\s|&nbsp;)*<\/p>/gi, '').trim();
   if (acaoHtml) {
-    html += '<div class="p-3 border-bottom">';
-    html += '<h6 class="mb-2"><i class="ph ph-wrench me-1"></i>Última ação do técnico</h6>';
-    html += `<div class="p-2 rounded border border-primary small">${acaoHtml}</div>`;
-    html += '</div>';
+    const quemTec = tc.AcaoOperador || 'Técnico';
+    const dtTec   = tc.DataAcao
+      ? tc.DataAcao + (tc.HoraAcaoInicio ? ' ' + tc.HoraAcaoInicio.slice(0, 5) : '')
+      : '';
+    const extra = tc.AcaoStatus
+      ? `<div class="small text-muted mt-1 text-end"><i class="ph ph-flag me-1"></i>${escapeHtml(tc.AcaoStatus)}</div>`
+      : '';
+    bubbles.push(bubble('tecnico', 'ph-wrench', quemTec, dtTec, acaoHtml, extra));
   }
 
-  if (!conv.length && !acaoHtml) {
-    html += '<div class="p-3 text-muted small">Sem interações registradas ainda.</div>';
+  // Mais recente primeiro
+  bubbles.reverse().forEach(b => { html += b; });
+
+  if (!bubbles.length) {
+    html += '<div class="text-muted small text-center py-3">Sem interações registradas.</div>';
   }
 
+  html += '</div>';
   return html;
 }
 
-async function abrirDetalheChamado(chave, codigo) {
+async function abrirDetalheChamado(chave, codigo, st) {
   _chamadoDetalheAtual = { chave, codigo };
   $('detalheTitle').textContent = 'Chamado ' + codigo;
   $('detalheBody').innerHTML = '<div class="p-3 text-muted">Carregando...</div>';
@@ -2051,6 +2090,7 @@ async function abrirDetalheChamado(chave, codigo) {
   modalChamadoDetalhe.show();
   try {
     const data = await api('GET', '/api/chamados/' + encodeURIComponent(chave));
+    data._st = st || '';
     $('detalheBody').innerHTML = renderDetalheChamado(data);
   } catch (err) {
     $('detalheBody').innerHTML = '<div class="p-3 text-danger">Erro: ' + escapeHtml(err.message) + '</div>';
@@ -2062,7 +2102,7 @@ function configurarDetalheChamado() {
   $('chamadosTbody').addEventListener('click', (ev) => {
     const btn = ev.target.closest('[data-ver-chave]');
     if (!btn) return;
-    abrirDetalheChamado(btn.getAttribute('data-ver-chave'), btn.getAttribute('data-ver-codigo'));
+    abrirDetalheChamado(btn.getAttribute('data-ver-chave'), btn.getAttribute('data-ver-codigo'), btn.getAttribute('data-ver-st') || '');
   });
 
   $('btnEnviarInteracao').addEventListener('click', async () => {
@@ -2111,33 +2151,58 @@ function configurarNovoChamado() {
     form.reset();
     form.classList.remove('was-validated');
     $('alertNovoChamado').innerHTML = '';
+    $('nc_patrimonio_info').textContent = '';
+    $('nc_ns_grupo').style.display = 'none';
+    const _cNs = choicesMap['nc_ns'];
+    if (_cNs) _cNs.setChoices([], 'value', 'label', true);
 
-    const assuntoSel = $('nc_assunto');
-    assuntoSel.innerHTML = '<option value="">Carregando...</option>';
-    assuntoSel.disabled = true;
+    const cAssunto  = choicesMap['nc_assunto'];
+    const cUnidade  = choicesMap['nc_unidade'];
+    const cPat      = choicesMap['nc_patrimonio'];
 
-    const patSel = $('nc_patrimonio');
-    patSel.innerHTML = '<option value="">Selecione (opcional)...</option>';
+    if (cAssunto)  { cAssunto.clearChoices();  cAssunto.setChoices([{ value: '', label: 'Carregando...', placeholder: true }], 'value', 'label', true); cAssunto.disable(); }
+    if (cUnidade)  { cUnidade.clearChoices();  cUnidade.setChoices([{ value: '', label: 'Carregando...', placeholder: true }], 'value', 'label', true); cUnidade.disable(); }
+    if (cPat)      { cPat.clearChoices();      cPat.setChoices([{ value: '', label: 'Selecione (opcional)...', placeholder: true }], 'value', 'label', true); }
 
     modalNovoChamado.show();
 
     try {
-      const [assuntos, pats] = await Promise.all([
+      const [assuntos, unidades, pats] = await Promise.all([
         api('GET', '/api/chamados/assuntos'),
+        api('GET', '/api/chamados/unidades'),
         api('GET', '/api/pats')
       ]);
 
-      assuntoSel.innerHTML = '<option value="">Selecione...</option>' +
-        assuntos.map(a => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.text) + '</option>').join('');
-      assuntoSel.disabled = false;
+      if (cAssunto) {
+        cAssunto.setChoices(
+          [{ value: '', label: 'Selecione...', placeholder: true }]
+            .concat(assuntos.map(a => ({ value: a.id, label: a.text }))),
+          'value', 'label', true
+        );
+        cAssunto.enable();
+      }
 
-      patSel.innerHTML = '<option value="">Selecione (opcional)...</option>' +
-        pats.map(p => '<option value="' + escapeHtml(p) + '">' + escapeHtml(p) + '</option>').join('');
+      if (cUnidade) {
+        cUnidade.setChoices(
+          [{ value: '', label: 'Selecione...', placeholder: true }]
+            .concat(unidades.map(u => ({ value: u, label: u }))),
+          'value', 'label', true
+        );
+        cUnidade.enable();
+      }
+
+      if (cPat) {
+        cPat.setChoices(
+          [{ value: '', label: 'Selecione (opcional)...', placeholder: true }]
+            .concat(pats.map(p => ({ value: p, label: p }))),
+          'value', 'label', true
+        );
+      }
     } catch (err) {
-      assuntoSel.innerHTML = '<option value="">Erro ao carregar</option>';
-      assuntoSel.disabled = false;
+      if (cAssunto) { cAssunto.setChoices([{ value: '', label: 'Erro ao carregar', placeholder: true }], 'value', 'label', true); cAssunto.enable(); }
+      if (cUnidade) { cUnidade.setChoices([{ value: '', label: 'Erro ao carregar', placeholder: true }], 'value', 'label', true); cUnidade.enable(); }
       $('alertNovoChamado').innerHTML =
-        '<div class="alert alert-warning py-2 mb-0">Não foi possível carregar os assuntos: ' + escapeHtml(err.message) + '</div>';
+        '<div class="alert alert-warning py-2 mb-0">Não foi possível carregar os dados: ' + escapeHtml(err.message) + '</div>';
     }
   });
 
@@ -2145,6 +2210,46 @@ function configurarNovoChamado() {
     $('nc_local').value    = SEDE_LOCAL;
     $('nc_endereco').value = SEDE_END;
   });
+
+  async function atualizarNsChamado(pat) {
+    const info    = $('nc_patrimonio_info');
+    const nsGrupo = $('nc_ns_grupo');
+    const cNs     = choicesMap['nc_ns'];
+
+    nsGrupo.style.display = 'none';
+    if (cNs) cNs.setChoices([], 'value', 'label', true);
+    info.textContent = '';
+
+    if (!pat) return;
+    info.textContent = 'Buscando...';
+    try {
+      const [nsList, d] = await Promise.all([
+        api('GET', '/api/pats/' + encodeURIComponent(pat) + '/ns'),
+        api('GET', '/api/pats/' + encodeURIComponent(pat) + '/info')
+      ]);
+
+      if (nsList.length > 1) {
+        if (cNs) {
+          cNs.setChoices(
+            nsList.map(n => ({ value: n, label: n })),
+            'value', 'label', true
+          );
+        } else {
+          const sel = $('nc_ns');
+          sel.innerHTML = nsList.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+        }
+        nsGrupo.style.display = '';
+      }
+
+      const ns = nsList.length === 1 ? nsList[0] : '';
+      info.innerHTML = d.equipamento
+        ? `<i class="ph ph-desktop-tower me-1"></i><strong>${escapeHtml(d.equipamento)}</strong>` +
+          (ns ? ` <span class="ms-2 text-secondary">N/S: ${escapeHtml(ns)}</span>` : '')
+        : '';
+    } catch { info.textContent = ''; }
+  }
+
+  $('nc_patrimonio').addEventListener('change', () => atualizarNsChamado($('nc_patrimonio').value));
 
   $('btnAbrirChamado').addEventListener('click', async () => {
     const form = $('formNovoChamado');
@@ -2164,7 +2269,8 @@ function configurarNovoChamado() {
         localTrabalho: trim($('nc_local').value),
         endereco:      trim($('nc_endereco').value),
         unidade:       trim($('nc_unidade').value),
-        patrimonio:    trim($('nc_patrimonio').value)
+        patrimonio:    trim($('nc_patrimonio').value),
+        ns:            trim($('nc_ns').value)
       });
       const codigo = resultado?.url?.text?.match(/\d{4}-\d{6}/)?.[0] || '';
       modalNovoChamado.hide();
@@ -2273,7 +2379,7 @@ function renderDashboard(d, filtros) {
 
   // Chamados MSA — total global
   {
-    const abertos = _dashChamados.filter(c => c.St !== 'Resolvido').length;
+    const abertos = _dashChamados.filter(c => c.St !== 'Resolvido' && c.St !== 'Cancelado').length;
     $('dash-chamados-abertos').innerHTML = _dashChamados.length
       ? `${abertos} <span style="font-size:.85rem;font-weight:500;color:var(--dash-orange)">em aberto</span>`
       : '—';
@@ -2489,7 +2595,7 @@ function renderChamados() {
   const busca = ($('chamadosBusca').value ?? '').toLowerCase();
   const status = $('chamadosFiltroStatus').value;
   const rows = _chamadosTodos.filter(r => {
-    if (status === 'aberto' && r.St === 'Resolvido') return false;
+    if (status === 'aberto' && (r.St === 'Resolvido' || r.St === 'Cancelado')) return false;
     if (status && status !== 'aberto' && r.St !== status) return false;
     if (busca && !`${r.Codigo} ${r.Assunto} ${r.Solicitante}`.toLowerCase().includes(busca)) return false;
     return true;
@@ -2497,7 +2603,7 @@ function renderChamados() {
   $('chamadosTbody').innerHTML = rows.map(r =>
     `<tr>${CHAMADOS_COLS.map(c => `<td>${escapeHtml(c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? ''))}</td>`).join('')}` +
     `<td><button type="button" class="btn btn-sm btn-outline-primary" ` +
-    `data-ver-chave="${escapeHtml(String(r.Chave || ''))}" data-ver-codigo="${escapeHtml(r.Codigo || '')}">` +
+    `data-ver-chave="${escapeHtml(String(r.Chave || ''))}" data-ver-codigo="${escapeHtml(r.Codigo || '')}" data-ver-st="${escapeHtml(r.St || '')}">` +
     `<i class="ph ph-eye"></i> Ver</button></td></tr>`
   ).join('');
   $('chamadosStatus').textContent = `${rows.length} de ${_chamadosTodos.length} chamado(s).`;

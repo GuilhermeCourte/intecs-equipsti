@@ -373,6 +373,16 @@ app.get('/api/pats', exigirAuth, wrap(async (req, res) => {
   res.json(r.recordset.map((row) => row.pat));
 }));
 
+app.get('/api/pats/:pat/info', exigirAuth, wrap(async (req, res) => {
+  const pat = trim(req.params.pat);
+  const r = await query(
+    `SELECT TOP 1 equipamento, ns FROM dbo.EQUIPSTI_registros
+      WHERE pat = @pat ORDER BY criado_em DESC`,
+    { pat: S(pat) });
+  const row = r.recordset[0];
+  res.json(row ? { equipamento: row.equipamento || '', ns: row.ns || '' } : { equipamento: '', ns: '' });
+}));
+
 // NS distintos para um PAT (para popular o select de NS no form de empréstimo).
 app.get('/api/pats/:pat/ns', exigirAuth, wrap(async (req, res) => {
   const pat = trim(req.params.pat);
@@ -668,11 +678,76 @@ async function eurosaGetChamadoDetalhe(chave) {
   return { status: res.status, data };
 }
 
+const CHAMADO_UNIDADES = [
+  'INTECS_SP',
+  'AS - SÃO MIGUEL PAULISTA',
+  'AS - CITY JARAGUA',
+  'AS - JARAGUA',
+  'AS - BRASILANDIA',
+  'AS - GUAIANASES',
+  'AS - TIRADENTES',
+  'AS - MBOI MIRIM',
+];
+
+app.get('/api/chamados/assuntos', exigirAuth, wrap(async (req, res) => {
+  const dados = {
+    Pesquisa: '', Ativo: '1', Ordem: [], Tudo: 'true', Ajax: 'true',
+    Filtro: { ListaCatalogoUsuario: ['', 'equal'] }
+  };
+  const result = await eurosaCall(() => eurosaPost('/Chamados/listaAutoCategoria', dados));
+  console.log('[assuntos] status:', result.status, '| data:', JSON.stringify(result.data).slice(0, 300));
+  if (result.status >= 400) throw new Error('Erro eurosa: ' + result.status);
+  const raw = result.data?.root ?? result.data ?? [];
+  const lista = Array.isArray(raw) ? raw : [];
+  res.json(lista.map(i => ({ id: String(i.id).replace(/\\+$/, ''), text: i.text })));
+}));
+
+app.get('/api/chamados/unidades', exigirAuth, (req, res) => {
+  res.json(CHAMADO_UNIDADES);
+});
+
 app.get('/api/chamados/:chave', exigirAuth, wrap(async (req, res) => {
   const chave = trim(req.params.chave);
-  const result = await eurosaCall(() => eurosaGetChamadoDetalhe(chave));
-  if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status);
-  res.json(result.data);
+
+  const [detalhe, detalhesExtra] = await Promise.all([
+    eurosaCall(() => eurosaGetChamadoDetalhe(chave)),
+    eurosaCall(() => {
+      const body = new URLSearchParams({ App: 'Portal', Dados: JSON.stringify({ Codigo: chave, CodigoAcao: '0' }) });
+      return fetch('https://eurosa.desk.ms/Chamados/listaDetalhes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Referer': 'https://eurosa.desk.ms/?Portal',
+          'Origin': 'https://eurosa.desk.ms',
+          'User-Agent': EUROSA_UA,
+          'Cookie': eurosaCookie
+        },
+        body: body.toString()
+      }).then(async r => { const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = t; } return { status: r.status, data: d }; });
+    })
+  ]);
+
+  if (detalhe.status >= 400) throw new Error('Eurosa retornou ' + detalhe.status);
+
+  const data = detalhe.data || {};
+  const extras = Array.isArray(detalhesExtra?.data?.CamposExtras) ? detalhesExtra.data.CamposExtras : [];
+  const patExtra = extras.find(e => e.codcampoextra === 20742);
+  const pat = patExtra?.valcampoextra && patExtra.valcampoextra !== '0' ? trim(String(patExtra.valcampoextra)) : null;
+
+  let equipamento = null;
+  if (pat) {
+    try {
+      const eq = await query(
+        `SELECT TOP 1 equipamento FROM dbo.EQUIPSTI_registros WHERE pat = @pat ORDER BY criado_em DESC`,
+        { pat: S(pat) });
+      equipamento = eq.recordset[0]?.equipamento || null;
+    } catch { /* ignora se falhar */ }
+  }
+
+  data._pat = pat;
+  data._equipamento = equipamento;
+  res.json(data);
 }));
 
 app.post('/api/chamados/:chave/interacao', exigirAuth, wrap(async (req, res) => {
@@ -694,19 +769,6 @@ app.post('/api/chamados/:chave/interacao', exigirAuth, wrap(async (req, res) => 
   if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status + ': ' + JSON.stringify(result.data));
   res.status(201).json(result.data);
 }));
-
-app.get('/api/chamados/assuntos', exigirAuth, wrap(async (req, res) => {
-  const dados = {
-    Pesquisa: '', Ativo: '1', Ordem: [], Tudo: 'true', Ajax: 'true',
-    Filtro: { ListaCatalogoUsuario: ['', 'equal'] }
-  };
-  const result = await eurosaCall(() => eurosaPost('/Chamados/listaAutoCategoria', dados));
-  if (result.status >= 400) throw new Error('Erro eurosa: ' + result.status);
-  const lista = result.data?.root ?? [];
-  res.json(lista.map(i => ({ id: String(i.id).replace(/\\+$/, ''), text: i.text })));
-}));
-
-const EUROSA_CODUSUARIO = '12290';
 
 app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
   const codCatalogo   = trim(req.body.codCatalogo   || '');

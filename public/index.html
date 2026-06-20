@@ -347,6 +347,7 @@
     .choices__list[aria-expanded] {
       border: 1px solid #ced4da; border-radius: 10px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, .12); overflow: hidden;
+      z-index: 9999;
     }
     .choices__list--dropdown .choices__item,
     .choices__list[aria-expanded] .choices__item {
@@ -361,6 +362,12 @@
       font-weight: 600; background: var(--bg-soft);
     }
     .choices__input { font-size: 1rem; }
+
+    /* Limita o dropdown dos chamados a ~4 itens visíveis */
+    #modalNovoChamado .choices__list--dropdown .choices__list,
+    #modalNovoChamado .choices__list[aria-expanded] .choices__list {
+      max-height: 212px; overflow-y: auto;
+    }
 
     /* Força o dropdown de PAT/NS no form de empréstimo a abrir sempre para baixo */
     #pane-emprestimos .choices.is-flipped .choices__list--dropdown,
@@ -1560,7 +1567,7 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-0">
-          <div id="detalheBody" class="p-3">
+          <div id="detalheBody">
             <span class="text-muted">Carregando...</span>
           </div>
         </div>
@@ -1620,16 +1627,7 @@
             <div class="col-12">
               <label class="form-label" for="nc_unidade">Unidade *</label>
               <select class="form-select" id="nc_unidade" required>
-                <option value="">Selecione...</option>
-                <option value="INTECS_MA">INTECS_MA</option>
-                <option value="INTECS_SP">INTECS_SP</option>
-                <option value="AS - SÃO MIGUEL PAULISTA">AS - SÃO MIGUEL PAULISTA</option>
-                <option value="AS - CITY JARAGUA">AS - CITY JARAGUA</option>
-                <option value="AS - JARAGUA">AS - JARAGUA</option>
-                <option value="AS - BRASILANDIA">AS - BRASILANDIA</option>
-                <option value="AS - GUAIANASES">AS - GUAIANASES</option>
-                <option value="AS - TIRADENTES">AS - TIRADENTES</option>
-                <option value="AS - MBOI MIRIM">AS - MBOI MIRIM</option>
+                <option value="">Carregando...</option>
               </select>
               <div class="invalid-feedback">Selecione a unidade.</div>
             </div>
@@ -1639,6 +1637,15 @@
               <select class="form-select" id="nc_patrimonio">
                 <option value="">Selecione (opcional)...</option>
               </select>
+            </div>
+
+            <div class="col-12" id="nc_ns_grupo" style="display:none">
+              <label class="form-label" for="nc_ns">N/S *</label>
+              <select class="form-select" id="nc_ns"></select>
+            </div>
+
+            <div class="col-12">
+              <div id="nc_patrimonio_info" class="text-muted" style="font-size:.8rem;min-height:1.2em"></div>
             </div>
 
             <div class="col-12">
