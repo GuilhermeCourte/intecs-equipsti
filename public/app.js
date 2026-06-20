@@ -2185,6 +2185,7 @@ function configurarNovoChamado() {
 // ============================================================
 let _chartUnidades = null;
 let _dashData = null;
+let _dashChamados = [];
 
 function fmtMoeda(v) {
   return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -2269,6 +2270,14 @@ function renderDashboard(d, filtros) {
   $('dash-valor-locacao').textContent = fmtMoeda(g.valor_locacao);
   $('dash-emprestados').textContent = g.emprestados;
   $('dash-insumos').textContent = g.total_insumos;
+
+  // Chamados MSA — total global
+  {
+    const abertos = _dashChamados.filter(c => c.St !== 'Resolvido').length;
+    $('dash-chamados-abertos').innerHTML = _dashChamados.length
+      ? `${abertos} <span style="font-size:.85rem;font-weight:500;color:var(--dash-orange)">em aberto</span>`
+      : '—';
+  }
 
   // Chart sub-label
   $('dashChartSub').textContent = unidades.length + (unidades.length === 1 ? ' unidade' : ' unidades');
@@ -2387,7 +2396,7 @@ function renderDashboard(d, filtros) {
   `).join('');
   $('dashTfoot').innerHTML = `
     <tr>
-      <td>Total${ativos.length ? ' (seleção)' : ' geral'}</td>
+      <td>Total</td>
       <td class="text-end">${g.total_equipamentos}</td>
       <td class="text-end">${g.locados}</td>
       <td class="text-end">${g.emprestados}</td>
@@ -2407,14 +2416,10 @@ async function carregarDashboard() {
     ]);
     _dashData = d;
 
-    // Conta chamados abertos (St !== 'Resolvido')
-    const listaChamados = chamadosRaw
+    // Armazena chamados globalmente para filtragem
+    _dashChamados = chamadosRaw
       ? (Array.isArray(chamadosRaw) ? chamadosRaw : (chamadosRaw.root ?? chamadosRaw.Lista ?? chamadosRaw.lista ?? []))
       : [];
-    const chamadosAbertos = listaChamados.filter(c => c.St !== 'Resolvido').length;
-    $('dash-chamados-abertos').innerHTML = chamadosRaw
-      ? `${chamadosAbertos} <span style="font-size:.85rem;font-weight:500;color:var(--dash-orange)">em aberto</span>`
-      : '—';
 
     // Popula o filtro de unidades
     popularFiltroDashboard(d.por_unidade);
