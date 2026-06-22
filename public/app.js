@@ -1522,6 +1522,26 @@ function atualizarEquipDetalhe(equipVal, detId) {
 // ── Câmera Overlay ────────────────────────────────────────────────────────
 let _camStream = null;
 let _camCtx = null; // { prefix, n, isNew }
+let _camCapturado = null;
+
+function _camModoCaptura() {
+  $('cameraOverlayVideo').classList.remove('d-none');
+  $('cameraOverlayPreview').classList.add('d-none');
+  $('btnCapturarOverlayFoto').classList.remove('d-none');
+  $('btnTirarOutraFoto').classList.add('d-none');
+  $('btnEnviarFoto').classList.add('d-none');
+  _camCapturado = null;
+}
+
+function _camModoPreview(b64) {
+  _camCapturado = b64;
+  $('cameraOverlayPreview').src = b64;
+  $('cameraOverlayVideo').classList.add('d-none');
+  $('cameraOverlayPreview').classList.remove('d-none');
+  $('btnCapturarOverlayFoto').classList.add('d-none');
+  $('btnTirarOutraFoto').classList.remove('d-none');
+  $('btnEnviarFoto').classList.remove('d-none');
+}
 
 function mostrarCameraOverlay(show) {
   $('cameraOverlay').classList.toggle('d-none', !show);
@@ -1576,6 +1596,7 @@ async function abrirCameraOverlay(prefix, n, isNew) {
   try {
     _camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     $('cameraOverlayVideo').srcObject = _camStream;
+    _camModoCaptura();
     mostrarCameraOverlay(true);
   } catch {
     alert('Não foi possível acessar a câmera. Verifique as permissões do navegador.');
@@ -1592,7 +1613,6 @@ function inicializarCameraOverlay() {
 
   $('btnCapturarOverlayFoto').addEventListener('click', () => {
     if (!_camStream || !_camCtx) return;
-    const { prefix, n } = _camCtx;
     const video = $('cameraOverlayVideo');
     const canvas = $('cameraOverlayCanvas');
     const MAX = 800;
@@ -1601,9 +1621,27 @@ function inicializarCameraOverlay() {
     canvas.width = w; canvas.height = h;
     canvas.getContext('2d').drawImage(video, 0, 0, w, h);
     const b64 = canvas.toDataURL('image/jpeg', 0.7);
-    $(prefix + 'foto_' + n + '_base64').value = b64;
+    _camStream.getTracks().forEach((t) => t.stop()); _camStream = null;
+    _camModoPreview(b64);
+  });
+
+  $('btnTirarOutraFoto').addEventListener('click', async () => {
+    if (!_camCtx) return;
+    try {
+      _camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      $('cameraOverlayVideo').srcObject = _camStream;
+      _camModoCaptura();
+    } catch {
+      alert('Não foi possível acessar a câmera. Verifique as permissões do navegador.');
+    }
+  });
+
+  $('btnEnviarFoto').addEventListener('click', () => {
+    if (!_camCtx || !_camCapturado) return;
+    const { prefix, n } = _camCtx;
+    $(prefix + 'foto_' + n + '_base64').value = _camCapturado;
     $(prefix + 'foto_' + n + '_base64').dispatchEvent(new Event('change', { bubbles: true }));
-    $(prefix + 'foto_' + n + '_thumb').src = b64;
+    $(prefix + 'foto_' + n + '_thumb').src = _camCapturado;
     $(prefix + 'foto_' + n + '_preview').classList.remove('d-none');
     fecharCameraOverlay(true);
     atualizarBtnAddFoto(prefix);

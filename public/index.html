@@ -279,7 +279,7 @@
       font-size: .9rem; cursor: pointer; margin: 0;
     }
     .col-filter-item:last-child { border-bottom: none; }
-    .col-filter-item input[type=checkbox] { flex-shrink: 0; cursor: pointer; }
+    .col-filter-item input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: var(--ink); }
 
     /* ---------- Abas (liquid slider) ---------- */
     .app-tabs {
@@ -1493,10 +1493,17 @@
     </div>
     <div class="flex-grow-1 d-flex align-items-center justify-content-center overflow-hidden" style="min-height:0">
       <video id="cameraOverlayVideo" autoplay playsinline style="max-width:100%;max-height:100%;object-fit:contain"></video>
+      <img id="cameraOverlayPreview" src="" class="d-none" style="max-width:100%;max-height:100%;object-fit:contain">
     </div>
-    <div class="d-flex justify-content-center p-3 flex-shrink-0" style="background:#1a1a1a">
+    <div class="d-flex justify-content-center gap-3 p-3 flex-shrink-0" style="background:#1a1a1a">
       <button type="button" class="btn btn-primary btn-lg px-5" id="btnCapturarOverlayFoto">
         <i class="ph ph-camera"></i> Capturar
+      </button>
+      <button type="button" class="btn btn-outline-light btn-lg px-4 d-none" id="btnTirarOutraFoto">
+        <i class="ph ph-camera-rotate"></i> Tirar outra
+      </button>
+      <button type="button" class="btn btn-success btn-lg px-5 d-none" id="btnEnviarFoto">
+        <i class="ph ph-check"></i> Usar foto
       </button>
     </div>
     <canvas id="cameraOverlayCanvas" class="d-none"></canvas>
