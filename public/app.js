@@ -3212,7 +3212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnAtualizarLista').addEventListener('click', () => { invalidarCacheTodos(); loadRecords(true); });
   $('btnViewSimples').addEventListener('click', () => setRegistrosView('simples'));
   $('btnViewDetalhada').addEventListener('click', () => setRegistrosView('detalhada'));
-  setRegistrosView(localStorage.getItem('registrosView') || 'detalhada');
+  setRegistrosView(localStorage.getItem('registrosView') || 'simples');
   $('btnLimparFiltros').addEventListener('click', () => {
     Object.keys(colFilters).forEach((k) => delete colFilters[k]);
     renderTabela();
