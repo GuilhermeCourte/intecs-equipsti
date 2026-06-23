@@ -114,6 +114,38 @@ CREATE TABLE dbo.EQUIPSTI_emprestimos (
   criado_em       DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   atualizado_em   DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
+
+-- Controle de Chamados INTECS vs MSA (cruza chamado MSA + controle interno INTECS).
+-- STATUS MSA: sincronizado do eurosa (coluna status_msa); quando ausente, o
+-- cliente calcula a partir das datas de retirada/entrega.
+IF OBJECT_ID('dbo.EQUIPSTI_chamados_intecsmsa', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_chamados_intecsmsa (
+  id                    INT IDENTITY(1,1) PRIMARY KEY,
+  data_solicitacao      DATE NULL,
+  numero_chamado_msa    NVARCHAR(255) NULL,
+  problema              NVARCHAR(MAX) NULL,
+  unidade               NVARCHAR(255) NULL,
+  glpi                  NVARCHAR(50) NULL,
+  status_intecs         NVARCHAR(20) NULL,
+  patrimonio_msa        NVARCHAR(255) NULL,
+  ns                    NVARCHAR(255) NULL,
+  ponto_instalacao      NVARCHAR(255) NULL,
+  descricao_equip       NVARCHAR(255) NULL,
+  data_retirada_equip   DATE NULL,
+  data_entrega_equip    DATE NULL,
+  patrimonio_bkp_intecs NVARCHAR(255) NULL,
+  bkp_unidade           NVARCHAR(255) NULL,
+  observacao            NVARCHAR(MAX) NULL,
+  status_msa            NVARCHAR(20) NULL,   -- status real do chamado na MSA (sincronizado do eurosa)
+  criado_por            NVARCHAR(255) NULL,
+  atualizado_por        NVARCHAR(255) NULL,
+  criado_em             DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- Tabela já existente sem a coluna 'status_msa' (migração):
+IF COL_LENGTH('dbo.EQUIPSTI_chamados_intecsmsa', 'status_msa') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_chamados_intecsmsa ADD status_msa NVARCHAR(20) NULL;
 `;
 
 async function main() {

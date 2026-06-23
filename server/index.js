@@ -416,6 +416,26 @@ app.get('/api/pats/:pat/history', exigirAuth, wrap(async (req, res) => {
   res.json({ pat, ns: ns || null, origens: origens.recordset, emprestimos: emprestimos.recordset });
 }));
 
+// Lookup do último cadastro de um PAT (+NS opcional): equipamento, setor e unidade.
+// Usado para auto-preencher PONTO DE INSTALAÇÃO / DESCRIÇÃO EQUIP / BKP UNIDADE no módulo INTECS vs MSA.
+async function lookupEquip(pat, ns) {
+  const p = trim(pat);
+  const n = trim(ns);
+  const r = await query(
+    `SELECT TOP 1 equipamento, setor, unidade FROM dbo.EQUIPSTI_registros
+      WHERE pat = @pat${n ? ' AND ns = @ns' : ''}
+      ORDER BY criado_em DESC`,
+    n ? { pat: S(p), ns: S(n) } : { pat: S(p) });
+  const row = r.recordset[0];
+  return row
+    ? { equipamento: row.equipamento || '', setor: row.setor || '', unidade: row.unidade || '' }
+    : { equipamento: '', setor: '', unidade: '' };
+}
+
+app.get('/api/pats/:pat/lookup', exigirAuth, wrap(async (req, res) => {
+  res.json(await lookupEquip(req.params.pat, req.query.ns));
+}));
+
 // ===================== EMPRÉSTIMOS =====================
 app.get('/api/loans', exigirAuth, wrap(async (req, res) => {
   const r = await query(`SELECT id, pat, ns, unidade,
@@ -500,6 +520,200 @@ app.put('/api/loans/:id/status', exigirAuth, wrap(async (req, res) => {
   await query(`UPDATE dbo.EQUIPSTI_emprestimos
     SET status=@status, data_devolucao=${devol}, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`, { id, status: S(status) });
+  res.json({ ok: true });
+}));
+
+// ===================== CHAMADOS — INTECS vs MSA =====================
+function lerIntecsMsa(body) {
+  const g = (k) => { const v = trim(body[k]); return v === '' ? null : v; };
+  return {
+    data_solicitacao:      g('data_solicitacao'),
+    numero_chamado_msa:    g('numero_chamado_msa'),
+    problema:              g('problema'),
+    unidade:               g('unidade'),
+    glpi:                  g('glpi'),
+    status_intecs:         g('status_intecs'),
+    patrimonio_msa:        g('patrimonio_msa'),
+    ns:                    g('ns'),
+    ponto_instalacao:      g('ponto_instalacao'),
+    descricao_equip:       g('descricao_equip'),
+    data_retirada_equip:   g('data_retirada_equip'),
+    data_entrega_equip:    g('data_entrega_equip'),
+    patrimonio_bkp_intecs: g('patrimonio_bkp_intecs'),
+    bkp_unidade:           g('bkp_unidade'),
+    observacao:            g('observacao'),
+  };
+}
+
+const paramsIntecsMsa = (d) => ({
+  data_solicitacao:      S(d.data_solicitacao),
+  numero_chamado_msa:    S(d.numero_chamado_msa),
+  problema:              S(d.problema),
+  unidade:               S(d.unidade),
+  glpi:                  S(d.glpi),
+  status_intecs:         S(d.status_intecs),
+  patrimonio_msa:        S(d.patrimonio_msa),
+  ns:                    S(d.ns),
+  ponto_instalacao:      S(d.ponto_instalacao),
+  descricao_equip:       S(d.descricao_equip),
+  data_retirada_equip:   S(d.data_retirada_equip),
+  data_entrega_equip:    S(d.data_entrega_equip),
+  patrimonio_bkp_intecs: S(d.patrimonio_bkp_intecs),
+  bkp_unidade:           S(d.bkp_unidade),
+  observacao:            S(d.observacao),
+});
+
+// Converte o status do chamado no eurosa (St) para os buckets da aba INTECS vs
+// MSA. Retorna null quando não há status (rows criadas manualmente seguem o
+// cálculo por datas no cliente).
+function mapStatusMsa(st) {
+  const s = trim(st).toLowerCase();
+  if (!s) return null;
+  if (/resolv|cancel|fechad|finaliz|conclu/.test(s)) return 'Finalizado';
+  if (/atend|andamento|process|execu/.test(s))       return 'Em Andamento';
+  return 'Aberto';
+}
+
+// Insere uma linha em INTECS vs MSA a partir de um chamado da MSA, se ainda não
+// existir (dedup pelo Nº MSA). Preenche os campos automáticos; deixa os manuais
+// em branco. Retorna true se inseriu.
+async function inserirChamadoMsaSeNovo({ codigo, dataSolic, problema, statusMsa,
+                                         unidade, patrimonio, ns, criadoPor }) {
+  if (!codigo) return false;
+  const ja = await query(
+    'SELECT TOP 1 1 FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE numero_chamado_msa = @c',
+    { c: S(codigo) });
+  if (ja.recordset.length) return false;            // dedup pelo Nº MSA
+  let ponto = null, descr = null;
+  if (trim(patrimonio)) {
+    const eq = await lookupEquip(patrimonio, ns);    // auto-preenche se houver PAT
+    ponto = eq.setor || null; descr = eq.equipamento || null;
+  }
+  const d = lerIntecsMsa({                            // reusa o shape existente
+    data_solicitacao: dataSolic, numero_chamado_msa: codigo, problema,
+    unidade, patrimonio_msa: patrimonio, ns,
+    ponto_instalacao: ponto, descricao_equip: descr,
+  });
+  await query(`INSERT INTO dbo.EQUIPSTI_chamados_intecsmsa
+    (data_solicitacao, numero_chamado_msa, problema, unidade,
+     patrimonio_msa, ns, ponto_instalacao, descricao_equip, status_msa, criado_por)
+    VALUES (@data_solicitacao, @numero_chamado_msa, @problema, @unidade,
+     @patrimonio_msa, @ns, @ponto_instalacao, @descricao_equip, @status_msa, @criado_por)`,
+    { ...paramsIntecsMsa(d), status_msa: S(statusMsa || null), criado_por: S(criadoPor || 'sync') });
+  return true;
+}
+
+// Máximo de chamados que buscam o detalhe (unidade) por sincronização, para não
+// travar o carregamento da aba quando há muitos chamados sem unidade.
+const SYNC_MAX_DETALHE = 60;
+
+// Puxa a lista de chamados do eurosa e sincroniza a aba INTECS vs MSA: cria uma
+// linha para cada chamado novo (backfill + novos), mantém o status_msa dos já
+// existentes atualizado, e preenche a unidade (do sistema) puxando o detalhe do
+// chamado para as linhas que ainda estão sem unidade.
+async function sincronizarIntecsMsa() {
+  const result = await eurosaCall(() => eurosaFetchChamados());
+  const data = result.data;
+  const lista = Array.isArray(data)
+    ? data : (data?.root ?? data?.Lista ?? data?.lista ?? []);
+
+  // Associação unidade da MSA -> unidade do sistema (EQUIPSTI_opcoes.detalhe).
+  const assocRows = await query(
+    "SELECT valor, detalhe FROM dbo.EQUIPSTI_opcoes WHERE lista = 'UNIDADE' AND detalhe IS NOT NULL AND detalhe <> ''");
+  const assoc = {};
+  assocRows.recordset.forEach((r) => { assoc[trim(r.detalhe)] = r.valor; });
+
+  // Linhas existentes (para saber quais ainda não têm unidade).
+  const existRows = await query(
+    'SELECT numero_chamado_msa, unidade FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE numero_chamado_msa IS NOT NULL');
+  const existUnidade = {};
+  existRows.recordset.forEach((r) => { existUnidade[r.numero_chamado_msa] = r.unidade; });
+
+  const semUnidade = [];   // { codigo, chave } a buscar o detalhe
+  for (const ch of lista) {
+    const codigo = trim(ch.Codigo);
+    if (!codigo) continue;
+    const statusMsa = mapStatusMsa(ch.St);
+    const inseriu = await inserirChamadoMsaSeNovo({
+      codigo,
+      dataSolic: trim(ch.Criacao).slice(0, 10) || null,  // 'YYYY-MM-DD'
+      problema:  trim(ch.Assunto) || null,
+      statusMsa,
+      criadoPor: 'sync',
+    });
+    if (!inseriu && statusMsa) {                        // já existe: refresca status
+      await query(
+        'UPDATE dbo.EQUIPSTI_chamados_intecsmsa SET status_msa = @s WHERE numero_chamado_msa = @c',
+        { s: S(statusMsa), c: S(codigo) });
+    }
+    const temUnidade = !inseriu && trim(existUnidade[codigo]);
+    if (!temUnidade && ch.Chave) semUnidade.push({ codigo, chave: ch.Chave });
+  }
+
+  // Preenche a unidade buscando o detalhe (campo 19024) e mapeando para o sistema.
+  for (const { codigo, chave } of semUnidade.slice(0, SYNC_MAX_DETALHE)) {
+    try {
+      const lst = await eurosaCamposExtras(chave);
+      const campo = lst.find((e) => Number(e.codcampoextra) === 19024);
+      const msaUnidade = campo?.valcampoextra ? trim(String(campo.valcampoextra)) : '';
+      if (!msaUnidade) continue;
+      const unidadeSistema = assoc[msaUnidade] || msaUnidade;
+      await query(
+        `UPDATE dbo.EQUIPSTI_chamados_intecsmsa SET unidade = @u
+           WHERE numero_chamado_msa = @c AND (unidade IS NULL OR unidade = '')`,
+        { u: S(unidadeSistema), c: S(codigo) });
+    } catch (e) { console.warn('[intecs-msa unidade] chamado', codigo, '->', e.message); }
+  }
+}
+
+app.get('/api/intecs-msa', exigirAuth, wrap(async (req, res) => {
+  try { await sincronizarIntecsMsa(); }
+  catch (e) { console.warn('[intecs-msa sync] falhou:', e.message); }
+  const r = await query(`SELECT id,
+    CONVERT(varchar(10), data_solicitacao, 23) AS data_solicitacao,
+    numero_chamado_msa, problema, unidade, glpi, status_intecs,
+    patrimonio_msa, ns, ponto_instalacao, descricao_equip,
+    CONVERT(varchar(10), data_retirada_equip, 23) AS data_retirada_equip,
+    CONVERT(varchar(10), data_entrega_equip, 23) AS data_entrega_equip,
+    patrimonio_bkp_intecs, bkp_unidade, observacao, status_msa,
+    criado_por, atualizado_por,
+    CONVERT(varchar(19), criado_em, 120) AS criado_em,
+    CONVERT(varchar(19), atualizado_em, 120) AS atualizado_em
+    FROM dbo.EQUIPSTI_chamados_intecsmsa ORDER BY id DESC`);
+  res.json(r.recordset);
+}));
+
+app.post('/api/intecs-msa', exigirAuth, wrap(async (req, res) => {
+  const d = lerIntecsMsa(req.body);
+  await query(`INSERT INTO dbo.EQUIPSTI_chamados_intecsmsa
+    (data_solicitacao, numero_chamado_msa, problema, unidade, glpi, status_intecs,
+     patrimonio_msa, ns, ponto_instalacao, descricao_equip, data_retirada_equip, data_entrega_equip,
+     patrimonio_bkp_intecs, bkp_unidade, observacao, criado_por)
+    VALUES (@data_solicitacao, @numero_chamado_msa, @problema, @unidade, @glpi, @status_intecs,
+     @patrimonio_msa, @ns, @ponto_instalacao, @descricao_equip, @data_retirada_equip, @data_entrega_equip,
+     @patrimonio_bkp_intecs, @bkp_unidade, @observacao, @criado_por)`,
+    { ...paramsIntecsMsa(d), criado_por: S(req.user.email) });
+  res.status(201).json({ ok: true });
+}));
+
+app.put('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const d = lerIntecsMsa(req.body);
+  const upd = await query(`UPDATE dbo.EQUIPSTI_chamados_intecsmsa SET
+    data_solicitacao=@data_solicitacao, numero_chamado_msa=@numero_chamado_msa, problema=@problema,
+    unidade=@unidade, glpi=@glpi, status_intecs=@status_intecs, patrimonio_msa=@patrimonio_msa, ns=@ns,
+    ponto_instalacao=@ponto_instalacao, descricao_equip=@descricao_equip,
+    data_retirada_equip=@data_retirada_equip, data_entrega_equip=@data_entrega_equip,
+    patrimonio_bkp_intecs=@patrimonio_bkp_intecs, bkp_unidade=@bkp_unidade, observacao=@observacao,
+    atualizado_por=@atualizado_por, atualizado_em=SYSUTCDATETIME()
+    WHERE id=@id`,
+    { ...paramsIntecsMsa(d), id, atualizado_por: S(req.user.email) });
+  if (upd.rowsAffected[0] === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
+  res.json({ ok: true });
+}));
+
+app.delete('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
+  await query('DELETE FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE id = @id', { id: Number(req.params.id) });
   res.json({ ok: true });
 }));
 
@@ -678,6 +892,27 @@ async function eurosaGetChamadoDetalhe(chave) {
   return { status: res.status, data };
 }
 
+// Lê os CamposExtras de um chamado (listaDetalhes). Usado para puxar a unidade
+// (codcampoextra 19024) dos chamados já existentes na sincronização.
+async function eurosaCamposExtras(chave) {
+  const body = new URLSearchParams({ App: 'Portal', Dados: JSON.stringify({ Codigo: String(chave), CodigoAcao: '0' }) });
+  const res = await fetch('https://eurosa.desk.ms/Chamados/listaDetalhes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Referer': 'https://eurosa.desk.ms/?Portal',
+      'Origin': 'https://eurosa.desk.ms',
+      'User-Agent': EUROSA_UA,
+      'Cookie': eurosaCookie
+    },
+    body: body.toString()
+  });
+  const text = await res.text();
+  let d; try { d = JSON.parse(text); } catch { d = null; }
+  return Array.isArray(d?.CamposExtras) ? d.CamposExtras : [];
+}
+
 const CHAMADO_UNIDADES = [
   'INTECS_SP',
   'AS - SÃO MIGUEL PAULISTA',
@@ -808,6 +1043,31 @@ app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
   const result = await eurosaCall(() => eurosaRequest('PUT', '/Chamados', dados, { Menu: 'Chamados' }));
   console.log('[chamado criado] status:', result.status, JSON.stringify(result.data).slice(0, 200));
   if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status + ': ' + JSON.stringify(result.data));
+
+  // Espelha o novo chamado na aba INTECS vs MSA já com os campos automáticos
+  // que só estão disponíveis no momento da criação (patrimônio/NS/unidade).
+  const codigo = String(result.data?.url?.text || '').match(/\d{4}-\d{6}/)?.[0] || '';
+  try {
+    // Converte a unidade da MSA para a unidade cadastrada no sistema, usando a
+    // associação gravada em EQUIPSTI_opcoes.detalhe (lista UNIDADE).
+    let unidadeSistema = unidade;
+    if (unidade) {
+      const m = await query(
+        "SELECT TOP 1 valor FROM dbo.EQUIPSTI_opcoes WHERE lista = 'UNIDADE' AND detalhe = @d",
+        { d: S(unidade) });
+      if (m.recordset.length) unidadeSistema = m.recordset[0].valor;
+    }
+    await inserirChamadoMsaSeNovo({
+      codigo,
+      dataSolic:  new Date().toISOString().slice(0, 10),
+      problema:   assuntoText || descricao,
+      unidade:    unidadeSistema,
+      patrimonio: trim(req.body.patrimonio || ''),
+      ns:         trim(req.body.ns || ''),
+      criadoPor:  req.user.email,
+    });
+  } catch (e) { console.warn('[intecs-msa enrich] falhou:', e.message); }
+
   res.status(201).json(result.data);
 }));
 

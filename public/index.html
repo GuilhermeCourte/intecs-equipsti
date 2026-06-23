@@ -179,6 +179,30 @@
     .table > thead th {
       text-transform: uppercase; font-size: .72rem; letter-spacing: .5px;
     }
+
+    /* Visão simples do Registros: esconde Usuário(4), Protocolo(8),
+       Recebimento(9), Obs(10) e Foto(11). */
+    #tabelaScroll.view-simples > table > thead > tr > th:nth-child(4),
+    #tabelaScroll.view-simples > table > tbody > tr > td:nth-child(4),
+    #tabelaScroll.view-simples > table > thead > tr > th:nth-child(8),
+    #tabelaScroll.view-simples > table > tbody > tr > td:nth-child(8),
+    #tabelaScroll.view-simples > table > thead > tr > th:nth-child(9),
+    #tabelaScroll.view-simples > table > tbody > tr > td:nth-child(9),
+    #tabelaScroll.view-simples > table > thead > tr > th:nth-child(10),
+    #tabelaScroll.view-simples > table > tbody > tr > td:nth-child(10),
+    #tabelaScroll.view-simples > table > thead > tr > th:nth-child(11),
+    #tabelaScroll.view-simples > table > tbody > tr > td:nth-child(11) {
+      display: none;
+    }
+
+    /* Cabeçalho fixo: a tabela rola dentro de uma área com altura máxima,
+       preservando a rolagem horizontal. */
+    .table-sticky { max-height: 65vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+    .table-sticky > table > thead th {
+      position: sticky; top: 0; z-index: 3;
+      background: #f8f9fa;
+      box-shadow: inset 0 -1px 0 var(--line);
+    }
     .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: #fafafa; }
 
     /* tabela de Gerenciar Opções (status ativo/inativo) */
@@ -265,7 +289,15 @@
     .col-filter-icon { font-size: .8rem; opacity: .2; margin-left: .3rem; vertical-align: middle; transition: opacity .15s; }
     .th-filterable:hover .col-filter-icon { opacity: .5; }
     .col-filter-ativo { font-weight: 700 !important; }
-    .col-filter-ativo .col-filter-icon { opacity: 1; }
+    .col-filter-ativo .col-filter-icon {
+      opacity: 1; color: #fff; background: var(--ink);
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.4rem; height: 1.4rem; border-radius: 6px;
+    }
+    .btn-link.filtro-on {
+      color: #fff !important; background: var(--ink); border-radius: 8px;
+    }
+    .btn-link.filtro-on:hover { background: var(--ink); color: #fff !important; }
     #colFilterDropdown {
       position: fixed; z-index: 1055; background: #fff;
       border: 1px solid var(--line); border-radius: 12px;
@@ -328,6 +360,21 @@
       .app-tabs .nav-link { flex: 0 0 auto; padding: .55rem .85rem; }
     }
 
+    /* ---------- Sub-abas (pílulas) dentro de Chamados ---------- */
+    .sub-tabs {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem;
+      margin: -0.25rem 0 1rem; padding: 0; list-style: none; border: none;
+    }
+    .sub-tabs .nav-link {
+      border: none; border-radius: 10px;
+      color: var(--muted); font-weight: 600; padding: .45rem 1rem;
+      display: inline-flex; align-items: center; gap: .45rem;
+      background: transparent; transition: color .2s ease, background .2s ease;
+    }
+    .sub-tabs .nav-link i { font-size: 1.1rem; }
+    .sub-tabs .nav-link:hover { color: var(--ink); }
+    .sub-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
+
     /* modal */
     .modal-content { border: none; border-radius: var(--radius); overflow: hidden; }
     .modal-header.bg-primary { background: var(--ink) !important; }
@@ -367,6 +414,16 @@
     #modalNovoChamado .choices__list--dropdown .choices__list,
     #modalNovoChamado .choices__list[aria-expanded] .choices__list {
       max-height: 212px; overflow-y: auto;
+    }
+
+    /* Lista de unidade da MSA (modal de editar opção): ~4 itens e sempre para baixo */
+    #askInput2Wrap .choices__list--dropdown .choices__list,
+    #askInput2Wrap .choices__list[aria-expanded] .choices__list {
+      max-height: 212px; overflow-y: auto;
+    }
+    #askInput2Wrap .choices.is-flipped .choices__list--dropdown,
+    #askInput2Wrap .choices.is-flipped .choices__list[aria-expanded] {
+      top: 100% !important; bottom: auto !important; margin-top: 0;
     }
 
     /* Força o dropdown de PAT/NS no form de empréstimo a abrir sempre para baixo */
@@ -909,15 +966,21 @@
               </div>
             </div>
             <div id="alertRegistros"></div>
-            <div class="d-flex justify-content-end gap-1 mb-1">
-              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltros" title="Limpar filtros">
-                <i class="ph ph-funnel-x fs-5"></i>
-              </button>
-              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarLista" title="Atualizar">
-                <i class="ph ph-arrow-clockwise fs-5"></i>
-              </button>
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+              <div class="btn-group btn-group-sm" role="group" aria-label="Visão da tabela">
+                <button type="button" class="btn btn-outline-secondary" id="btnViewSimples">Simples</button>
+                <button type="button" class="btn btn-outline-secondary active" id="btnViewDetalhada">Detalhada</button>
+              </div>
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltros" title="Limpar filtros">
+                  <i class="ph ph-funnel-x fs-5"></i>
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarLista" title="Atualizar">
+                  <i class="ph ph-arrow-clockwise fs-5"></i>
+                </button>
+              </div>
             </div>
-            <div class="table-scroll-x" id="tabelaScroll">
+            <div class="table-scroll-x table-sticky" id="tabelaScroll">
               <table class="table table-striped table-hover align-middle">
                 <thead class="table-light">
                   <tr>
@@ -939,9 +1002,9 @@
                   <tr><td colspan="13" class="text-muted">Carregando...</td></tr>
                 </tbody>
               </table>
-            </div>
-            <div id="sentinelTabela" class="d-none text-center py-3 text-muted small">
-              <div class="spinner-border spinner-border-sm me-1"></div> Carregando mais...
+              <div id="sentinelTabela" class="d-none text-center py-3 text-muted small">
+                <div class="spinner-border spinner-border-sm me-1"></div> Carregando mais...
+              </div>
             </div>
           </div>
 
@@ -1062,39 +1125,127 @@
 
           <!-- ABA CHAMADOS -->
           <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Abra e acompanhe chamados para a MSA.</h5>
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-primary btn-sm" id="btnNovoChamado">
-                  <i class="ph ph-plus"></i> Novo Chamado
+
+            <!-- Sub-abas: INTECS vs MSA / MSA / INTECS -->
+            <ul class="nav sub-tabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="sub-tab-intecsmsa" data-bs-toggle="pill"
+                  data-bs-target="#sub-intecsmsa" type="button" role="tab">
+                  <i class="ph ph-git-diff"></i> INTECS vs MSA
                 </button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnRefreshChamados">
-                  <i class="ph ph-arrow-clockwise"></i> Atualizar
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="sub-tab-msa" data-bs-toggle="pill"
+                  data-bs-target="#sub-msa" type="button" role="tab">
+                  <i class="ph ph-headset"></i> MSA
                 </button>
-              </div>
-            </div>
-            <!-- Filtros -->
-            <div class="row g-2 mb-3">
-              <div class="col-12 col-sm-6">
-                <div class="input-group input-group-sm">
-                  <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
-                  <input type="text" class="form-control" id="chamadosBusca" placeholder="Buscar por assunto, número…">
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="sub-tab-intecs" data-bs-toggle="pill"
+                  data-bs-target="#sub-intecs" type="button" role="tab">
+                  <i class="ph ph-buildings"></i> INTECS
+                </button>
+              </li>
+            </ul>
+
+            <div class="tab-content">
+
+              <!-- SUB-ABA: INTECS vs MSA -->
+              <div class="tab-pane fade show active" id="sub-intecsmsa" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Controle interno cruzando chamados da MSA com a INTECS.</h5>
+                </div>
+                <!-- Filtros -->
+                <div class="row g-2 mb-1">
+                  <div class="col-12 col-sm-6">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                      <input type="text" class="form-control" id="imBusca" placeholder="Buscar por nº MSA, unidade, patrimônio…">
+                    </div>
+                  </div>
+                  <div class="col-12 col-sm-6">
+                    <select class="form-select form-select-sm" id="imFiltroStatus">
+                      <option value="">Todos</option>
+                      <option value="aberto" selected>Em Aberto</option>
+                      <option value="Finalizado">Finalizado</option>
+                      <option value="custom" hidden>Personalizado</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div id="imStatus" class="text-muted small mb-0"></div>
+                  <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosIntecsMsa" title="Limpar filtros">
+                      <i class="ph ph-funnel-x fs-5"></i>
+                    </button>
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshIntecsMsa" title="Atualizar">
+                      <i class="ph ph-arrow-clockwise fs-5"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="table-responsive table-sticky">
+                  <table class="table table-sm table-hover align-middle" id="tabelaIntecsMsa">
+                    <thead class="table-light"><tr id="imThead"></tr></thead>
+                    <tbody id="imTbody"></tbody>
+                  </table>
                 </div>
               </div>
-              <div class="col-12 col-sm-6">
-                <select class="form-select form-select-sm" id="chamadosFiltroStatus">
-                  <option value="">Todos</option>
-                  <option value="aberto" selected>Em Aberto</option>
-                  <option value="Resolvido">Resolvido</option>
-                </select>
+
+              <!-- SUB-ABA: MSA (lista Eurosa — conteúdo original) -->
+              <div class="tab-pane fade" id="sub-msa" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Abra e acompanhe chamados para a MSA.</h5>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" id="btnNovoChamado">
+                      <i class="ph ph-plus"></i> Novo Chamado
+                    </button>
+                  </div>
+                </div>
+                <!-- Filtros -->
+                <div class="row g-2 mb-1">
+                  <div class="col-12 col-sm-6">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                      <input type="text" class="form-control" id="chamadosBusca" placeholder="Buscar por assunto, número…">
+                    </div>
+                  </div>
+                  <div class="col-12 col-sm-6">
+                    <select class="form-select form-select-sm" id="chamadosFiltroStatus">
+                      <option value="">Todos</option>
+                      <option value="aberto" selected>Em Aberto</option>
+                      <option value="Resolvido">Finalizado</option>
+                      <option value="custom" hidden>Personalizado</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div id="chamadosStatus" class="text-muted small mb-0"></div>
+                  <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosChamados" title="Limpar filtros">
+                      <i class="ph ph-funnel-x fs-5"></i>
+                    </button>
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshChamados" title="Atualizar">
+                      <i class="ph ph-arrow-clockwise fs-5"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="table-responsive table-sticky">
+                  <table class="table table-sm table-hover align-middle" id="tabelaChamados">
+                    <thead class="table-light"><tr id="chamadosThead"></tr></thead>
+                    <tbody id="chamadosTbody"></tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-            <div id="chamadosStatus" class="text-muted small mb-2"></div>
-            <div class="table-responsive">
-              <table class="table table-sm table-hover align-middle" id="tabelaChamados">
-                <thead class="table-light"><tr id="chamadosThead"></tr></thead>
-                <tbody id="chamadosTbody"></tbody>
-              </table>
+
+              <!-- SUB-ABA: INTECS (em desenvolvimento) -->
+              <div class="tab-pane fade" id="sub-intecs" role="tabpanel">
+                <div class="text-center text-muted py-5">
+                  <i class="ph ph-wrench" style="font-size:2.5rem;"></i>
+                  <p class="mt-3 mb-0 fw-semibold">Em desenvolvimento</p>
+                  <p class="small">Os chamados internos da INTECS estarão disponíveis aqui em breve.</p>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -1233,6 +1384,115 @@
             </div>
             <div class="col-12 d-grid">
               <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL INTECS vs MSA ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalIntecsMsa" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="imModalTitle"><i class="ph ph-git-diff me-2"></i>Novo — INTECS vs MSA</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertIntecsMsa"></div>
+          <form id="formIntecsMsa" class="row g-3" novalidate>
+            <input type="hidden" id="im_id">
+
+            <!-- 1. Informações do Chamado MSA -->
+            <div class="col-12"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-headset me-1"></i> Chamado MSA</h6></div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_data_solicitacao">DATA SOLICITAÇÃO</label>
+              <input type="text" class="form-control" id="im_data_solicitacao" readonly autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_numero_chamado">Nº CHAMADO MSA</label>
+              <input type="text" class="form-control" id="im_numero_chamado" readonly autocomplete="off">
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="im_problema">PROBLEMA</label>
+              <textarea class="form-control" id="im_problema" rows="2" readonly autocomplete="off"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_unidade">UNIDADE</label>
+              <select class="form-select" id="im_unidade"><option value="">Selecione...</option></select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_status_msa">STATUS MSA (automático)</label>
+              <input type="text" class="form-control" id="im_status_msa" readonly autocomplete="off">
+            </div>
+
+            <!-- 2. Controle INTECS & GLPI -->
+            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-buildings me-1"></i> Controle INTECS</h6></div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_glpi">GLPI</label>
+              <input type="number" class="form-control" id="im_glpi" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_status_intecs">STATUS INTECS</label>
+              <select class="form-select" id="im_status_intecs">
+                <option value="">Selecione...</option>
+                <option value="Aberto">Aberto</option>
+                <option value="Em Andamento">Em Andamento</option>
+                <option value="Finalizado">Finalizado</option>
+              </select>
+            </div>
+
+            <!-- 3. Equipamento (auto pelo patrimônio) -->
+            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-desktop me-1"></i> Equipamento</h6></div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_patrimonio_msa">PATRIMÔNIO MSA</label>
+              <input type="text" class="form-control" id="im_patrimonio_msa" autocomplete="off" autocapitalize="off" spellcheck="false">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_ns">Nº SÉRIE</label>
+              <input type="text" class="form-control" id="im_ns" autocomplete="off" autocapitalize="off" spellcheck="false">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_ponto_instalacao">PONTO DE INSTALAÇÃO</label>
+              <input type="text" class="form-control" id="im_ponto_instalacao" readonly autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_descricao_equip">DESCRIÇÃO EQUIP.</label>
+              <input type="text" class="form-control" id="im_descricao_equip" readonly autocomplete="off">
+            </div>
+
+            <!-- 4. Logística -->
+            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-truck me-1"></i> Movimentação</h6></div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_data_retirada">DATA RETIRADA EQUIP.</label>
+              <input type="text" class="form-control" id="im_data_retirada" readonly autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_data_entrega">DATA ENTREGA EQUIP.</label>
+              <input type="text" class="form-control" id="im_data_entrega" readonly autocomplete="off">
+            </div>
+
+            <!-- 5. Backup INTECS -->
+            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-hard-drives me-1"></i> Backup (empréstimo INTECS)</h6></div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_bkp_pat">PATRIMÔNIO BKP INTECS</label>
+              <select class="form-select" id="im_bkp_pat"><option value="">Selecione...</option></select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="im_bkp_unidade">BKP UNIDADE</label>
+              <input type="text" class="form-control" id="im_bkp_unidade" readonly autocomplete="off">
+            </div>
+
+            <!-- 6. Observação -->
+            <div class="col-12">
+              <label class="form-label" for="im_observacao">OBSERVAÇÃO</label>
+              <textarea class="form-control" id="im_observacao" rows="3" autocomplete="off"></textarea>
+            </div>
+
+            <div class="col-12 d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-outline-danger" id="btnExcluirIntecsMsa" style="display:none"><i class="ph ph-trash"></i> Excluir</button>
+              <button type="submit" class="btn btn-primary ms-auto" id="btnSalvarIntecsMsa"><i class="ph ph-check"></i> Salvar</button>
             </div>
           </form>
         </div>
@@ -1528,6 +1788,7 @@
       <div id="askInput2Wrap" class="hidden mb-2">
         <label id="askInput2Label" class="form-label text-muted" style="font-size:.85rem;"></label>
         <input id="askInput2" class="form-control">
+        <select id="askSelect2" class="form-select hidden"></select>
       </div>
       <div id="askInput3Wrap" class="hidden mb-3">
         <label id="askInput3Label" class="form-label text-muted" style="font-size:.85rem;"></label>
@@ -1683,6 +1944,6 @@
     crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js" crossorigin="anonymous"></script>
-  <script type="module" src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>

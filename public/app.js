@@ -27,13 +27,14 @@ async function api(method, path, body) {
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
 const FORM_SELECTS = ['unidade', 'status', 'setor', 'equipamento'];
 const SELECT_TO_LIST = { unidade: 'UNIDADE', status: 'STATUS', setor: 'SETOR', equipamento: 'EQUIPAMENTO' };
-const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat', 'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns']);
+const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat', 'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns', 'im_unidade', 'im_bkp_pat']);
 const CHOICES_IDS = [
   'unidade', 'status', 'setor', 'equipamento',
   'edit_unidade', 'edit_status', 'edit_setor', 'edit_equipamento',
   'insumo', 'edit_insumo',
   'listaAlvo', 'emp_pat', 'emp_unidade',
-  'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns'
+  'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns',
+  'im_unidade', 'im_bkp_pat'
 ];
 
 // ---------- Estado em memória ----------
@@ -43,6 +44,8 @@ let EQUIP_DETALHE = {};
 let EQUIP_PRECO = {};
 let EQUIP_TIPO = {};
 let EQUIP_QTD_REG = {};
+let UNIDADE_MSA = {};      // UNIDADE do sistema -> unidade correspondente na MSA (col. detalhe)
+let MSA_UNIDADES = [];     // lista fixa de unidades da MSA (CHAMADO_UNIDADES)
 let INSUMO_QTD = {};
 let INSUMOS = [];
 let REGISTROS = [];
@@ -50,6 +53,7 @@ let modalEditar = null;
 let modalMsg = null;
 let modalAsk = null;
 let askResolve = null;
+let askSelect2Ativo = false;   // campo 2 do uiAsk está em modo lista (select)?
 const fpMap = {};
 let modalHistorico = null;
 let modalRegistrar = null;
@@ -67,6 +71,8 @@ let _fdAllVals  = [];
 let _fdEl       = null;
 let _fdOutside  = null;
 let _fdScroll   = null;
+let _fdActive   = null; // contexto (tabela) ativo do dropdown
+let _fdScrollEl = null; // container rolável da tabela ativa
 
 // ============================================================
 //  Utilidades de UI
@@ -101,7 +107,7 @@ function showAlert(_containerId, type, message) {
 // ---------- Confirmar / perguntar via modal (substitui confirm/prompt) ----------
 let askOnOk = null; // async handler — quando definido, OK não fecha o dialog direto
 
-function uiAsk({ title, message, input, value, input2Label, value2, input3Label, value3, input4Label, value4, okText, danger, transfer, onOk }) {
+function uiAsk({ title, message, input, value, input2Label, value2, input2Select, input3Label, value3, input4Label, value4, okText, danger, transfer, onOk }) {
   return new Promise((resolve) => {
     askResolve = resolve;
     askOnOk = onOk || null;
@@ -121,9 +127,41 @@ function uiAsk({ title, message, input, value, input2Label, value2, input3Label,
     if (input) { inp.classList.remove('hidden'); inp.value = value || ''; }
     else { inp.classList.add('hidden'); }
     const wrap2 = $('askInput2Wrap');
+    const inp2 = $('askInput2');
+    const sel2 = $('askSelect2');
+    askSelect2Ativo = false;
     if (input2Label !== undefined) {
       $('askInput2Label').textContent = input2Label;
-      $('askInput2').value = value2 || '';
+      if (Array.isArray(input2Select)) {
+        // Campo 2 vira uma lista (select) com o visual padrão do sistema (Choices.js).
+        askSelect2Ativo = true;
+        if (typeof Choices !== 'undefined' && !choicesMap['askSelect2']) {
+          choicesMap['askSelect2'] = new Choices(sel2, {
+            searchEnabled: false, itemSelectText: '', shouldSort: false,
+            allowHTML: false, placeholder: true, placeholderValue: 'Selecione...',
+          });
+        }
+        const inst = choicesMap['askSelect2'];
+        const itens = [{ value: '', label: '— não associada —', placeholder: true, selected: !value2 }]
+          .concat(input2Select.map((o) => ({ value: o, label: o, selected: o === value2 })));
+        if (inst) {
+          inst.setChoices(itens, 'value', 'label', true);
+          if (value2) inst.setChoiceByValue(value2);
+        } else {
+          sel2.innerHTML = itens.map((o) =>
+            '<option value="' + escapeHtml(o.value) + '"' + (o.selected ? ' selected' : '') +
+            '>' + escapeHtml(o.label) + '</option>').join('');
+        }
+        const choicesEl = inst ? sel2.closest('.choices') : sel2;
+        if (choicesEl) choicesEl.classList.remove('hidden');
+        inp2.classList.add('hidden');
+      } else {
+        inp2.value = value2 || '';
+        inp2.classList.remove('hidden');
+        const inst = choicesMap['askSelect2'];
+        const choicesEl = inst ? sel2.closest('.choices') : sel2;
+        if (choicesEl) choicesEl.classList.add('hidden');
+      }
       wrap2.classList.remove('hidden');
     } else {
       wrap2.classList.add('hidden');
@@ -168,9 +206,10 @@ async function finishAsk(confirmado) {
   if (!confirmado) { askClose(inputVisivel ? null : false); return; }
 
   const input4Visivel = !$('askInput4Wrap').classList.contains('hidden');
+  const detalhe2 = askSelect2Ativo ? $('askSelect2').value : $('askInput2').value;
   const result = !inputVisivel ? true
     : input2Visivel
-      ? { valor: $('askInput').value, detalhe: $('askInput2').value,
+      ? { valor: $('askInput').value, detalhe: detalhe2,
           preco: input3Visivel ? ($('askInput3').value !== '' ? $('askInput3').value : null) : undefined,
           tipo: input4Visivel ? ($('askInput4').value || null) : undefined }
       : $('askInput').value;
@@ -495,6 +534,12 @@ async function loadOptions() {
     if (o.tipo_aquisicao) EQUIP_TIPO[o.valor] = o.tipo_aquisicao;
     EQUIP_QTD_REG[o.valor] = o.qtd_registros ?? 0;
   });
+  UNIDADE_MSA = {};
+  (data['UNIDADE'] || []).forEach((o) => { if (o.detalhe) UNIDADE_MSA[o.valor] = o.detalhe; });
+  if (!MSA_UNIDADES.length) {
+    try { MSA_UNIDADES = await api('GET', '/api/chamados/unidades'); }
+    catch { MSA_UNIDADES = []; }
+  }
   INSUMO_QTD = {};
   (data['INSUMOS'] || []).forEach((o) => { INSUMO_QTD[o.valor] = o.quantidade ?? 0; });
   INSUMOS = (data['INSUMOS'] || []).filter((o) => !o.oculto).map((o) => o.valor);
@@ -514,11 +559,12 @@ function renderListaOpcoes() {
   const hidden = HIDDEN[lista] || [];
   const isEquip = lista === 'EQUIPAMENTO';
   const isInsumo = lista === 'INSUMOS';
+  const isUnidade = lista === 'UNIDADE';
 
   const linhas = values.map((v) => {
     const ativo = hidden.indexOf(v) === -1;
     const vEsc = escapeHtml(v);
-    const detalhe = isEquip ? (EQUIP_DETALHE[v] || '') : '';
+    const detalhe = isEquip ? (EQUIP_DETALHE[v] || '') : isUnidade ? (UNIDADE_MSA[v] || '') : '';
     const preco = isEquip && EQUIP_PRECO[v] != null
       ? 'R$ ' + Number(EQUIP_PRECO[v]).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
       : '';
@@ -527,6 +573,8 @@ function renderListaOpcoes() {
     if (isEquip) {
       const sub = [detalhe ? escapeHtml(detalhe) : '', preco ? escapeHtml(preco) : '', tipo ? escapeHtml(tipo) : ''].filter(Boolean).join(' · ');
       nomeCell = vEsc + (sub ? '<br><small class="text-muted">' + sub + '</small>' : '');
+    } else if (isUnidade && detalhe) {
+      nomeCell = vEsc + '<br><small class="text-muted">' + escapeHtml(detalhe) + '</small>';
     }
     const status = ativo
       ? '<span class="badge-status badge-ativo">ATIVO</span>'
@@ -772,15 +820,6 @@ function colVal(r, col) {
   return String(v);
 }
 
-function uniqueColVals(col) {
-  const seen = new Set(), out = [];
-  for (const r of (_todosCarregados ? _todosRegistros : REGISTROS)) {
-    const v = colVal(r, col);
-    if (!seen.has(v)) { seen.add(v); out.push(v); }
-  }
-  return out.sort((a, b) => a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'pt-BR'));
-}
-
 function passaFiltros(r) {
   for (const [k, sel] of Object.entries(colFilters)) {
     if (!sel.has(colVal(r, Number(k)))) return false;
@@ -793,6 +832,8 @@ function atualizarThFiltro() {
     const ativo = colFilters[th.getAttribute('data-col')] != null;
     th.classList.toggle('col-filter-ativo', ativo);
   });
+  const btnLimpar = $('btnLimparFiltros');
+  if (btnLimpar) btnLimpar.classList.toggle('filtro-on', Object.keys(colFilters).length > 0);
 }
 
 function criarFilterDropdown() {
@@ -852,13 +893,42 @@ function fdRenderList() {
   });
 }
 
-async function fdAbrir(col, thEl) {
+// --- Filtro de coluna genérico (funciona em qualquer tabela via "contexto") ---
+// ctx = { theadSel, getRows(), colVal(r,col), filters{}, onApply(), beforeOpen? }
+function ctxUnique(ctx, col) {
+  const seen = new Set(), out = [];
+  for (const r of ctx.getRows()) {
+    const v = ctx.colVal(r, col);
+    if (!seen.has(v)) { seen.add(v); out.push(v); }
+  }
+  return out.sort((a, b) => a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'pt-BR'));
+}
+
+function ctxPassa(ctx, r) {
+  for (const [k, sel] of Object.entries(ctx.filters)) {
+    if (!sel.has(ctx.colVal(r, Number(k)))) return false;
+  }
+  return true;
+}
+
+function ctxAtualizarTh(ctx) {
+  document.querySelectorAll(ctx.theadSel).forEach((th) => {
+    th.classList.toggle('col-filter-ativo', ctx.filters[th.getAttribute('data-col')] != null);
+  });
+  if (ctx.clearBtnId) {
+    const btn = $(ctx.clearBtnId);
+    if (btn) btn.classList.toggle('filtro-on', Object.keys(ctx.filters).length > 0);
+  }
+}
+
+async function fdAbrir(ctx, col, thEl) {
   criarFilterDropdown();
   if (_fdOutside) { document.removeEventListener('mousedown', _fdOutside); _fdOutside = null; }
-  await carregarTodosParaFiltro();
+  if (ctx.beforeOpen) await ctx.beforeOpen();
+  _fdActive = ctx;
   _fdCol = col;
-  _fdAllVals = uniqueColVals(col);
-  const atual = colFilters[String(col)];
+  _fdAllVals = ctxUnique(ctx, col);
+  const atual = ctx.filters[String(col)];
   _fdPendente = atual ? new Set(atual) : new Set(_fdAllVals);
   _fdEl.querySelector('#fdSearch').value = '';
   fdRenderList();
@@ -866,6 +936,11 @@ async function fdAbrir(col, thEl) {
   _fdEl.style.display = 'flex';
   _fdEl.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 290)) + 'px';
   _fdEl.style.top = (rect.bottom + 4) + 'px';
+  // Limita a quantidade de itens visíveis (ex.: 4) quando o contexto pedir.
+  const _list = _fdEl.querySelector('#fdList');
+  const _item = _list.querySelector('.col-filter-item');
+  _list.style.maxHeight = (ctx.maxItems && _item) ? (_item.offsetHeight * ctx.maxItems) + 'px' : '';
+  _fdScrollEl = thEl.closest('.table-scroll-x, .table-responsive');
   setTimeout(() => {
     _fdOutside = (e) => {
       if (!_fdEl.contains(e.target) && !e.target.closest('th[data-col]')) fdFechar();
@@ -873,7 +948,7 @@ async function fdAbrir(col, thEl) {
     document.addEventListener('mousedown', _fdOutside);
     _fdScroll = () => fdFechar();
     window.addEventListener('scroll', _fdScroll, { passive: true });
-    $('tabelaScroll').addEventListener('scroll', _fdScroll, { passive: true });
+    if (_fdScrollEl) _fdScrollEl.addEventListener('scroll', _fdScroll, { passive: true });
   }, 10);
 }
 
@@ -882,36 +957,67 @@ function fdFechar() {
   if (_fdOutside) { document.removeEventListener('mousedown', _fdOutside); _fdOutside = null; }
   if (_fdScroll) {
     window.removeEventListener('scroll', _fdScroll);
-    const ts = $('tabelaScroll');
-    if (ts) ts.removeEventListener('scroll', _fdScroll);
+    if (_fdScrollEl) _fdScrollEl.removeEventListener('scroll', _fdScroll);
     _fdScroll = null;
   }
-  _fdCol = -1; _fdPendente = null;
+  _fdScrollEl = null; _fdCol = -1; _fdPendente = null;
 }
 
 function fdAplicar() {
-  const col = String(_fdCol);
+  const ctx = _fdActive, col = String(_fdCol);
   if (_fdPendente.size === 0) {
-    colFilters[col] = new Set(); // mostra nada
+    ctx.filters[col] = new Set(); // mostra nada
   } else if (_fdPendente.size >= _fdAllVals.length) {
-    delete colFilters[col]; // todos selecionados = sem filtro
+    delete ctx.filters[col]; // todos selecionados = sem filtro
   } else {
-    colFilters[col] = new Set(_fdPendente);
+    ctx.filters[col] = new Set(_fdPendente);
   }
   fdFechar();
-  renderTabela();
-  atualizarThFiltro();
+  ctx.onApply();
+  ctxAtualizarTh(ctx);
 }
 
-function configurarFiltrosTabela() {
-  document.querySelector('#tabelaScroll thead').addEventListener('click', (e) => {
+// Liga o filtro de coluna ao <thead> de uma tabela.
+function wireCtxFiltro(ctx, theadEl) {
+  if (!theadEl) return;
+  theadEl.addEventListener('click', (e) => {
     const th = e.target.closest('th[data-col]');
     if (!th) return;
     const col = Number(th.getAttribute('data-col'));
-    if (_fdCol === col) { fdFechar(); return; }
+    if (_fdCol === col && _fdActive === ctx) { fdFechar(); return; }
     fdFechar();
-    fdAbrir(col, th);
+    fdAbrir(ctx, col, th);
   });
+}
+
+// Cabeçalho com colunas filtráveis (ícone de funil) a partir de um array de COLS.
+function thFiltravel(cols) {
+  return cols.map((c, i) => '<th class="th-filterable" data-col="' + i + '">' +
+    escapeHtml(c.label) + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>').join('');
+}
+
+// Contexto da tabela de Registros (mantém o comportamento existente).
+const registrosFilterCtx = {
+  theadSel: '#tabelaScroll thead th[data-col]',
+  getRows: () => (_todosCarregados ? _todosRegistros : REGISTROS),
+  colVal,
+  filters: colFilters,
+  onApply: renderTabela,
+  beforeOpen: carregarTodosParaFiltro,
+};
+
+// Alterna a visão da tabela de Registros: 'detalhada' (todas as colunas) ou
+// 'simples' (esconde Usuário, Protocolo, Recebimento, Obs e Foto via CSS).
+function setRegistrosView(view) {
+  const simples = view === 'simples';
+  $('tabelaScroll').classList.toggle('view-simples', simples);
+  $('btnViewSimples').classList.toggle('active', simples);
+  $('btnViewDetalhada').classList.toggle('active', !simples);
+  localStorage.setItem('registrosView', simples ? 'simples' : 'detalhada');
+}
+
+function configurarFiltrosTabela() {
+  wireCtxFiltro(registrosFilterCtx, document.querySelector('#tabelaScroll thead'));
 }
 
 // ============================================================
@@ -1832,6 +1938,16 @@ function configurarFormOpcao() {
           ? Number(String(res.preco).replace(',', '.')) : null;
         novoPreco = precoRaw != null && !isNaN(precoRaw) ? precoRaw : null;
         novoTipo = res.tipo || null;
+      } else if (lista === 'UNIDADE') {
+        const res = await uiAsk({
+          title: 'Editar unidade', message: 'Nome da unidade:',
+          input: true, value: val,
+          input2Label: 'Unidade na MSA (opcional)', value2: detalheAtual, input2Select: MSA_UNIDADES,
+          okText: 'Salvar'
+        });
+        if (res === null) return;
+        limpo = trim(res.valor).toUpperCase();
+        novoDetalhe = trim(res.detalhe) || null;
       } else {
         const novo = await uiPrompt('Editar opção:', { title: 'Editar opção', value: val });
         if (novo === null) return;
@@ -1846,6 +1962,8 @@ function configurarFormOpcao() {
         }
         if (lista === 'EQUIPAMENTO') {
           await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: novoPreco, tipo_aquisicao: novoTipo });
+        } else if (lista === 'UNIDADE') {
+          await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: null, tipo_aquisicao: null });
         }
         await loadOptions();
         showAlert('alertGerenciar', 'success', 'Opção atualizada.');
@@ -2623,19 +2741,45 @@ const CHAMADOS_COLS = [
   { key: 'Codigo',     label: 'N°'           },
   { key: 'Criacao',    label: 'Criação',      fmt: v => v ? v.split('-').reverse().join('/') : '' },
   { key: 'Assunto',    label: 'Assunto'       },
-  { key: 'St',         label: 'Status'        },
+  { key: 'St',         label: 'Status',       fmt: v => v === 'Resolvido' ? 'Finalizado' : (v ?? '') },
   { key: 'Solicitante',label: 'Solicitante'   },
 ];
 
 let _chamadosTodos = [];
 
+function chamadosColVal(r, col) {
+  const c = CHAMADOS_COLS[col];
+  if (!c) return '';
+  const v = c.fmt ? c.fmt(r[c.key]) : r[c.key];
+  return (v == null || String(v).trim() === '') ? '' : String(v);
+}
+
+const chamadosFilterCtx = {
+  theadSel: '#chamadosThead th[data-col]',
+  getRows: () => _chamadosTodos,
+  colVal: chamadosColVal,
+  filters: {},
+  maxItems: 4,
+  clearBtnId: 'btnLimparFiltrosChamados',
+  onApply: () => {
+    // Ao usar o filtro de coluna, troca o status de cima para "Personalizado"
+    // para não conflitar com o filtro da tabela.
+    if (Object.keys(chamadosFilterCtx.filters).length) $('chamadosFiltroStatus').value = 'custom';
+    renderChamados();
+  },
+};
+
 function renderChamados() {
   const busca = ($('chamadosBusca').value ?? '').toLowerCase();
   const status = $('chamadosFiltroStatus').value;
+  const statusAtivo = status && status !== 'custom';
   const rows = _chamadosTodos.filter(r => {
-    if (status === 'aberto' && (r.St === 'Resolvido' || r.St === 'Cancelado')) return false;
-    if (status && status !== 'aberto' && r.St !== status) return false;
+    if (statusAtivo) {
+      if (status === 'aberto') { if (r.St === 'Resolvido' || r.St === 'Cancelado') return false; }
+      else if (r.St !== status) return false;
+    }
     if (busca && !`${r.Codigo} ${r.Assunto} ${r.Solicitante}`.toLowerCase().includes(busca)) return false;
+    if (!ctxPassa(chamadosFilterCtx, r)) return false;
     return true;
   });
   $('chamadosTbody').innerHTML = rows.map(r =>
@@ -2644,7 +2788,8 @@ function renderChamados() {
     `data-ver-chave="${escapeHtml(String(r.Chave || ''))}" data-ver-codigo="${escapeHtml(r.Codigo || '')}" data-ver-st="${escapeHtml(r.St || '')}">` +
     `<i class="ph ph-eye"></i> Ver</button></td></tr>`
   ).join('');
-  $('chamadosStatus').textContent = `${rows.length} de ${_chamadosTodos.length} chamado(s).`;
+  $('chamadosStatus').textContent = `${rows.length} de ${_chamadosTodos.length} chamados.`;
+  ctxAtualizarTh(chamadosFilterCtx);
 }
 
 async function carregarChamados() {
@@ -2658,12 +2803,304 @@ async function carregarChamados() {
       $('chamadosStatus').textContent = 'Nenhum chamado encontrado.';
       return;
     }
-    $('chamadosThead').innerHTML = CHAMADOS_COLS.map(c => `<th>${c.label}</th>`).join('') + '<th></th>';
+    $('chamadosThead').innerHTML = thFiltravel(CHAMADOS_COLS) + '<th></th>';
 
     renderChamados();
   } catch (e) {
     $('chamadosStatus').textContent = 'Erro: ' + e.message;
   }
+}
+
+// ============================================================
+//  CHAMADOS — INTECS vs MSA (CRUD local em SQL Server)
+// ============================================================
+let modalIntecsMsa = null;
+let _intecsMsaTodos = [];
+const fpIM = {};
+
+const INTECSMSA_COLS = [
+  { key: 'data_solicitacao',   label: 'Solicitação', fmt: imDataBR },
+  { key: 'numero_chamado_msa', label: 'Nº MSA'      },
+  { key: 'unidade',            label: 'Unidade'     },
+  { key: 'patrimonio_msa',     label: 'Patrimônio'  },
+  { key: 'status_msa',         label: 'Status MSA'  },
+  { key: 'status_intecs',      label: 'Status INTECS' },
+];
+
+function imDataBR(v) { return v ? v.split('-').reverse().join('/') : ''; }
+
+// Regra de negócio do spec: STATUS MSA é derivado das datas de movimentação.
+function statusMsaCalc(retirada, entrega) {
+  if (trim(entrega)) return 'Finalizado';
+  if (trim(retirada)) return 'Em Andamento';
+  return 'Aberto';
+}
+
+// Status MSA exibido: usa o status real sincronizado do eurosa quando houver;
+// senão cai no cálculo por datas (linhas criadas manualmente).
+function statusMsaDe(r) {
+  return trim(r.status_msa) || statusMsaCalc(r.data_retirada_equip, r.data_entrega_equip);
+}
+
+function imStatusBadge(st) {
+  if (!st) return '';
+  const dark = st === 'Finalizado';
+  const estilo = dark
+    ? 'background:var(--ink);color:#fff;'
+    : 'background:var(--bg-soft);color:var(--ink);border:1px solid var(--line);';
+  return `<span class="badge" style="${estilo}">${escapeHtml(st)}</span>`;
+}
+
+function intecsMsaColVal(r, col) {
+  const c = INTECSMSA_COLS[col];
+  if (!c) return '';
+  let v;
+  if (c.key === 'status_msa') v = statusMsaDe(r);
+  else if (c.key === 'status_intecs') v = r.status_intecs || '';
+  else v = c.fmt ? c.fmt(r[c.key]) : r[c.key];
+  return (v == null || String(v).trim() === '') ? '' : String(v);
+}
+
+const intecsMsaFilterCtx = {
+  theadSel: '#imThead th[data-col]',
+  getRows: () => _intecsMsaTodos,
+  colVal: intecsMsaColVal,
+  filters: {},
+  maxItems: 4,
+  clearBtnId: 'btnLimparFiltrosIntecsMsa',
+  onApply: () => {
+    if (Object.keys(intecsMsaFilterCtx.filters).length) $('imFiltroStatus').value = 'custom';
+    renderIntecsMsa();
+  },
+};
+
+function renderIntecsMsa() {
+  const busca = trim($('imBusca').value).toLowerCase();
+  const fstatus = $('imFiltroStatus').value;
+  const statusAtivo = fstatus && fstatus !== 'custom';
+  const rows = _intecsMsaTodos.filter((r) => {
+    const stMsa = statusMsaDe(r);
+    // "Em Aberto" agrupa Aberto + Em Andamento (tudo que não está Finalizado),
+    // igual ao filtro da aba Chamados MSA.
+    if (statusAtivo) {
+      if (fstatus === 'aberto') { if (stMsa === 'Finalizado') return false; }
+      else if (stMsa !== fstatus) return false;
+    }
+    if (busca) {
+      const hay = `${r.numero_chamado_msa || ''} ${r.unidade || ''} ${r.patrimonio_msa || ''} ${r.ns || ''} ${r.descricao_equip || ''}`.toLowerCase();
+      if (!hay.includes(busca)) return false;
+    }
+    if (!ctxPassa(intecsMsaFilterCtx, r)) return false;
+    return true;
+  });
+  $('imTbody').innerHTML = rows.map((r) => {
+    const stMsa = statusMsaDe(r);
+    const cells = INTECSMSA_COLS.map((c) => {
+      if (c.key === 'status_msa') return `<td>${imStatusBadge(stMsa)}</td>`;
+      if (c.key === 'status_intecs') return `<td>${imStatusBadge(r.status_intecs || '')}</td>`;
+      const val = c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? '');
+      return `<td>${escapeHtml(val)}</td>`;
+    }).join('');
+    return `<tr>${cells}<td class="text-end text-nowrap">` +
+      `<button type="button" class="btn btn-sm btn-outline-primary me-1" data-edit-im="${r.id}"><i class="ph ph-pencil-simple"></i></button>` +
+      `<button type="button" class="btn btn-sm btn-outline-danger" data-del-im="${r.id}"><i class="ph ph-trash"></i></button>` +
+      `</td></tr>`;
+  }).join('');
+  $('imStatus').textContent = `${rows.length} de ${_intecsMsaTodos.length} registros.`;
+  ctxAtualizarTh(intecsMsaFilterCtx);
+}
+
+async function carregarIntecsMsa() {
+  $('imStatus').textContent = 'Sincronizando com a MSA…';
+  $('imThead').innerHTML = '';
+  $('imTbody').innerHTML = '';
+  try {
+    const data = await api('GET', '/api/intecs-msa');
+    _intecsMsaTodos = Array.isArray(data) ? data : [];
+    $('imThead').innerHTML = thFiltravel(INTECSMSA_COLS) + '<th></th>';
+    if (!_intecsMsaTodos.length) { $('imStatus').textContent = 'Nenhum registro cadastrado.'; return; }
+    renderIntecsMsa();
+  } catch (e) {
+    $('imStatus').textContent = 'Erro: ' + e.message;
+  }
+}
+
+// ---- Datas (flatpickr próprio, SEM minDate — aceita datas passadas) ----
+function initIntecsMsaDatas() {
+  if (typeof window.flatpickr === 'undefined') return;
+  const cfg = {
+    locale: 'pt', dateFormat: 'Y-m-d', altInput: true, altFormat: 'd/m/Y',
+    allowInput: true, disableMobile: true, monthSelectorType: 'static',
+    onReady(_d, _s, fp) {
+      fp.altInput.classList.add('form-control');
+      const prev = fp.calendarContainer.querySelector('.flatpickr-prev-month');
+      const next = fp.calendarContainer.querySelector('.flatpickr-next-month');
+      if (prev) prev.innerHTML = '<i class="ph ph-caret-left"></i>';
+      if (next) next.innerHTML = '<i class="ph ph-caret-right"></i>';
+    },
+  };
+  ['im_data_solicitacao', 'im_data_retirada', 'im_data_entrega'].forEach((id) => {
+    const el = $(id);
+    if (!el || fpIM[id]) return;
+    // DATA SOLICITAÇÃO é somente leitura: não abre o picker nem aceita digitação.
+    const c = id === 'im_data_solicitacao'
+      ? { ...cfg, clickOpens: false, allowInput: false }
+      : cfg;
+    fpIM[id] = window.flatpickr(el, c);
+  });
+}
+function setDataIM(id, val) {
+  const fp = fpIM[id];
+  if (fp) { if (val) fp.setDate(val, false); else fp.clear(false); }
+  else { $(id).value = val || ''; }
+}
+function getDataIM(id) { return trim($(id).value); }
+
+function atualizarStatusMsa() {
+  $('im_status_msa').value = statusMsaCalc($('im_data_retirada').value, $('im_data_entrega').value);
+}
+
+async function carregarPatsBackup(selected) {
+  try {
+    const pats = await api('GET', '/api/pats');
+    fillSelect('im_bkp_pat', Array.isArray(pats) ? pats : [], selected || '');
+  } catch { fillSelect('im_bkp_pat', [], selected || ''); }
+}
+
+function abrirEdicaoIntecsMsa(id) {
+  const r = _intecsMsaTodos.find((x) => String(x.id) === String(id));
+  if (!r) return;
+  $('alertIntecsMsa').innerHTML = '';
+  $('formIntecsMsa').reset();
+  $('im_id').value = r.id;
+  $('imModalTitle').innerHTML = '<i class="ph ph-git-diff me-2"></i>Editar — INTECS vs MSA';
+  $('btnExcluirIntecsMsa').style.display = '';
+  $('im_numero_chamado').value = r.numero_chamado_msa || '';
+  $('im_problema').value = r.problema || '';
+  $('im_glpi').value = r.glpi || '';
+  $('im_status_intecs').value = r.status_intecs || '';
+  $('im_patrimonio_msa').value = r.patrimonio_msa || '';
+  $('im_ns').value = r.ns || '';
+  $('im_ponto_instalacao').value = r.ponto_instalacao || '';
+  $('im_descricao_equip').value = r.descricao_equip || '';
+  $('im_bkp_unidade').value = r.bkp_unidade || '';
+  $('im_observacao').value = r.observacao || '';
+  setDataIM('im_data_solicitacao', r.data_solicitacao);
+  setDataIM('im_data_retirada', r.data_retirada_equip);
+  setDataIM('im_data_entrega', r.data_entrega_equip);
+  fillSelect('im_unidade', activeValues('UNIDADE'), r.unidade || '');
+  carregarPatsBackup(r.patrimonio_bkp_intecs || '');
+  atualizarStatusMsa();
+  modalIntecsMsa.show();
+}
+
+function dadosIntecsMsa() {
+  return {
+    data_solicitacao:      getDataIM('im_data_solicitacao'),
+    numero_chamado_msa:    trim($('im_numero_chamado').value),
+    problema:              trim($('im_problema').value),
+    unidade:               trim($('im_unidade').value),
+    glpi:                  trim($('im_glpi').value),
+    status_intecs:         trim($('im_status_intecs').value),
+    patrimonio_msa:        trim($('im_patrimonio_msa').value),
+    ns:                    trim($('im_ns').value),
+    ponto_instalacao:      trim($('im_ponto_instalacao').value),
+    descricao_equip:       trim($('im_descricao_equip').value),
+    data_retirada_equip:   getDataIM('im_data_retirada'),
+    data_entrega_equip:    getDataIM('im_data_entrega'),
+    patrimonio_bkp_intecs: trim($('im_bkp_pat').value),
+    bkp_unidade:           trim($('im_bkp_unidade').value),
+    observacao:            trim($('im_observacao').value),
+  };
+}
+
+async function salvarIntecsMsa(ev) {
+  if (ev) ev.preventDefault();
+  const id = trim($('im_id').value);
+  const dados = dadosIntecsMsa();
+  const btn = $('btnSalvarIntecsMsa');
+  btn.disabled = true;
+  try {
+    if (id) await api('PUT', '/api/intecs-msa/' + id, dados);
+    else await api('POST', '/api/intecs-msa', dados);
+    modalIntecsMsa.hide();
+    await carregarIntecsMsa();
+  } catch (e) {
+    $('alertIntecsMsa').innerHTML = `<div class="alert alert-danger py-2 mb-3">${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function excluirIntecsMsa(id) {
+  const ok = await uiConfirm('Excluir este registro de INTECS vs MSA? Esta ação não pode ser desfeita.',
+    { title: 'Excluir registro', okText: 'Excluir' });
+  if (!ok) return;
+  try {
+    await api('DELETE', '/api/intecs-msa/' + id);
+    if (modalIntecsMsa) modalIntecsMsa.hide();
+    await carregarIntecsMsa();
+  } catch (e) {
+    $('imStatus').textContent = 'Erro: ' + e.message;
+  }
+}
+
+// Auto-preenche PONTO DE INSTALAÇÃO + DESCRIÇÃO EQUIP. pelo patrimônio MSA (+ Nº série).
+async function lookupEquipIM() {
+  const pat = trim($('im_patrimonio_msa').value);
+  if (!pat) return;
+  const ns = trim($('im_ns').value);
+  try {
+    const q = ns ? '?ns=' + encodeURIComponent(ns) : '';
+    const info = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/lookup' + q);
+    if (info.equipamento || info.setor) {
+      $('im_ponto_instalacao').value = info.setor || '';
+      $('im_descricao_equip').value = info.equipamento || '';
+    }
+  } catch { /* silencioso */ }
+}
+
+// Auto-preenche BKP UNIDADE pela unidade de origem do patrimônio de backup.
+async function lookupBkpUnidade() {
+  const pat = trim($('im_bkp_pat').value);
+  if (!pat) { $('im_bkp_unidade').value = ''; return; }
+  try {
+    const info = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/lookup');
+    $('im_bkp_unidade').value = info.unidade || '';
+  } catch { /* silencioso */ }
+}
+
+function configurarIntecsMsa() {
+  $('btnRefreshIntecsMsa').addEventListener('click', carregarIntecsMsa);
+  $('imBusca').addEventListener('input', renderIntecsMsa);
+  $('imFiltroStatus').addEventListener('change', () => {
+    // Mexer no filtro de cima sobrepõe o filtro de coluna do Status MSA.
+    const i = INTECSMSA_COLS.findIndex((c) => c.key === 'status_msa');
+    delete intecsMsaFilterCtx.filters[String(i)];
+    renderIntecsMsa();
+  });
+  $('formIntecsMsa').addEventListener('submit', salvarIntecsMsa);
+  $('btnExcluirIntecsMsa').addEventListener('click', () => {
+    const id = trim($('im_id').value);
+    if (id) excluirIntecsMsa(id);
+  });
+  $('imTbody').addEventListener('click', (ev) => {
+    const edit = ev.target.closest('[data-edit-im]');
+    if (edit) { abrirEdicaoIntecsMsa(edit.getAttribute('data-edit-im')); return; }
+    const del = ev.target.closest('[data-del-im]');
+    if (del) { excluirIntecsMsa(del.getAttribute('data-del-im')); }
+  });
+  $('im_patrimonio_msa').addEventListener('blur', lookupEquipIM);
+  $('im_ns').addEventListener('blur', lookupEquipIM);
+  $('im_bkp_pat').addEventListener('change', lookupBkpUnidade);
+  $('im_data_retirada').addEventListener('change', atualizarStatusMsa);
+  $('im_data_entrega').addEventListener('change', atualizarStatusMsa);
+  wireCtxFiltro(intecsMsaFilterCtx, $('imThead'));
+  $('btnLimparFiltrosIntecsMsa').addEventListener('click', () => {
+    Object.keys(intecsMsaFilterCtx.filters).forEach((k) => delete intecsMsaFilterCtx.filters[k]);
+    if ($('imFiltroStatus').value === 'custom') $('imFiltroStatus').value = 'aberto';
+    renderIntecsMsa();
+  });
 }
 
 function posicionarSlider(animar = true) {
@@ -2696,6 +3133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalRegistrar = new bootstrap.Modal($('modalRegistrar'));
   modalNovoChamado = new bootstrap.Modal($('modalNovoChamado'));
   modalChamadoDetalhe = new bootstrap.Modal($('modalChamadoDetalhe'));
+  modalIntecsMsa = new bootstrap.Modal($('modalIntecsMsa'));
   document.querySelectorAll('.modal').forEach(el => {
     el.addEventListener('hidePrevented.bs.modal', () => el.classList.remove('modal-static'));
   });
@@ -2742,6 +3180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('askInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); finishAsk(true); } });
   initChoices();
   initFlatpickr();
+  initIntecsMsaDatas();
   configurarAuth();
   configurarFormInventario();
   inicializarCameraOverlay();
@@ -2754,6 +3193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarFiltrosTabela();
   configurarDetalheChamado();
   configurarNovoChamado();
+  configurarIntecsMsa();
 
   document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
     btn.addEventListener('shown.bs.tab', () => {
@@ -2770,10 +3210,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   }, { passive: true });
   $('tab-registros').addEventListener('shown.bs.tab', () => loadRecords(true));
   $('btnAtualizarLista').addEventListener('click', () => { invalidarCacheTodos(); loadRecords(true); });
-  $('btnLimparFiltros').addEventListener('click', () => { colFilters = {}; renderTabela(); });
+  $('btnViewSimples').addEventListener('click', () => setRegistrosView('simples'));
+  $('btnViewDetalhada').addEventListener('click', () => setRegistrosView('detalhada'));
+  setRegistrosView(localStorage.getItem('registrosView') || 'detalhada');
+  $('btnLimparFiltros').addEventListener('click', () => {
+    Object.keys(colFilters).forEach((k) => delete colFilters[k]);
+    renderTabela();
+  });
   new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) loadRecords(false);
-  }, { threshold: 0.1 }).observe($('sentinelTabela'));
+  }, { root: $('tabelaScroll'), threshold: 0.1 }).observe($('sentinelTabela'));
   $('btnBaixarModelo').addEventListener('click', baixarModelo);
   $('btnExportarXlsx').addEventListener('click', exportarXlsx);
   $('btnImportar').addEventListener('click', importarXlsx);
@@ -2781,10 +3227,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnAtualizarEmprestimos').addEventListener('click', loadEmprestimos);
   $('tab-usuarios').addEventListener('shown.bs.tab', loadUsuarios);
   $('btnAtualizarUsuarios').addEventListener('click', loadUsuarios);
-  $('tab-chamados').addEventListener('shown.bs.tab', carregarChamados);
+  // Aba Chamados: sub-aba padrão é INTECS vs MSA; MSA (Eurosa) carrega ao abrir sua sub-aba.
+  $('tab-chamados').addEventListener('shown.bs.tab', carregarIntecsMsa);
+  $('sub-tab-intecsmsa').addEventListener('shown.bs.tab', carregarIntecsMsa);
+  $('sub-tab-msa').addEventListener('shown.bs.tab', carregarChamados);
   $('btnRefreshChamados').addEventListener('click', carregarChamados);
   $('chamadosBusca').addEventListener('input', renderChamados);
-  $('chamadosFiltroStatus').addEventListener('change', renderChamados);
+  $('chamadosFiltroStatus').addEventListener('change', () => {
+    // Mexer no filtro de cima sobrepõe o filtro de coluna do Status.
+    const i = CHAMADOS_COLS.findIndex((c) => c.key === 'St');
+    delete chamadosFilterCtx.filters[String(i)];
+    renderChamados();
+  });
+  wireCtxFiltro(chamadosFilterCtx, $('chamadosThead'));
+  $('btnLimparFiltrosChamados').addEventListener('click', () => {
+    Object.keys(chamadosFilterCtx.filters).forEach((k) => delete chamadosFilterCtx.filters[k]);
+    if ($('chamadosFiltroStatus').value === 'custom') $('chamadosFiltroStatus').value = 'aberto';
+    renderChamados();
+  });
 
   // Sessão persistida: valida o token salvo.
   if (TOKEN) {
