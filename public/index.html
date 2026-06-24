@@ -12,7 +12,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Gestão TI</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="icon" type="image/png" href="logo_intecs.png">
+  <link rel="apple-touch-icon" href="logo_intecs.png">
   <link
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
     rel="stylesheet" crossorigin="anonymous">
@@ -49,6 +50,7 @@
       font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       color: var(--ink);
     }
+    /* Barra de scroll do sistema (página) permanece oculta */
     html { scrollbar-width: none; }
     html::-webkit-scrollbar { display: none; }
 
@@ -112,11 +114,11 @@
     .auth-aside::after  { width: 250px; height: 250px; bottom: -120px; left: -100px; }
     .auth-aside .auth-head { position: relative; z-index: 1; }
     .auth-aside .brand-mark {
-      width: 64px; height: 64px; border-radius: 18px; background: #fff;
       display: inline-flex; align-items: center; justify-content: center; margin-bottom: 26px;
-      box-shadow: 0 10px 24px rgba(0,0,0,.3);
     }
-    .auth-aside .brand-mark img { width: 42px; height: 42px; border-radius: 10px; }
+    .auth-aside .brand-mark img {
+      width: 72px; height: 72px; object-fit: contain;
+    }
     .auth-aside h1 { font-weight: 800; font-size: 3rem; line-height: 1.05; margin: 0 0 14px; color: #fff; }
     .auth-aside p { color: rgba(255,255,255,.7); margin: 0; max-width: 320px; font-size: 1rem; }
 
@@ -176,6 +178,51 @@
 
     /* tabela */
     .table-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ---------- Barra de scroll das tabelas ----------
+       Oculta por padrão; aparece ao passar o mouse (hover)
+       ou enquanto rola (classe .is-scrolling via JS). */
+    .table-scroll-x, .table-sticky {
+      scrollbar-width: thin;            /* Firefox: largura fixa (reserva o espaço) */
+      scrollbar-color: transparent transparent; /* thumb invisível até o hover */
+      scrollbar-gutter: stable;         /* reserva a calha p/ não deslocar o conteúdo */
+    }
+    .table-scroll-x::-webkit-scrollbar,
+    .table-sticky::-webkit-scrollbar {
+      width: 9px;
+      height: 9px;
+    }
+    .table-scroll-x::-webkit-scrollbar-track,
+    .table-sticky::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .table-scroll-x::-webkit-scrollbar-thumb,
+    .table-sticky::-webkit-scrollbar-thumb {
+      background-color: transparent;    /* oculta por padrão */
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+      transition: background-color .2s ease;
+    }
+    .table-scroll-x::-webkit-scrollbar-corner,
+    .table-sticky::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+    /* Revela ao passar o mouse ou enquanto rola */
+    .table-scroll-x:hover, .table-scroll-x.is-scrolling,
+    .table-sticky:hover, .table-sticky.is-scrolling {
+      scrollbar-color: var(--line) transparent; /* Firefox: revela o thumb */
+    }
+    .table-scroll-x:hover::-webkit-scrollbar-thumb,
+    .table-scroll-x.is-scrolling::-webkit-scrollbar-thumb,
+    .table-sticky:hover::-webkit-scrollbar-thumb,
+    .table-sticky.is-scrolling::-webkit-scrollbar-thumb {
+      background-color: var(--line);
+    }
+    .table-scroll-x:hover::-webkit-scrollbar-thumb:hover,
+    .table-sticky:hover::-webkit-scrollbar-thumb:hover {
+      background-color: var(--muted);
+    }
     .table > thead th {
       text-transform: uppercase; font-size: .72rem; letter-spacing: .5px;
     }
@@ -772,7 +819,7 @@
 
       <aside class="auth-aside">
         <div class="auth-head">
-          <span class="brand-mark"><img src="icons/icon.svg" alt=""></span>
+          <span class="brand-mark"><img src="logo_intecs.png" alt="Intecs"></span>
           <h1>Acesso</h1>
           <p>Gestão TI</p>
         </div>
@@ -815,7 +862,10 @@
   <div id="appView" class="container hidden">
     <div class="card shadow-sm app-card app-card-wide">
       <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Gestão TI</h5>
+        <h5 class="mb-0 d-flex align-items-center gap-2">
+          <img src="logo_intecs.png" alt="Intecs" style="height:28px;width:auto;">
+          Gestão TI
+        </h5>
         <div class="d-flex align-items-center gap-2">
           <small id="userEmail" class="d-none d-sm-inline"></small>
           <button class="btn btn-sm btn-light" id="btnSair">Sair</button>
@@ -1945,5 +1995,21 @@
   <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js" crossorigin="anonymous"></script>
   <script type="module" src="app.js?v=4"></script>
+  <script>
+    /* Mostra a barra de scroll das tabelas enquanto rola e a oculta
+       pouco depois de parar (~700ms). Funciona para X e Y. */
+    (function () {
+      var sel = '.table-scroll-x, .table-sticky';
+      document.addEventListener('scroll', function (e) {
+        var el = e.target;
+        if (!el || !el.matches || !el.matches(sel)) return;
+        el.classList.add('is-scrolling');
+        clearTimeout(el._scrollTO);
+        el._scrollTO = setTimeout(function () {
+          el.classList.remove('is-scrolling');
+        }, 700);
+      }, true);
+    })();
+  </script>
 </body>
 </html>

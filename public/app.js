@@ -561,7 +561,18 @@ function renderListaOpcoes() {
   const isInsumo = lista === 'INSUMOS';
   const isUnidade = lista === 'UNIDADE';
 
-  const linhas = values.map((v) => {
+  const visiveis = values.filter((v) => ctxPassa(opcoesFilterCtx, v));
+  if (!visiveis.length) {
+    container.innerHTML =
+      '<div class="table-responsive"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
+      '<thead><tr>' + opcoesThead(lista) + '</tr></thead>' +
+      '<tbody><tr><td colspan="4" class="text-muted text-center py-3">' +
+      'Nenhuma opção corresponde ao filtro.</td></tr></tbody></table></div>';
+    ctxAtualizarTh(opcoesFilterCtx);
+    return;
+  }
+
+  const linhas = visiveis.map((v) => {
     const ativo = hidden.indexOf(v) === -1;
     const vEsc = escapeHtml(v);
     const detalhe = isEquip ? (EQUIP_DETALHE[v] || '') : isUnidade ? (UNIDADE_MSA[v] || '') : '';
@@ -611,12 +622,44 @@ function renderListaOpcoes() {
       '<td class="text-end">' + toggle + editar + '</td></tr>';
   }).join('');
 
-  const qtdHeader = isInsumo ? '<th>Qtd. em estoque</th>' : isEquip ? '<th>Registros</th>' : '<th></th>';
   container.innerHTML =
     '<div class="table-responsive"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
-    '<thead><tr><th>Opção</th>' + qtdHeader + '<th>Status</th><th class="text-end">Ação</th></tr></thead>' +
+    '<thead><tr>' + opcoesThead(lista) + '</tr></thead>' +
     '<tbody>' + linhas + '</tbody></table></div>';
+  ctxAtualizarTh(opcoesFilterCtx);
 }
+
+// Cabeçalho da tabela de Opções com colunas filtráveis (funil).
+function opcoesThead(lista) {
+  const isEquip = lista === 'EQUIPAMENTO';
+  const isInsumo = lista === 'INSUMOS';
+  const th = (col, label) => '<th class="th-filterable" data-col="' + col + '">' +
+    escapeHtml(label) + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>';
+  const qtdHeader = isInsumo ? th(1, 'Qtd. em estoque') : isEquip ? th(1, 'Registros') : '<th></th>';
+  return th(0, 'Opção') + qtdHeader + th(2, 'Status') + '<th class="text-end">Ação</th>';
+}
+
+// Valor de uma coluna da tabela de Opções (para o filtro de cabeçalho).
+function opcoesColVal(v, col) {
+  const lista = $('listaAlvo').value;
+  if (col === 0) return String(v);
+  if (col === 2) return (HIDDEN[lista] || []).indexOf(v) === -1 ? 'Ativo' : 'Inativo';
+  if (col === 1) {
+    if (lista === 'INSUMOS') return String(INSUMO_QTD[v] ?? 0);
+    if (lista === 'EQUIPAMENTO') return String(EQUIP_QTD_REG[v] ?? 0);
+  }
+  return '';
+}
+
+const opcoesFilterCtx = {
+  theadSel: '#listaOpcoes thead th[data-col]',
+  getRows: () => OPTIONS[$('listaAlvo').value] || [],
+  colVal: opcoesColVal,
+  filters: {},
+  maxItems: 4,
+  radioCols: [2],
+  onApply: renderListaOpcoes,
+};
 
 // ============================================================
 //  Registros
@@ -842,7 +885,7 @@ function criarFilterDropdown() {
   _fdEl.id = 'colFilterDropdown';
   _fdEl.style.display = 'none';
   _fdEl.innerHTML =
-    '<div style="padding:.75rem .75rem .5rem">' +
+    '<div id="fdTools" style="padding:.75rem .75rem .5rem">' +
       '<div class="input-group input-group-sm mb-2">' +
         '<span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>' +
         '<input type="text" class="form-control" id="fdSearch" placeholder="Buscar...">' +
@@ -855,7 +898,7 @@ function criarFilterDropdown() {
     '<hr class="my-0">' +
     '<div id="fdList"></div>' +
     '<hr class="my-0">' +
-    '<div style="padding:.6rem .75rem;display:flex;justify-content:flex-end;gap:.5rem">' +
+    '<div id="fdFooter" style="padding:.6rem .75rem;display:flex;justify-content:flex-end;gap:.5rem">' +
       '<button type="button" class="btn btn-outline-secondary btn-sm" id="fdCancel">Cancelar</button>' +
       '<button type="button" class="btn btn-primary btn-sm" id="fdOk">OK</button>' +
     '</div>';
@@ -876,12 +919,39 @@ function criarFilterDropdown() {
   _fdEl.querySelector('#fdCancel').addEventListener('click', fdFechar);
 }
 
+function fdIsRadio() {
+  return !!(_fdActive && _fdActive.radioCols && _fdActive.radioCols.includes(_fdCol));
+}
+
 function fdRenderList() {
+  const lista = _fdEl.querySelector('#fdList');
+
+  // Coluna "um ou outro": exibe opções exclusivas (rádio) + "(Todos)".
+  if (fdIsRadio()) {
+    const todosChk = _fdPendente.size >= _fdAllVals.length ? ' checked' : '';
+    let html = '<label class="col-filter-item"><input type="radio" name="fdRadio" data-idx="-1"' + todosChk + '> <em class="text-muted">(Todos)</em></label>';
+    html += _fdAllVals.map((v, i) => {
+      const chk = (_fdPendente.size < _fdAllVals.length && _fdPendente.has(v)) ? ' checked' : '';
+      const lbl = v === '' ? '<em class="text-muted">(Espaços em branco)</em>' : escapeHtml(v);
+      return '<label class="col-filter-item"><input type="radio" name="fdRadio" data-idx="' + i + '"' + chk + '> ' + lbl + '</label>';
+    }).join('');
+    lista.innerHTML = html;
+    lista.querySelectorAll('input[type=radio]').forEach(rb => {
+      rb.addEventListener('change', () => {
+        const idx = Number(rb.dataset.idx);
+        _fdPendente.clear();
+        if (idx < 0) _fdAllVals.forEach(v => _fdPendente.add(v));
+        else _fdPendente.add(_fdAllVals[idx]);
+        fdAplicar(); // aplica e fecha na hora, sem precisar de OK
+      });
+    });
+    return;
+  }
+
   const busca = _fdEl.querySelector('#fdSearch').value.toLowerCase();
   const visiveis = busca
     ? _fdAllVals.filter(v => (v === '' ? '(espaços em branco)' : v.toLowerCase()).includes(busca))
     : _fdAllVals.slice();
-  const lista = _fdEl.querySelector('#fdList');
   lista.innerHTML = visiveis.map((v, i) => {
     const chk = _fdPendente.has(v) ? ' checked' : '';
     const lbl = v === '' ? '<em class="text-muted">(Espaços em branco)</em>' : escapeHtml(v);
@@ -931,6 +1001,9 @@ async function fdAbrir(ctx, col, thEl) {
   const atual = ctx.filters[String(col)];
   _fdPendente = atual ? new Set(atual) : new Set(_fdAllVals);
   _fdEl.querySelector('#fdSearch').value = '';
+  // Coluna "um ou outro" aplica na hora: sem busca, "selecionar tudo/limpar" nem OK/Cancelar.
+  _fdEl.querySelector('#fdTools').style.display = fdIsRadio() ? 'none' : '';
+  _fdEl.querySelector('#fdFooter').style.display = fdIsRadio() ? 'none' : 'flex';
   fdRenderList();
   const rect = thEl.getBoundingClientRect();
   _fdEl.style.display = 'flex';
@@ -1847,7 +1920,11 @@ function configurarFormInventario() {
 }
 
 function configurarFormOpcao() {
-  $('listaAlvo').addEventListener('change', renderListaOpcoes);
+  $('listaAlvo').addEventListener('change', () => {
+    Object.keys(opcoesFilterCtx.filters).forEach((k) => delete opcoesFilterCtx.filters[k]);
+    renderListaOpcoes();
+  });
+  wireCtxFiltro(opcoesFilterCtx, $('listaOpcoes'));
 
   $('btnAdicionar').addEventListener('click', async () => {
     const lista = $('listaAlvo').value;
@@ -2783,7 +2860,10 @@ function renderChamados() {
     return true;
   });
   $('chamadosTbody').innerHTML = rows.map(r =>
-    `<tr>${CHAMADOS_COLS.map(c => `<td>${escapeHtml(c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? ''))}</td>`).join('')}` +
+    `<tr>${CHAMADOS_COLS.map(c => {
+      if (c.key === 'St') return `<td>${imStatusBadge(c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? ''))}</td>`;
+      return `<td>${escapeHtml(c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? ''))}</td>`;
+    }).join('')}` +
     `<td><button type="button" class="btn btn-sm btn-outline-primary" ` +
     `data-ver-chave="${escapeHtml(String(r.Chave || ''))}" data-ver-codigo="${escapeHtml(r.Codigo || '')}" data-ver-st="${escapeHtml(r.St || '')}">` +
     `<i class="ph ph-eye"></i> Ver</button></td></tr>`
