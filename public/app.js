@@ -3343,3 +3343,50 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   });
 }
+
+/* ============================================================
+   === LAYOUT EXPERIMENTS (temporário) ===
+   Seletor de layout para testes. Aplica uma classe layout-* em
+   #appView e persiste a escolha em localStorage. Para remover o
+   experimento: apague este bloco, o bloco CSS marcado igual e o
+   markup #layoutSwitcher em index.html.
+   ============================================================ */
+(function layoutExperiment() {
+  const LAYOUTS = [
+    'layout-padrao', 'layout-topbar-wide', 'layout-topbar-sticky',
+  ];
+  // Todos os layouts atuais são horizontais (usam o liquid-slider).
+  const HORIZONTAIS = LAYOUTS.slice();
+
+  function aplicarLayout(nome) {
+    if (!LAYOUTS.includes(nome)) nome = 'layout-padrao';
+    const app = document.getElementById('appView');
+    if (!app) return;
+    app.classList.remove(...LAYOUTS);
+    app.classList.add(nome);
+    localStorage.setItem('layoutExperimento', nome);
+
+    document.querySelectorAll('#layoutSwitcher .ls-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.layout === nome);
+    });
+
+    // Layouts horizontais usam o liquid-slider; reposiciona após o reflow.
+    if (HORIZONTAIS.includes(nome) && typeof posicionarSlider === 'function') {
+      requestAnimationFrame(() => posicionarSlider(false));
+    }
+  }
+  window.aplicarLayout = aplicarLayout;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const sw = document.getElementById('layoutSwitcher');
+    if (!sw) return;
+    document.getElementById('lsToggle')?.addEventListener('click', () => {
+      sw.classList.toggle('collapsed');
+    });
+    sw.querySelectorAll('.ls-btn').forEach((b) => {
+      b.addEventListener('click', () => aplicarLayout(b.dataset.layout));
+    });
+    aplicarLayout(localStorage.getItem('layoutExperimento') || 'layout-padrao');
+  });
+})();
+/* === FIM LAYOUT EXPERIMENTS === */

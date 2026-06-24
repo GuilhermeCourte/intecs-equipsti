@@ -407,6 +407,67 @@
       .app-tabs .nav-link { flex: 0 0 auto; padding: .55rem .85rem; }
     }
 
+    /* =====================================================================
+       === LAYOUT EXPERIMENTS (temporário) ===
+       Variantes de disposição ativadas por uma classe em #appView.
+       Tudo reaproveita o mesmo DOM (card-header / app-tabs / tab-content).
+       Para remover o experimento: apague este bloco, o bloco JS marcado
+       igual em app.js e o markup #layoutSwitcher no final do body.
+       ===================================================================== */
+
+    /* Variantes do tipo TOPBAR: página full-width (sem o card flutuante),
+       cabeçalho no topo e o MENU mantendo a aparência atual (pílulas + slider).
+       Horizontais, então o liquid-slider continua funcionando. */
+
+    /* ---------- Base comum dos TOPBARS ---------- */
+    #appView.layout-topbar-wide,
+    #appView.layout-topbar-sticky { max-width: 100%; padding: 0; }
+    #appView.layout-topbar-wide .app-card,
+    #appView.layout-topbar-sticky .app-card {
+      max-width: 100%; margin: 0; border-radius: 0; box-shadow: none;
+    }
+    #appView.layout-topbar-wide .card-header,
+    #appView.layout-topbar-sticky .card-header { border-radius: 0 !important; }
+
+    /* ---------- TOPBAR LARGO (menu/abas ocupando toda a largura) ---------- */
+    #appView.layout-topbar-wide .card-body {
+      padding-left: clamp(1rem, 4vw, 3rem); padding-right: clamp(1rem, 4vw, 3rem);
+    }
+
+    /* ---------- TOPBAR FIXO (cabeçalho + menu grudam no topo ao rolar) ---------- */
+    #appView.layout-topbar-sticky .card-body { max-width: 1320px; width: 100%; margin: 0 auto; }
+    #appView.layout-topbar-sticky .card-header { position: sticky; top: 0; z-index: 1030; }
+    #appView.layout-topbar-sticky .app-tabs { top: 64px; }
+
+    /* ---------- Painel do seletor (temporário) ---------- */
+    #layoutSwitcher {
+      position: fixed; right: 16px; bottom: 16px; z-index: 2000;
+      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.15); padding: 8px;
+      display: flex; flex-direction: column; gap: 4px; max-width: 200px;
+    }
+    #layoutSwitcher.collapsed .ls-body { display: none; }
+    #layoutSwitcher .ls-head {
+      display: flex; align-items: center; gap: .4rem;
+      font-weight: 700; font-size: .8rem; color: var(--ink);
+      cursor: pointer; padding: 2px 4px;
+    }
+    #layoutSwitcher .ls-head i { font-size: 1.1rem; }
+    #layoutSwitcher .ls-body {
+      display: flex; flex-direction: column; gap: 3px; margin-top: 4px;
+      max-height: 60vh; overflow-y: auto;
+    }
+    #layoutSwitcher .ls-btn {
+      display: flex; align-items: center; gap: .5rem; width: 100%;
+      border: 1px solid var(--line); background: var(--bg-soft);
+      border-radius: 9px; padding: .4rem .6rem; font-size: .82rem; font-weight: 600;
+      color: var(--ink); cursor: pointer; text-align: left;
+    }
+    #layoutSwitcher .ls-btn:hover { background: #ececed; }
+    #layoutSwitcher .ls-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    #layoutSwitcher .ls-btn i { font-size: 1rem; }
+    /* === FIM LAYOUT EXPERIMENTS === */
+
     /* ---------- Sub-abas (pílulas) dentro de Chamados ---------- */
     .sub-tabs {
       display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem;
@@ -2011,5 +2072,16 @@
       }, true);
     })();
   </script>
+
+  <!-- === LAYOUT EXPERIMENTS (temporário) — seletor de layout para testes === -->
+  <div id="layoutSwitcher" class="collapsed">
+    <div class="ls-head" id="lsToggle"><i class="ph ph-layout"></i> Layout</div>
+    <div class="ls-body">
+      <button class="ls-btn" data-layout="layout-padrao"><i class="ph ph-cards"></i> Atual</button>
+      <button class="ls-btn" data-layout="layout-topbar-wide"><i class="ph ph-arrows-out-line-horizontal"></i> Topbar largo</button>
+      <button class="ls-btn" data-layout="layout-topbar-sticky"><i class="ph ph-push-pin"></i> Topbar fixo</button>
+    </div>
+  </div>
+  <!-- === FIM LAYOUT EXPERIMENTS === -->
 </body>
 </html>
