@@ -2808,6 +2808,7 @@ function sairDoApp() {
   dadosCarregados = false;
   TOKEN = '';
   localStorage.removeItem('token');
+  document.documentElement.classList.remove('sessao-ativa');
   $('appView').classList.add('hidden');
   $('authView').classList.remove('hidden');
   $('formAuth').reset();
@@ -3345,48 +3346,18 @@ if ('serviceWorker' in navigator) {
 }
 
 /* ============================================================
-   === LAYOUT EXPERIMENTS (temporário) ===
-   Seletor de layout para testes. Aplica uma classe layout-* em
-   #appView e persiste a escolha em localStorage. Para remover o
-   experimento: apague este bloco, o bloco CSS marcado igual e o
-   markup #layoutSwitcher em index.html.
+   === LAYOUT OFICIAL: topbar fixo ===
+   A classe layout-topbar-sticky é aplicada direto no #appView no
+   index.html. Aqui apenas garantimos o reposicionamento do
+   liquid-slider após o primeiro reflow.
    ============================================================ */
-(function layoutExperiment() {
-  const LAYOUTS = [
-    'layout-padrao', 'layout-topbar-wide', 'layout-topbar-sticky',
-  ];
-  // Todos os layouts atuais são horizontais (usam o liquid-slider).
-  const HORIZONTAIS = LAYOUTS.slice();
-
-  function aplicarLayout(nome) {
-    if (!LAYOUTS.includes(nome)) nome = 'layout-padrao';
-    const app = document.getElementById('appView');
-    if (!app) return;
-    app.classList.remove(...LAYOUTS);
-    app.classList.add(nome);
-    localStorage.setItem('layoutExperimento', nome);
-
-    document.querySelectorAll('#layoutSwitcher .ls-btn').forEach((b) => {
-      b.classList.toggle('active', b.dataset.layout === nome);
-    });
-
-    // Layouts horizontais usam o liquid-slider; reposiciona após o reflow.
-    if (HORIZONTAIS.includes(nome) && typeof posicionarSlider === 'function') {
+(function layoutOficial() {
+  document.addEventListener('DOMContentLoaded', () => {
+    // Limpa preferência de layout antiga do experimento, se existir.
+    localStorage.removeItem('layoutExperimento');
+    if (typeof posicionarSlider === 'function') {
       requestAnimationFrame(() => posicionarSlider(false));
     }
-  }
-  window.aplicarLayout = aplicarLayout;
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const sw = document.getElementById('layoutSwitcher');
-    if (!sw) return;
-    document.getElementById('lsToggle')?.addEventListener('click', () => {
-      sw.classList.toggle('collapsed');
-    });
-    sw.querySelectorAll('.ls-btn').forEach((b) => {
-      b.addEventListener('click', () => aplicarLayout(b.dataset.layout));
-    });
-    aplicarLayout(localStorage.getItem('layoutExperimento') || 'layout-padrao');
   });
 })();
-/* === FIM LAYOUT EXPERIMENTS === */
+/* === FIM LAYOUT OFICIAL === */
