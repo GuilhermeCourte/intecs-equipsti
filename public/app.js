@@ -1716,7 +1716,6 @@ function configurarAuth() {
   $('btnSair').addEventListener('click', sairDoApp);
 
   // ---- Biometria (celular) ----
-  $('btnUsarSenha')?.addEventListener('click', mostrarLoginSenha);
   $('btnEntrarBio')?.addEventListener('click', entrarComBiometria);
   $('btnAtivarBio')?.addEventListener('click', ativarBiometria);
 }
@@ -1741,20 +1740,14 @@ async function ehCelular() {
   return _ehCelularCache;
 }
 
-// Mostra a tela de login biométrico (em vez do formulário de senha).
-function mostrarLoginBio() {
-  $('bioLogin').classList.remove('hidden');
-  $('formAuth').classList.add('hidden');
-}
-function mostrarLoginSenha() {
-  $('bioLogin').classList.add('hidden');
-  $('formAuth').classList.remove('hidden');
-}
+// Exibe/oculta a opção "ou entrar com biometria" abaixo do formulário de senha.
+function mostrarBioOpcao() { $('bioOpcao').classList.remove('hidden'); }
+function ocultarBioOpcao() { $('bioOpcao').classList.add('hidden'); }
 
-// Na abertura: se for celular e este aparelho já tem biometria, mostra o login biométrico.
+// Na abertura: se for celular e este aparelho já tem biometria, mostra a opção.
 async function prepararTelaLogin() {
   if (localStorage.getItem('biometria_cred_id') && await ehCelular()) {
-    mostrarLoginBio();
+    mostrarBioOpcao();
   }
 }
 
@@ -1810,7 +1803,6 @@ async function entrarComBiometria() {
     const msg = err?.name === 'NotAllowedError'
       ? 'Autenticação cancelada.' : (err.message || 'Falha na biometria. Use e-mail e senha.');
     showAlert('alertAuth', 'danger', msg);
-    mostrarLoginSenha();
   } finally {
     btn.disabled = false;
   }
@@ -2964,7 +2956,7 @@ function sairDoApp() {
   $('authView').classList.remove('hidden');
   $('formAuth').reset();
   $('formAuth').classList.remove('was-validated');
-  mostrarLoginSenha();
+  ocultarBioOpcao();
   prepararTelaLogin();
 }
 

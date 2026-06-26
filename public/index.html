@@ -878,18 +878,6 @@
         <div class="auth-panel">
           <div id="alertAuth"></div>
 
-          <!-- Login biométrico (somente celular com biometria cadastrada) -->
-          <div id="bioLogin" class="hidden text-center">
-            <i class="ph ph-fingerprint" style="font-size:3.5rem;color:var(--bs-primary,#0d6efd);"></i>
-            <p class="mt-2 mb-3 text-muted">Use sua digital ou reconhecimento facial para entrar.</p>
-            <div class="d-grid mb-3">
-              <button type="button" class="btn btn-primary" id="btnEntrarBio">
-                <i class="ph ph-fingerprint me-1"></i> Entrar com biometria
-              </button>
-            </div>
-            <button type="button" class="btn btn-link p-0" id="btnUsarSenha">Entrar com e-mail e senha</button>
-          </div>
-
           <form id="formAuth" class="needs-validation" novalidate>
             <div class="mb-3">
               <label class="form-label" for="auth_email">E-mail</label>
@@ -911,6 +899,18 @@
               <button type="submit" class="btn btn-primary" id="btnEntrar">Entrar</button>
             </div>
           </form>
+
+          <!-- Opção de biometria (somente celular com biometria cadastrada) -->
+          <div id="bioOpcao" class="hidden">
+            <div class="d-flex align-items-center my-3 text-muted">
+              <hr class="flex-grow-1 my-0"><span class="px-2 small">ou</span><hr class="flex-grow-1 my-0">
+            </div>
+            <div class="d-grid">
+              <button type="button" class="btn btn-outline-primary" id="btnEntrarBio">
+                <i class="ph ph-fingerprint me-1"></i> Entrar com biometria
+              </button>
+            </div>
+          </div>
         </div>
 
         <p class="auth-foot">Intecs · Gestão TI</p>
@@ -2078,7 +2078,7 @@
   <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="app.js?v=6"></script>
+  <script type="module" src="app.js?v=7"></script>
   <script>
     /* Mostra a barra de scroll das tabelas enquanto rola e a oculta
        pouco depois de parar (~700ms). Funciona para X e Y. */
