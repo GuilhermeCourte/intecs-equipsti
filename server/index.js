@@ -92,9 +92,12 @@ app.post('/api/biometric/register/verify', exigirAuth, wrap(async (req, res) => 
   res.status(201).json({ ok: true });
 }));
 
-// Inicia o login biométrico: gera challenge (sem auth — usernameless).
+// Inicia o login biométrico: gera challenge. O cliente informa a credencial
+// deste aparelho (credId) para apontá-la diretamente, sem o seletor do Google.
 app.post('/api/biometric/auth/options', wrap(async (req, res) => {
-  const { flowId, options } = await opcoesAutenticacao();
+  const credId = trim(req.body?.credId);
+  const allow = credId ? [{ id: credId }] : [];
+  const { flowId, options } = await opcoesAutenticacao(allow);
   res.json({ flowId, options });
 }));
 

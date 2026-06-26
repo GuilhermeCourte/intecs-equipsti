@@ -46,7 +46,10 @@ export async function opcoesRegistro(usuarioId, email, credenciaisExistentes) {
       transports: c.transports ? c.transports.split(',') : undefined
     })),
     authenticatorSelection: {
-      residentKey: 'required',
+      // Biometria do próprio aparelho, sem virar passkey sincronizada no Google.
+      authenticatorAttachment: 'platform',
+      residentKey: 'discouraged',
+      requireResidentKey: false,
       userVerification: 'required'
     }
   });
@@ -77,11 +80,12 @@ export async function verificarRegistro(usuarioId, response) {
 }
 
 // ===================== AUTENTICAÇÃO =====================
-export async function opcoesAutenticacao() {
+export async function opcoesAutenticacao(allowCredentials = []) {
   const options = await generateAuthenticationOptions({
     rpID: RP_ID,
-    userVerification: 'required'
-    // sem allowCredentials: credencial descobrível (login sem digitar email)
+    userVerification: 'required',
+    // Aponta a credencial específica deste aparelho (evita o seletor do Google).
+    allowCredentials
   });
   const flowId = crypto.randomUUID();
   guardarChallenge('auth:' + flowId, options.challenge);

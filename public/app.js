@@ -1753,7 +1753,7 @@ function mostrarLoginSenha() {
 
 // Na abertura: se for celular e este aparelho já tem biometria, mostra o login biométrico.
 async function prepararTelaLogin() {
-  if (localStorage.getItem('biometria_email') && await ehCelular()) {
+  if (localStorage.getItem('biometria_cred_id') && await ehCelular()) {
     mostrarLoginBio();
   }
 }
@@ -1762,8 +1762,10 @@ async function prepararTelaLogin() {
 async function talvezConvidarBiometria(email) {
   if (!(await ehCelular())) return;
   try {
-    const st = await api('GET', '/api/biometric/status');
-    if (st.registrado || localStorage.getItem('biometria_email')) return;
+    // Vinculamos a biometria a ESTE aparelho (credencial guardada localmente).
+    // Sem o marcador local, oferecemos o cadastro mesmo que o servidor tenha
+    // uma credencial antiga (ex.: sincronizada no Google) de outro fluxo.
+    if (localStorage.getItem('biometria_cred_id')) return;
     window._bioEmail = email;
     bootstrap.Modal.getOrCreateInstance($('modalBiometria')).show();
   } catch { /* silencioso */ }
@@ -1779,6 +1781,7 @@ async function ativarBiometria() {
     await api('POST', '/api/biometric/register/verify',
       { ...attResp, rotulo: navigator.userAgent.slice(0, 200) });
     localStorage.setItem('biometria_email', window._bioEmail || '');
+    localStorage.setItem('biometria_cred_id', attResp.id);
     bootstrap.Modal.getOrCreateInstance($('modalBiometria')).hide();
     showAlert('alertAuth', 'success', 'Biometria ativada! Use-a no próximo acesso.');
   } catch (err) {
@@ -1795,7 +1798,8 @@ async function entrarComBiometria() {
   const btn = $('btnEntrarBio');
   btn.disabled = true;
   try {
-    const { flowId, options } = await api('POST', '/api/biometric/auth/options');
+    const credId = localStorage.getItem('biometria_cred_id') || '';
+    const { flowId, options } = await api('POST', '/api/biometric/auth/options', { credId });
     const authResp = await WA().startAuthentication({ optionsJSON: options });
     const data = await api('POST', '/api/biometric/auth/verify', { flowId, response: authResp });
     TOKEN = data.token;
