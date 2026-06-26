@@ -146,6 +146,19 @@ CREATE TABLE dbo.EQUIPSTI_chamados_intecsmsa (
 -- Tabela já existente sem a coluna 'status_msa' (migração):
 IF COL_LENGTH('dbo.EQUIPSTI_chamados_intecsmsa', 'status_msa') IS NULL
   ALTER TABLE dbo.EQUIPSTI_chamados_intecsmsa ADD status_msa NVARCHAR(20) NULL;
+
+-- Credenciais biométricas (WebAuthn/FIDO2) — usadas no celular para login só por biometria.
+IF OBJECT_ID('dbo.EQUIPSTI_webauthn', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_webauthn (
+  id            INT IDENTITY(1,1) PRIMARY KEY,
+  usuario_id    INT NOT NULL,
+  credential_id NVARCHAR(512) NOT NULL UNIQUE,   -- base64url
+  public_key    NVARCHAR(MAX) NOT NULL,          -- base64url
+  counter       BIGINT NOT NULL DEFAULT 0,
+  transports    NVARCHAR(255) NULL,
+  rotulo        NVARCHAR(255) NULL,              -- ex.: "Celular do Fulano"
+  criado_em     DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
 `;
 
 async function main() {

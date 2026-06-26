@@ -180,6 +180,8 @@
       border: 1px solid var(--line); padding: .5em .85em; border-radius: 999px;
     }
     #corpoTabela td { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #corpoTabela tr.row-registro { cursor: pointer; }
+    tr.row-clicavel { cursor: pointer; }
 
     /* tabela */
     .table-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -475,7 +477,26 @@
     .choices__list[aria-expanded] .choices__item--selectable.is-selected {
       font-weight: 600; background: var(--bg-soft);
     }
+    /* Hover na opção já selecionada: mantém fundo escuro (evita fonte branca sobre fundo claro) */
+    .choices__list--dropdown .choices__item--selectable.is-selected.is-highlighted,
+    .choices__list[aria-expanded] .choices__item--selectable.is-selected.is-highlighted {
+      background: var(--ink); color: #fff;
+    }
     .choices__input { font-size: 1rem; }
+
+    /* Filtros de status compactos (equivalente ao form-select-sm) */
+    .choices:has(#imFiltroStatus) .choices__inner,
+    .choices:has(#chamadosFiltroStatus) .choices__inner {
+      min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px;
+    }
+    .choices:has(#imFiltroStatus) .choices__list--single .choices__item,
+    .choices:has(#chamadosFiltroStatus) .choices__list--single .choices__item { font-size: .875rem; }
+    .choices:has(#imFiltroStatus) .choices__list--dropdown .choices__item,
+    .choices:has(#imFiltroStatus) .choices__list[aria-expanded] .choices__item,
+    .choices:has(#chamadosFiltroStatus) .choices__list--dropdown .choices__item,
+    .choices:has(#chamadosFiltroStatus) .choices__list[aria-expanded] .choices__item {
+      padding: 7px 10px; font-size: .875rem;
+    }
 
     /* Limita o dropdown dos chamados a ~4 itens visíveis */
     #modalNovoChamado .choices__list--dropdown .choices__list,
@@ -505,6 +526,14 @@
     /* "+ Adicionar nova opção..." não participa do filtro de busca */
     .choices.is-buscando .choices__list--dropdown .choices__item[data-value="__novo__"],
     .choices.is-buscando .choices__list[aria-expanded] .choices__item[data-value="__novo__"] {
+      display: none !important;
+    }
+
+    /* "Personalizado" é definido só programaticamente — fora da lista do dropdown */
+    .choices:has(#imFiltroStatus) .choices__list--dropdown .choices__item[data-value="custom"],
+    .choices:has(#imFiltroStatus) .choices__list[aria-expanded] .choices__item[data-value="custom"],
+    .choices:has(#chamadosFiltroStatus) .choices__list--dropdown .choices__item[data-value="custom"],
+    .choices:has(#chamadosFiltroStatus) .choices__list[aria-expanded] .choices__item[data-value="custom"] {
       display: none !important;
     }
 
@@ -849,6 +878,18 @@
         <div class="auth-panel">
           <div id="alertAuth"></div>
 
+          <!-- Login biométrico (somente celular com biometria cadastrada) -->
+          <div id="bioLogin" class="hidden text-center">
+            <i class="ph ph-fingerprint" style="font-size:3.5rem;color:var(--bs-primary,#0d6efd);"></i>
+            <p class="mt-2 mb-3 text-muted">Use sua digital ou reconhecimento facial para entrar.</p>
+            <div class="d-grid mb-3">
+              <button type="button" class="btn btn-primary" id="btnEntrarBio">
+                <i class="ph ph-fingerprint me-1"></i> Entrar com biometria
+              </button>
+            </div>
+            <button type="button" class="btn btn-link p-0" id="btnUsarSenha">Entrar com e-mail e senha</button>
+          </div>
+
           <form id="formAuth" class="needs-validation" novalidate>
             <div class="mb-3">
               <label class="form-label" for="auth_email">E-mail</label>
@@ -1065,7 +1106,6 @@
                     <th class="th-filterable" data-col="8">RECEBIMENTO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                     <th class="th-filterable" data-col="9">OBS <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                     <th class="th-filterable text-center" data-col="10">FOTO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
-                    <th class="text-end">Ações</th>
                   </tr>
                 </thead>
                 <tbody id="corpoTabela">
@@ -1238,7 +1278,7 @@
                       <option value="">Todos</option>
                       <option value="aberto" selected>Em Aberto</option>
                       <option value="Finalizado">Finalizado</option>
-                      <option value="custom" hidden>Personalizado</option>
+                      <option value="custom">Personalizado</option>
                     </select>
                   </div>
                 </div>
@@ -1254,7 +1294,7 @@
                   </div>
                 </div>
                 <div class="table-responsive table-sticky">
-                  <table class="table table-sm table-hover align-middle" id="tabelaIntecsMsa">
+                  <table class="table table-sm table-striped table-hover align-middle" id="tabelaIntecsMsa">
                     <thead class="table-light"><tr id="imThead"></tr></thead>
                     <tbody id="imTbody"></tbody>
                   </table>
@@ -1284,7 +1324,7 @@
                       <option value="">Todos</option>
                       <option value="aberto" selected>Em Aberto</option>
                       <option value="Resolvido">Finalizado</option>
-                      <option value="custom" hidden>Personalizado</option>
+                      <option value="custom">Personalizado</option>
                     </select>
                   </div>
                 </div>
@@ -1300,7 +1340,7 @@
                   </div>
                 </div>
                 <div class="table-responsive table-sticky">
-                  <table class="table table-sm table-hover align-middle" id="tabelaChamados">
+                  <table class="table table-sm table-striped table-hover align-middle" id="tabelaChamados">
                     <thead class="table-light"><tr id="chamadosThead"></tr></thead>
                     <tbody id="chamadosTbody"></tbody>
                   </table>
@@ -1403,7 +1443,7 @@
             </div>
             <div class="col-md-6">
               <label class="form-label" for="dataRecebimento">DATA DE RECEBIMENTO</label>
-              <input type="text" class="form-control" id="dataRecebimento" required autocomplete="off" readonly>
+              <input type="text" class="form-control" id="dataRecebimento" autocomplete="off" readonly>
               <div class="invalid-feedback">Informe a data de recebimento.</div>
             </div>
             <div class="col-md-6">
@@ -1560,7 +1600,6 @@
             </div>
 
             <div class="col-12 d-flex align-items-center gap-2">
-              <button type="button" class="btn btn-outline-danger" id="btnExcluirIntecsMsa" style="display:none"><i class="ph ph-trash"></i> Excluir</button>
               <button type="submit" class="btn btn-primary ms-auto" id="btnSalvarIntecsMsa"><i class="ph ph-check"></i> Salvar</button>
             </div>
           </form>
@@ -1645,7 +1684,7 @@
       <div class="modal-content">
         <form id="formEditar" class="needs-validation" novalidate>
           <div class="modal-header bg-primary text-white">
-            <h5 class="modal-title">Editar Registro</h5>
+            <h5 class="modal-title" id="modalEditarTitulo">Editar Registro</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body row g-3">
@@ -1738,24 +1777,24 @@
                 <div class="col-4 d-none" id="edit_foto_1_slot">
                   <div id="edit_foto_1_preview" class="d-none position-relative">
                     <img id="edit_foto_1_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
-                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_1"><i class="ph ph-camera-rotate"></i> Refazer</button>
+                    <button type="button" class="foto-edit-only border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
+                    <button type="button" class="foto-edit-only btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_1"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="edit_foto_1_base64">
                 </div>
                 <div class="col-4 d-none" id="edit_foto_2_slot">
                   <div id="edit_foto_2_preview" class="d-none position-relative">
                     <img id="edit_foto_2_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
-                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_2" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_2"><i class="ph ph-camera-rotate"></i> Refazer</button>
+                    <button type="button" class="foto-edit-only border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_2" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
+                    <button type="button" class="foto-edit-only btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_2"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="edit_foto_2_base64">
                 </div>
                 <div class="col-4 d-none" id="edit_foto_3_slot">
                   <div id="edit_foto_3_preview" class="d-none position-relative">
                     <img id="edit_foto_3_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
-                    <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_3" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_3"><i class="ph ph-camera-rotate"></i> Refazer</button>
+                    <button type="button" class="foto-edit-only border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_3" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
+                    <button type="button" class="foto-edit-only btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_3"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
                   <input type="hidden" id="edit_foto_3_base64">
                 </div>
@@ -1774,7 +1813,7 @@
               <label class="form-label text-muted">ATUALIZADO POR</label>
               <input type="text" class="form-control" id="edit_atualizadoPor" disabled>
             </div>
-            <div class="col-12">
+            <div class="col-12" id="edit_justificativa_grupo">
               <label class="form-label" for="edit_justificativa">JUSTIFICATIVA DA EDIÇÃO *</label>
               <textarea class="form-control" id="edit_justificativa" rows="2" required
                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
@@ -1788,8 +1827,11 @@
               <i class="ph ph-clock-counter-clockwise"></i> Histórico
             </button>
             <div class="d-flex gap-2">
-              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-              <button type="submit" class="btn btn-primary" id="btnSalvarEdicao">Salvar</button>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+              <button type="button" class="btn btn-primary" id="btnEditarRegistro">
+                <i class="ph ph-pencil-simple"></i> Editar
+              </button>
+              <button type="submit" class="btn btn-primary d-none" id="btnSalvarEdicao">Salvar</button>
             </div>
           </div>
         </form>
@@ -1806,6 +1848,28 @@
           <h5 id="modalMsgTitle" class="mb-2"></h5>
           <p id="modalMsgText" class="text-muted mb-4"></p>
           <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL ATIVAR BIOMETRIA (celular) ===================== -->
+  <div class="modal fade" id="modalBiometria" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="ph ph-fingerprint me-2"></i>Ativar biometria</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertBiometria"></div>
+          <p class="mb-0">Deseja usar sua digital ou reconhecimento facial para entrar neste celular nos próximos acessos?</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal" id="btnPularBio">Agora não</button>
+          <button type="button" class="btn btn-primary" id="btnAtivarBio">
+            <i class="ph ph-fingerprint me-1"></i> Ativar biometria
+          </button>
         </div>
       </div>
     </div>
@@ -2013,7 +2077,8 @@
     crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js" crossorigin="anonymous"></script>
-  <script type="module" src="app.js?v=4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js" crossorigin="anonymous"></script>
+  <script type="module" src="app.js?v=5"></script>
   <script>
     /* Mostra a barra de scroll das tabelas enquanto rola e a oculta
        pouco depois de parar (~700ms). Funciona para X e Y. */

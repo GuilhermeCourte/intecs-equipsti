@@ -34,8 +34,11 @@ const CHOICES_IDS = [
   'insumo', 'edit_insumo',
   'listaAlvo', 'emp_pat', 'emp_unidade',
   'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns',
-  'im_unidade', 'im_bkp_pat'
+  'im_unidade', 'im_bkp_pat',
+  'imFiltroStatus', 'chamadosFiltroStatus'
 ];
+// Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
+const FILTRO_STATUS_IDS = new Set(['imFiltroStatus', 'chamadosFiltroStatus']);
 
 // ---------- Estado em memória ----------
 let OPTIONS = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [], INSUMOS: [] };
@@ -289,10 +292,25 @@ function initChoices() {
       itemSelectText: '',
       shouldSort: false,
       allowHTML: false,
-      placeholder: true,
+      placeholder: !FILTRO_STATUS_IDS.has(id),
       placeholderValue: 'Selecione...'
     });
   });
+}
+
+// Quando true, os listeners de 'change' dos filtros de status ignoram o evento
+// (o Choices.js dispara 'change' ao definir o valor por código, o nativo não).
+let _suprimirChangeFiltro = false;
+
+// Define o valor de um select que pode estar embrulhado pelo Choices.js.
+function setSelectVal(id, val) {
+  const c = choicesMap[id];
+  if (c) {
+    _suprimirChangeFiltro = true;
+    try { c.setChoiceByValue(val); } finally { _suprimirChangeFiltro = false; }
+  } else {
+    $(id).value = val;
+  }
 }
 
 function initFlatpickr() {
@@ -750,7 +768,7 @@ function patLink(pat, ns) {
 }
 
 function rowHtml(r) {
-  return '<tr>' +
+  return '<tr class="row-registro" data-ver="' + escapeHtml(r.id) + '">' +
     '<td title="' + escapeHtml(r.unidade) + '">' + escapeHtml(r.unidade) + '</td>' +
     '<td>' + escapeHtml(r.status) + '</td>' +
     '<td>' + escapeHtml(r.setor) + '</td>' +
@@ -762,10 +780,7 @@ function rowHtml(r) {
     '<td>' + fmtData(r.dataRecebimento) + '</td>' +
     '<td title="' + escapeHtml(r.obs) + '">' + escapeHtml(r.obs) + '</td>' +
     '<td class="text-center">' + (r.temFoto ? '<i class="ph ph-camera-fill text-primary"></i>' : '<span class="text-muted">—</span>') + '</td>' +
-    '<td class="text-end">' +
-      '<button type="button" class="btn btn-sm btn-outline-primary" data-edit="' +
-        escapeHtml(r.id) + '">Editar</button>' +
-    '</td></tr>';
+    '</tr>';
 }
 
 function renderTabela() {
@@ -778,7 +793,7 @@ function renderTabela() {
     const msg = temFiltro
       ? 'Nenhum registro corresponde ao filtro ativo.'
       : 'Nenhum registro cadastrado.';
-    corpo.innerHTML = '<tr><td colspan="12" class="text-muted">' + msg + '</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="11" class="text-muted">' + msg + '</td></tr>';
     return;
   }
   corpo.innerHTML = filtered.map(rowHtml).join('');
@@ -839,13 +854,39 @@ function abrirEdicao(id) {
   carregarFotosEdicao(r.id);
   $('edit_criadoPor').value = r.criadoPor || '—';
   $('edit_atualizadoPor').value = r.atualizadoPor || '—';
+  setModalEditarModo(false);
+  modalEditar.show();
+}
+
+// Alterna o modal de registro entre visualização (editavel=false) e edição.
+function setModalEditarModo(editavel) {
+  ['edit_unidade', 'edit_status', 'edit_setor', 'edit_equipamento', 'edit_insumo']
+    .forEach((id) => {
+      $(id).disabled = !editavel;
+      const c = choicesMap[id];
+      if (c) { editavel ? c.enable() : c.disable(); }
+    });
+  ['edit_usuario', 'edit_pat', 'edit_ns', 'edit_protocolo', 'edit_obs']
+    .forEach((id) => { $(id).readOnly = !editavel; });
+  const fpData = fpMap['edit_dataRecebimento'];
+  if (fpData) {
+    fpData.set('clickOpens', editavel);
+    if (fpData.altInput) fpData.altInput.readOnly = !editavel;
+  }
+  $('edit_btnAddFotoCol').classList.toggle('d-none', !editavel);
+  document.querySelectorAll('#formEditar .foto-edit-only')
+    .forEach((b) => b.classList.toggle('d-none', !editavel));
+  if (editavel) atualizarBtnAddFoto('edit_');
   const jEl = $('edit_justificativa');
   jEl.value = '';
   jEl.disabled = true;
   jEl.required = false;
-  jEl.placeholder = '';
+  jEl.placeholder = editavel ? 'Descreva o motivo da alteração...' : '';
+  $('edit_justificativa_grupo').classList.toggle('d-none', !editavel);
+  $('btnSalvarEdicao').classList.toggle('d-none', !editavel);
+  $('btnEditarRegistro').classList.toggle('d-none', editavel);
+  $('modalEditarTitulo').textContent = editavel ? 'Editar Registro' : 'Visualizar Registro';
   $('formEditar').classList.remove('was-validated');
-  modalEditar.show();
 }
 
 // ============================================================
@@ -1019,7 +1060,12 @@ async function fdAbrir(ctx, col, thEl) {
       if (!_fdEl.contains(e.target) && !e.target.closest('th[data-col]')) fdFechar();
     };
     document.addEventListener('mousedown', _fdOutside);
-    _fdScroll = () => fdFechar();
+    _fdScroll = () => {
+      // iOS Safari dispara scroll ao abrir o teclado (foco no #fdSearch);
+      // não fechar enquanto o foco estiver dentro do dropdown.
+      if (_fdEl && _fdEl.contains(document.activeElement)) return;
+      fdFechar();
+    };
     window.addEventListener('scroll', _fdScroll, { passive: true });
     if (_fdScrollEl) _fdScrollEl.addEventListener('scroll', _fdScroll, { passive: true });
   }, 10);
@@ -1388,7 +1434,7 @@ async function loadEmprestimoForm() {
   fillSelect('emp_unidade', activeValues('UNIDADE'), '');
   try {
     const pats = await api('GET', '/api/pats');
-    fillSelect('emp_pat', pats);
+    fillSelect('emp_pat', pats, '');
   } catch (err) {
     showAlert('alertEmprestimos', 'danger', 'Erro ao carregar PATs: ' + err.message);
   }
@@ -1660,6 +1706,7 @@ function configurarAuth() {
       TOKEN = data.token;
       localStorage.setItem('token', TOKEN);
       await entrarNoApp(data.email, false);
+      talvezConvidarBiometria(data.email);
     } catch (err) {
       showAlert('alertAuth', 'danger', err.message);
     } finally {
@@ -1667,6 +1714,102 @@ function configurarAuth() {
     }
   });
   $('btnSair').addEventListener('click', sairDoApp);
+
+  // ---- Biometria (celular) ----
+  $('btnUsarSenha')?.addEventListener('click', mostrarLoginSenha);
+  $('btnEntrarBio')?.addEventListener('click', entrarComBiometria);
+  $('btnAtivarBio')?.addEventListener('click', ativarBiometria);
+}
+
+// ============================================================
+//  Biometria (WebAuthn) — só no celular
+// ============================================================
+const WA = () => window.SimpleWebAuthnBrowser;
+let _ehCelularCache = null;
+
+// Celular = UA mobile E com autenticador de plataforma (digital/rosto) disponível.
+async function ehCelular() {
+  if (_ehCelularCache !== null) return _ehCelularCache;
+  const uaMobile = navigator.userAgentData?.mobile ??
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  let temPlataforma = false;
+  try {
+    temPlataforma = !!(window.PublicKeyCredential &&
+      await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+  } catch { temPlataforma = false; }
+  _ehCelularCache = uaMobile && temPlataforma && !!WA();
+  return _ehCelularCache;
+}
+
+// Mostra a tela de login biométrico (em vez do formulário de senha).
+function mostrarLoginBio() {
+  $('bioLogin').classList.remove('hidden');
+  $('formAuth').classList.add('hidden');
+}
+function mostrarLoginSenha() {
+  $('bioLogin').classList.add('hidden');
+  $('formAuth').classList.remove('hidden');
+}
+
+// Na abertura: se for celular e este aparelho já tem biometria, mostra o login biométrico.
+async function prepararTelaLogin() {
+  if (localStorage.getItem('biometria_email') && await ehCelular()) {
+    mostrarLoginBio();
+  }
+}
+
+// Após o login por senha no celular: convida a cadastrar a biometria (se ainda não tem).
+async function talvezConvidarBiometria(email) {
+  if (!(await ehCelular())) return;
+  try {
+    const st = await api('GET', '/api/biometric/status');
+    if (st.registrado || localStorage.getItem('biometria_email')) return;
+    window._bioEmail = email;
+    bootstrap.Modal.getOrCreateInstance($('modalBiometria')).show();
+  } catch { /* silencioso */ }
+}
+
+// Cadastra a credencial biométrica deste aparelho.
+async function ativarBiometria() {
+  const btn = $('btnAtivarBio');
+  btn.disabled = true;
+  try {
+    const options = await api('POST', '/api/biometric/register/options');
+    const attResp = await WA().startRegistration({ optionsJSON: options });
+    await api('POST', '/api/biometric/register/verify',
+      { ...attResp, rotulo: navigator.userAgent.slice(0, 200) });
+    localStorage.setItem('biometria_email', window._bioEmail || '');
+    bootstrap.Modal.getOrCreateInstance($('modalBiometria')).hide();
+    showAlert('alertAuth', 'success', 'Biometria ativada! Use-a no próximo acesso.');
+  } catch (err) {
+    const msg = err?.name === 'NotAllowedError'
+      ? 'Cadastro cancelado.' : (err.message || 'Não foi possível ativar a biometria.');
+    showAlert('alertBiometria', 'danger', msg);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Entra usando a biometria do aparelho.
+async function entrarComBiometria() {
+  const btn = $('btnEntrarBio');
+  btn.disabled = true;
+  try {
+    const { flowId, options } = await api('POST', '/api/biometric/auth/options');
+    const authResp = await WA().startAuthentication({ optionsJSON: options });
+    const data = await api('POST', '/api/biometric/auth/verify', { flowId, response: authResp });
+    TOKEN = data.token;
+    localStorage.setItem('token', TOKEN);
+    localStorage.setItem('biometria_email', data.email);
+    await entrarNoApp(data.email, true);
+  } catch (err) {
+    const msg = err?.name === 'NotAllowedError'
+      ? 'Autenticação cancelada.' : (err.message || 'Falha na biometria. Use e-mail e senha.');
+    showAlert('alertAuth', 'danger', msg);
+    mostrarLoginSenha();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function ehImpressora(equipVal) {
@@ -2169,11 +2312,15 @@ function configurarFormEditar() {
     abrirLog(id);
   });
 
+  $('btnEditarRegistro').addEventListener('click', () => {
+    setModalEditarModo(true);
+  });
+
   $('corpoTabela').addEventListener('click', (ev) => {
     const hist = ev.target.closest('[data-hist]');
     if (hist) { abrirHistoricoPat(hist.getAttribute('data-hist'), hist.getAttribute('data-ns')); return; }
-    const btn = ev.target.closest('[data-edit]');
-    if (btn) abrirEdicao(btn.getAttribute('data-edit'));
+    const row = ev.target.closest('tr[data-ver]');
+    if (row) abrirEdicao(row.getAttribute('data-ver'));
   });
 }
 
@@ -2333,9 +2480,9 @@ async function abrirDetalheChamado(chave, codigo, st) {
 function configurarDetalheChamado() {
   // Delegação de clique na tabela de chamados
   $('chamadosTbody').addEventListener('click', (ev) => {
-    const btn = ev.target.closest('[data-ver-chave]');
-    if (!btn) return;
-    abrirDetalheChamado(btn.getAttribute('data-ver-chave'), btn.getAttribute('data-ver-codigo'), btn.getAttribute('data-ver-st') || '');
+    const row = ev.target.closest('tr[data-ver-chave]');
+    if (!row) return;
+    abrirDetalheChamado(row.getAttribute('data-ver-chave'), row.getAttribute('data-ver-codigo'), row.getAttribute('data-ver-st') || '');
   });
 
   $('btnEnviarInteracao').addEventListener('click', async () => {
@@ -2813,6 +2960,8 @@ function sairDoApp() {
   $('authView').classList.remove('hidden');
   $('formAuth').reset();
   $('formAuth').classList.remove('was-validated');
+  mostrarLoginSenha();
+  prepararTelaLogin();
 }
 
 const CHAMADOS_COLS = [
@@ -2842,7 +2991,7 @@ const chamadosFilterCtx = {
   onApply: () => {
     // Ao usar o filtro de coluna, troca o status de cima para "Personalizado"
     // para não conflitar com o filtro da tabela.
-    if (Object.keys(chamadosFilterCtx.filters).length) $('chamadosFiltroStatus').value = 'custom';
+    if (Object.keys(chamadosFilterCtx.filters).length) setSelectVal('chamadosFiltroStatus', 'custom');
     renderChamados();
   },
 };
@@ -2861,13 +3010,10 @@ function renderChamados() {
     return true;
   });
   $('chamadosTbody').innerHTML = rows.map(r =>
-    `<tr>${CHAMADOS_COLS.map(c => {
+    `<tr class="row-clicavel" data-ver-chave="${escapeHtml(String(r.Chave || ''))}" data-ver-codigo="${escapeHtml(r.Codigo || '')}" data-ver-st="${escapeHtml(r.St || '')}">${CHAMADOS_COLS.map(c => {
       if (c.key === 'St') return `<td>${imStatusBadge(c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? ''))}</td>`;
       return `<td>${escapeHtml(c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? ''))}</td>`;
-    }).join('')}` +
-    `<td><button type="button" class="btn btn-sm btn-outline-primary" ` +
-    `data-ver-chave="${escapeHtml(String(r.Chave || ''))}" data-ver-codigo="${escapeHtml(r.Codigo || '')}" data-ver-st="${escapeHtml(r.St || '')}">` +
-    `<i class="ph ph-eye"></i> Ver</button></td></tr>`
+    }).join('')}</tr>`
   ).join('');
   $('chamadosStatus').textContent = `${rows.length} de ${_chamadosTodos.length} chamados.`;
   ctxAtualizarTh(chamadosFilterCtx);
@@ -2884,7 +3030,7 @@ async function carregarChamados() {
       $('chamadosStatus').textContent = 'Nenhum chamado encontrado.';
       return;
     }
-    $('chamadosThead').innerHTML = thFiltravel(CHAMADOS_COLS) + '<th></th>';
+    $('chamadosThead').innerHTML = thFiltravel(CHAMADOS_COLS);
 
     renderChamados();
   } catch (e) {
@@ -2950,7 +3096,7 @@ const intecsMsaFilterCtx = {
   maxItems: 4,
   clearBtnId: 'btnLimparFiltrosIntecsMsa',
   onApply: () => {
-    if (Object.keys(intecsMsaFilterCtx.filters).length) $('imFiltroStatus').value = 'custom';
+    if (Object.keys(intecsMsaFilterCtx.filters).length) setSelectVal('imFiltroStatus', 'custom');
     renderIntecsMsa();
   },
 };
@@ -2982,10 +3128,7 @@ function renderIntecsMsa() {
       const val = c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? '');
       return `<td>${escapeHtml(val)}</td>`;
     }).join('');
-    return `<tr>${cells}<td class="text-end text-nowrap">` +
-      `<button type="button" class="btn btn-sm btn-outline-primary me-1" data-edit-im="${r.id}"><i class="ph ph-pencil-simple"></i></button>` +
-      `<button type="button" class="btn btn-sm btn-outline-danger" data-del-im="${r.id}"><i class="ph ph-trash"></i></button>` +
-      `</td></tr>`;
+    return `<tr class="row-clicavel" data-edit-im="${r.id}">${cells}</tr>`;
   }).join('');
   $('imStatus').textContent = `${rows.length} de ${_intecsMsaTodos.length} registros.`;
   ctxAtualizarTh(intecsMsaFilterCtx);
@@ -2998,7 +3141,7 @@ async function carregarIntecsMsa() {
   try {
     const data = await api('GET', '/api/intecs-msa');
     _intecsMsaTodos = Array.isArray(data) ? data : [];
-    $('imThead').innerHTML = thFiltravel(INTECSMSA_COLS) + '<th></th>';
+    $('imThead').innerHTML = thFiltravel(INTECSMSA_COLS);
     if (!_intecsMsaTodos.length) { $('imStatus').textContent = 'Nenhum registro cadastrado.'; return; }
     renderIntecsMsa();
   } catch (e) {
@@ -3055,7 +3198,6 @@ function abrirEdicaoIntecsMsa(id) {
   $('formIntecsMsa').reset();
   $('im_id').value = r.id;
   $('imModalTitle').innerHTML = '<i class="ph ph-git-diff me-2"></i>Editar — INTECS vs MSA';
-  $('btnExcluirIntecsMsa').style.display = '';
   $('im_numero_chamado').value = r.numero_chamado_msa || '';
   $('im_problema').value = r.problema || '';
   $('im_glpi').value = r.glpi || '';
@@ -3113,19 +3255,6 @@ async function salvarIntecsMsa(ev) {
   }
 }
 
-async function excluirIntecsMsa(id) {
-  const ok = await uiConfirm('Excluir este registro de INTECS vs MSA? Esta ação não pode ser desfeita.',
-    { title: 'Excluir registro', okText: 'Excluir' });
-  if (!ok) return;
-  try {
-    await api('DELETE', '/api/intecs-msa/' + id);
-    if (modalIntecsMsa) modalIntecsMsa.hide();
-    await carregarIntecsMsa();
-  } catch (e) {
-    $('imStatus').textContent = 'Erro: ' + e.message;
-  }
-}
-
 // Auto-preenche PONTO DE INSTALAÇÃO + DESCRIÇÃO EQUIP. pelo patrimônio MSA (+ Nº série).
 async function lookupEquipIM() {
   const pat = trim($('im_patrimonio_msa').value);
@@ -3155,21 +3284,16 @@ function configurarIntecsMsa() {
   $('btnRefreshIntecsMsa').addEventListener('click', carregarIntecsMsa);
   $('imBusca').addEventListener('input', renderIntecsMsa);
   $('imFiltroStatus').addEventListener('change', () => {
+    if (_suprimirChangeFiltro) return;
     // Mexer no filtro de cima sobrepõe o filtro de coluna do Status MSA.
     const i = INTECSMSA_COLS.findIndex((c) => c.key === 'status_msa');
     delete intecsMsaFilterCtx.filters[String(i)];
     renderIntecsMsa();
   });
   $('formIntecsMsa').addEventListener('submit', salvarIntecsMsa);
-  $('btnExcluirIntecsMsa').addEventListener('click', () => {
-    const id = trim($('im_id').value);
-    if (id) excluirIntecsMsa(id);
-  });
   $('imTbody').addEventListener('click', (ev) => {
-    const edit = ev.target.closest('[data-edit-im]');
-    if (edit) { abrirEdicaoIntecsMsa(edit.getAttribute('data-edit-im')); return; }
-    const del = ev.target.closest('[data-del-im]');
-    if (del) { excluirIntecsMsa(del.getAttribute('data-del-im')); }
+    const row = ev.target.closest('tr[data-edit-im]');
+    if (row) { abrirEdicaoIntecsMsa(row.getAttribute('data-edit-im')); }
   });
   $('im_patrimonio_msa').addEventListener('blur', lookupEquipIM);
   $('im_ns').addEventListener('blur', lookupEquipIM);
@@ -3179,7 +3303,7 @@ function configurarIntecsMsa() {
   wireCtxFiltro(intecsMsaFilterCtx, $('imThead'));
   $('btnLimparFiltrosIntecsMsa').addEventListener('click', () => {
     Object.keys(intecsMsaFilterCtx.filters).forEach((k) => delete intecsMsaFilterCtx.filters[k]);
-    if ($('imFiltroStatus').value === 'custom') $('imFiltroStatus').value = 'aberto';
+    if ($('imFiltroStatus').value === 'custom') setSelectVal('imFiltroStatus', 'aberto');
     renderIntecsMsa();
   });
 }
@@ -3315,6 +3439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnRefreshChamados').addEventListener('click', carregarChamados);
   $('chamadosBusca').addEventListener('input', renderChamados);
   $('chamadosFiltroStatus').addEventListener('change', () => {
+    if (_suprimirChangeFiltro) return;
     // Mexer no filtro de cima sobrepõe o filtro de coluna do Status.
     const i = CHAMADOS_COLS.findIndex((c) => c.key === 'St');
     delete chamadosFilterCtx.filters[String(i)];
@@ -3323,7 +3448,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireCtxFiltro(chamadosFilterCtx, $('chamadosThead'));
   $('btnLimparFiltrosChamados').addEventListener('click', () => {
     Object.keys(chamadosFilterCtx.filters).forEach((k) => delete chamadosFilterCtx.filters[k]);
-    if ($('chamadosFiltroStatus').value === 'custom') $('chamadosFiltroStatus').value = 'aberto';
+    if ($('chamadosFiltroStatus').value === 'custom') setSelectVal('chamadosFiltroStatus', 'aberto');
     renderChamados();
   });
 
@@ -3334,7 +3459,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       await entrarNoApp(me.email, true);
     } catch {
       sairDoApp();
+      prepararTelaLogin();
     }
+  } else {
+    prepararTelaLogin();
   }
 });
 

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
+import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 
 dotenv.config();
 
@@ -48,6 +49,79 @@ app.post('/api/auth/login', wrap(async (req, res) => {
 app.get('/api/auth/me', exigirAuth, (req, res) => {
   res.json({ id: req.user.sub, email: req.user.email });
 });
+
+// ===================== BIOMETRIA (WebAuthn) =====================
+// Lista as credenciais biométricas de um usuário.
+const credsDoUsuario = async (usuarioId) => {
+  const r = await query(
+    'SELECT credential_id, public_key, counter, transports FROM dbo.EQUIPSTI_webauthn WHERE usuario_id = @id',
+    { id: usuarioId }
+  );
+  return r.recordset;
+};
+
+// Há biometria cadastrada para o usuário logado?
+app.get('/api/biometric/status', exigirAuth, wrap(async (req, res) => {
+  const creds = await credsDoUsuario(Number(req.user.sub));
+  res.json({ registrado: creds.length > 0 });
+}));
+
+// Inicia o cadastro: gera as opções de registro.
+app.post('/api/biometric/register/options', exigirAuth, wrap(async (req, res) => {
+  const creds = await credsDoUsuario(Number(req.user.sub));
+  const options = await opcoesRegistro(Number(req.user.sub), req.user.email, creds);
+  res.json(options);
+}));
+
+// Conclui o cadastro: valida e grava a credencial.
+app.post('/api/biometric/register/verify', exigirAuth, wrap(async (req, res) => {
+  const dados = await verificarRegistro(Number(req.user.sub), req.body);
+  const rotulo = trim(req.body.rotulo) || null;
+  await query(
+    `INSERT INTO dbo.EQUIPSTI_webauthn (usuario_id, credential_id, public_key, counter, transports, rotulo)
+     VALUES (@uid, @cid, @pk, @counter, @transports, @rotulo)`,
+    {
+      uid: Number(req.user.sub),
+      cid: S(dados.credentialId),
+      pk: S(dados.publicKey),
+      counter: dados.counter,
+      transports: S(dados.transports),
+      rotulo: S(rotulo)
+    }
+  );
+  res.status(201).json({ ok: true });
+}));
+
+// Inicia o login biométrico: gera challenge (sem auth — usernameless).
+app.post('/api/biometric/auth/options', wrap(async (req, res) => {
+  const { flowId, options } = await opcoesAutenticacao();
+  res.json({ flowId, options });
+}));
+
+// Conclui o login biométrico: valida e emite o JWT (mesmo do login normal).
+app.post('/api/biometric/auth/verify', wrap(async (req, res) => {
+  const { flowId, response } = req.body || {};
+  if (!flowId || !response) return res.status(400).json({ error: 'Requisição inválida.' });
+
+  const credId = String(response.id || '');
+  const r = await query(
+    `SELECT w.usuario_id, w.credential_id, w.public_key, w.counter, w.transports,
+            u.email, u.ativo
+       FROM dbo.EQUIPSTI_webauthn w
+       JOIN dbo.EQUIPSTI_usuarios u ON u.id = w.usuario_id
+      WHERE w.credential_id = @cid`,
+    { cid: S(credId) }
+  );
+  const cred = r.recordset[0];
+  if (!cred) return res.status(401).json({ error: 'Biometria não cadastrada neste sistema.' });
+  if (!cred.ativo) return res.status(403).json({ error: 'Usuário inativo. Contate o administrador.' });
+
+  const { newCounter } = await verificarAutenticacao(flowId, response, cred);
+  await query('UPDATE dbo.EQUIPSTI_webauthn SET counter = @c WHERE credential_id = @cid',
+    { c: newCounter, cid: S(credId) });
+
+  res.json({ token: gerarToken({ id: cred.usuario_id, email: cred.email }), email: cred.email });
+}));
 
 // ===================== USUÁRIOS =====================
 app.get('/api/users', exigirAuth, wrap(async (req, res) => {
