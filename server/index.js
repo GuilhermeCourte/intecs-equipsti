@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
+import { notificar, notificarTeste } from './notificacoes.js';
 
 dotenv.config();
 
@@ -49,6 +50,42 @@ app.post('/api/auth/login', wrap(async (req, res) => {
 app.get('/api/auth/me', exigirAuth, (req, res) => {
   res.json({ id: req.user.sub, email: req.user.email });
 });
+
+// ===================== NOTIFICAÇÕES (sininho) =====================
+// Lista as 30 notificações mais recentes do usuário logado + total não lido.
+app.get('/api/notifications', exigirAuth, wrap(async (req, res) => {
+  const uid = Number(req.user.sub);
+  const itens = await query(
+    `SELECT TOP 30 id, tipo, acao, titulo, mensagem, link, ref_id AS refId, ator_email AS ator,
+            lido, CONVERT(varchar(19), criado_em, 120) AS criadoEm
+       FROM dbo.EQUIPSTI_notificacoes
+      WHERE usuario_id = @uid
+      ORDER BY criado_em DESC, id DESC`, { uid });
+  const nao = await query(
+    `SELECT COUNT(*) AS n FROM dbo.EQUIPSTI_notificacoes WHERE usuario_id = @uid AND lido = 0`, { uid });
+  res.json({ itens: itens.recordset, naoLidas: nao.recordset[0].n });
+}));
+
+// Marca todas as não lidas do usuário como lidas. (Antes da rota /:id/read.)
+app.put('/api/notifications/read-all', exigirAuth, wrap(async (req, res) => {
+  await query(`UPDATE dbo.EQUIPSTI_notificacoes SET lido = 1 WHERE usuario_id = @uid AND lido = 0`,
+    { uid: Number(req.user.sub) });
+  res.json({ ok: true });
+}));
+
+// Marca uma notificação específica como lida (apenas do próprio usuário).
+app.put('/api/notifications/:id/read', exigirAuth, wrap(async (req, res) => {
+  await query(`UPDATE dbo.EQUIPSTI_notificacoes SET lido = 1 WHERE id = @id AND usuario_id = @uid`,
+    { id: Number(req.params.id), uid: Number(req.user.sub) });
+  res.json({ ok: true });
+}));
+
+// Gera uma notificação de TESTE para o próprio usuário (sininho + e-mail),
+// para validar os dois canais. emailEnviado=false indica SMTP não configurado.
+app.post('/api/notifications/test', exigirAuth, wrap(async (req, res) => {
+  const r = await notificarTeste({ id: req.user.sub, email: req.user.email });
+  res.json({ ok: true, ...r });
+}));
 
 // ===================== BIOMETRIA (WebAuthn) =====================
 // Lista as credenciais biométricas de um usuário.
@@ -363,6 +400,12 @@ app.post('/api/records', exigirAuth, wrap(async (req, res) => {
   const novoId = ins.recordset[0].id;
   await query(`INSERT INTO dbo.EQUIPSTI_registros_log (registro_id, acao, usuario) VALUES (@id, 'CRIADO', @usuario)`,
     { id: novoId, usuario: S(usuario) });
+  await notificar({
+    tipo: 'REGISTRO', acao: 'CRIADO', link: 'tab-registros', refId: novoId,
+    ator: { id: req.user.sub, email: usuario },
+    titulo: 'Novo registro',
+    mensagem: `${d.equipamento || 'Equipamento'} — PAT ${d.pat || '—'} · N/S ${d.ns || '—'} · ${d.unidade || '—'}`
+  });
   res.status(201).json({ ok: true });
 }));
 
@@ -408,6 +451,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
       imagemBase64: S(d.imagem_base64), imagem2Base64: S(d.imagem2_base64), imagem3Base64: S(d.imagem3_base64),
       atualizadoPor: S(usuario) });
 
+  const camposAlterados = [];
   for (const [key, label] of CAMPOS_LOG) {
     const vAntes = String(old[key] ?? '');
     const vDepois = String(key === 'valor' ? (d.valor ?? '') : (d[key] ?? ''));
@@ -415,6 +459,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
       ? parseFloat(vAntes || 'NaN') === parseFloat(vDepois || 'NaN')
       : vAntes === vDepois;
     if (!igual) {
+      camposAlterados.push(label);
       await query(`INSERT INTO dbo.EQUIPSTI_registros_log
         (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
         VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
@@ -428,6 +473,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
     const depois = d[col] ? 'SIM' : 'NÃO';
     if ((old[col] || '') !== (d[col] || '')) {
       const nomeLog = antes === depois ? label + ' (substituída)' : label;
+      camposAlterados.push(nomeLog);
       await query(`INSERT INTO dbo.EQUIPSTI_registros_log
         (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
         VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
@@ -435,11 +481,30 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
     }
   }
 
+  await notificar({
+    tipo: 'REGISTRO', acao: 'ATUALIZADO', link: 'tab-registros', refId: id,
+    ator: { id: req.user.sub, email: usuario },
+    titulo: 'Registro atualizado',
+    mensagem: `${d.equipamento || 'Equipamento'} — PAT ${d.pat || '—'}`
+            + (camposAlterados.length ? ` · campos: ${camposAlterados.join(', ')}` : '')
+  });
+
   res.json({ ok: true });
 }));
 
 app.delete('/api/records/:id', exigirAuth, wrap(async (req, res) => {
-  await query('DELETE FROM dbo.EQUIPSTI_registros WHERE id = @id', { id: Number(req.params.id) });
+  const id = Number(req.params.id);
+  const prev = await query('SELECT pat, ns, equipamento FROM dbo.EQUIPSTI_registros WHERE id = @id', { id });
+  await query('DELETE FROM dbo.EQUIPSTI_registros WHERE id = @id', { id });
+  const r = prev.recordset[0];
+  if (r) {
+    await notificar({
+      tipo: 'REGISTRO', acao: 'EXCLUIDO', link: 'tab-registros', refId: id,
+      ator: { id: req.user.sub, email: req.user.email },
+      titulo: 'Registro excluído',
+      mensagem: `${r.equipamento || 'Equipamento'} — PAT ${r.pat || '—'} · N/S ${r.ns || '—'}`
+    });
+  }
   res.json({ ok: true });
 }));
 
@@ -536,13 +601,15 @@ app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
   if (!unidade) faltando.push('UNIDADE');
   if (faltando.length) return res.status(400).json({ error: 'Preencha: ' + faltando.join(', ') + '.' });
 
-  // Busca unidade original do cadastro.
+  // Busca unidade original e nome do equipamento do cadastro.
   const origemRes = await query(
-    `SELECT TOP 1 unidade FROM dbo.EQUIPSTI_registros
+    `SELECT TOP 1 unidade, equipamento FROM dbo.EQUIPSTI_registros
      WHERE pat = @pat ${ns ? 'AND ns = @ns' : ''}
      ORDER BY criado_em`,
     ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
-  const unidadeOriginal = origemRes.recordset.length ? origemRes.recordset[0].unidade : null;
+  const origem = origemRes.recordset[0] || {};
+  const unidadeOriginal = origem.unidade || null;
+  const equipamento = origem.equipamento || '';
 
   // Se destino é a unidade original, trata como devolução (não cria novo empréstimo).
   if (unidadeOriginal && unidade.toUpperCase() === unidadeOriginal.toUpperCase()) {
@@ -552,6 +619,12 @@ app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
        WHERE pat = @pat AND status = 'EMPRESTADO'
          ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
       ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
+    await notificar({
+      tipo: 'EMPRESTIMO', acao: 'DEVOLVIDO', link: 'tab-emprestimos', email: true,
+      ator: { id: req.user.sub, email: req.user.email },
+      titulo: 'Devolução de empréstimo',
+      mensagem: `${equipamento || 'Equipamento'} — PAT ${pat} devolvido a ${unidade}`
+    });
     return res.status(201).json({ ok: true, devolvido: true });
   }
 
@@ -563,10 +636,18 @@ app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
        ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
     ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
 
-  await query(
+  const insLoan = await query(
     `INSERT INTO dbo.EQUIPSTI_emprestimos (pat, ns, unidade, data_emprestimo, status, obs)
+      OUTPUT INSERTED.id
       VALUES (@pat, @ns, @unidade, @data, 'EMPRESTADO', @obs)`,
     { pat: S(pat), ns: S(ns || null), unidade: S(unidade), data: S(data || null), obs: S(obs) });
+  await notificar({
+    tipo: 'EMPRESTIMO', acao: 'CRIADO', link: 'tab-emprestimos', email: true,
+    refId: insLoan.recordset[0]?.id,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: 'Novo empréstimo',
+    mensagem: `${equipamento || 'Equipamento'} — PAT ${pat} → ${unidade}`
+  });
   res.status(201).json({ ok: true });
 }));
 
@@ -577,10 +658,11 @@ app.put('/api/loans/:id/status', exigirAuth, wrap(async (req, res) => {
     return res.status(400).json({ error: 'Status inválido.' });
   }
 
+  const loanRow = await query(`SELECT pat, ns, status FROM dbo.EQUIPSTI_emprestimos WHERE id=@id`, { id });
+  if (!loanRow.recordset.length) return res.status(404).json({ error: 'Empréstimo não encontrado.' });
+  const { pat: aPat, ns: aNs, status: statusAntigo } = loanRow.recordset[0];
+
   if (status === 'EMPRESTADO') {
-    const atual = await query(`SELECT pat, ns FROM dbo.EQUIPSTI_emprestimos WHERE id=@id`, { id });
-    if (!atual.recordset.length) return res.status(404).json({ error: 'Empréstimo não encontrado.' });
-    const { pat: aPat, ns: aNs } = atual.recordset[0];
     const aberto = await query(
       `SELECT TOP 1 unidade FROM dbo.EQUIPSTI_emprestimos
         WHERE pat = @pat AND status = 'EMPRESTADO' AND id <> @id
@@ -597,6 +679,17 @@ app.put('/api/loans/:id/status', exigirAuth, wrap(async (req, res) => {
   await query(`UPDATE dbo.EQUIPSTI_emprestimos
     SET status=@status, data_devolucao=${devol}, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`, { id, status: S(status) });
+
+  const eq = await lookupEquip(aPat, aNs);
+  const mudancasEmp = statusAntigo && statusAntigo !== status
+    ? [{ campo: 'Status', de: statusAntigo, para: status }] : [];
+  await notificar({
+    tipo: 'EMPRESTIMO', acao: 'ATUALIZADO', link: 'tab-emprestimos', refId: id, email: true,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: 'Empréstimo atualizado',
+    mensagem: `${eq.equipamento || 'Equipamento'} — PAT ${aPat}`,
+    mudancas: mudancasEmp
+  });
   res.json({ ok: true });
 }));
 
@@ -639,6 +732,24 @@ const paramsIntecsMsa = (d) => ({
   bkp_unidade:           S(d.bkp_unidade),
   observacao:            S(d.observacao),
 });
+
+// Campos do chamado rastreados para o "de → para" nas notificações de atualização.
+const CAMPOS_CHAMADO = [
+  ['status_intecs', 'Status INTECS'],
+  ['problema', 'Problema'],
+  ['unidade', 'Unidade'],
+  ['numero_chamado_msa', 'Nº MSA'],
+  ['glpi', 'GLPI'],
+  ['patrimonio_msa', 'Patrimônio'],
+  ['ns', 'N/S'],
+  ['ponto_instalacao', 'Ponto de instalação'],
+  ['descricao_equip', 'Descrição equip.'],
+  ['data_retirada_equip', 'Data retirada'],
+  ['data_entrega_equip', 'Data entrega'],
+  ['patrimonio_bkp_intecs', 'Patrimônio BKP'],
+  ['bkp_unidade', 'Unidade BKP'],
+  ['observacao', 'Observação'],
+];
 
 // Converte o status do chamado no eurosa (St) para os buckets da aba INTECS vs
 // MSA. Retorna null quando não há status (rows criadas manualmente seguem o
@@ -776,6 +887,13 @@ app.post('/api/intecs-msa', exigirAuth, wrap(async (req, res) => {
 app.put('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
   const id = Number(req.params.id);
   const d = lerIntecsMsa(req.body);
+  const antesRes = await query(`SELECT numero_chamado_msa, problema, unidade, glpi, status_intecs,
+      patrimonio_msa, ns, ponto_instalacao, descricao_equip,
+      CONVERT(varchar(10), data_retirada_equip, 23) AS data_retirada_equip,
+      CONVERT(varchar(10), data_entrega_equip, 23) AS data_entrega_equip,
+      patrimonio_bkp_intecs, bkp_unidade, observacao
+      FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE id=@id`, { id });
+  const antes = antesRes.recordset[0];
   const upd = await query(`UPDATE dbo.EQUIPSTI_chamados_intecsmsa SET
     data_solicitacao=@data_solicitacao, numero_chamado_msa=@numero_chamado_msa, problema=@problema,
     unidade=@unidade, glpi=@glpi, status_intecs=@status_intecs, patrimonio_msa=@patrimonio_msa, ns=@ns,
@@ -786,11 +904,44 @@ app.put('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
     WHERE id=@id`,
     { ...paramsIntecsMsa(d), id, atualizado_por: S(req.user.email) });
   if (upd.rowsAffected[0] === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
+
+  const mudancasCh = [];
+  if (antes) {
+    for (const [key, label] of CAMPOS_CHAMADO) {
+      const de = String(antes[key] ?? '');
+      const para = String(d[key] ?? '');
+      if (de !== para) mudancasCh.push({ campo: label, de, para });
+    }
+  }
+
+  const eqUpd = await lookupEquip(d.patrimonio_msa, d.ns);
+  await notificar({
+    tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', refId: id, email: true,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: 'Chamado atualizado',
+    mensagem: `${eqUpd.equipamento || 'Equipamento'} — PAT ${d.patrimonio_msa || '—'}`
+            + (d.numero_chamado_msa ? ` · nº ${d.numero_chamado_msa}` : ''),
+    mudancas: mudancasCh
+  });
   res.json({ ok: true });
 }));
 
 app.delete('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
-  await query('DELETE FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE id = @id', { id: Number(req.params.id) });
+  const id = Number(req.params.id);
+  const prev = await query(
+    'SELECT numero_chamado_msa, patrimonio_msa, ns FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE id = @id', { id });
+  await query('DELETE FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE id = @id', { id });
+  const c = prev.recordset[0];
+  if (c) {
+    const eqDel = await lookupEquip(c.patrimonio_msa, c.ns);
+    await notificar({
+      tipo: 'CHAMADO', acao: 'EXCLUIDO', link: 'tab-chamados', refId: id, email: true,
+      ator: { id: req.user.sub, email: req.user.email },
+      titulo: 'Chamado excluído',
+      mensagem: (c.numero_chamado_msa ? `nº ${c.numero_chamado_msa} · ` : '')
+              + `${eqDel.equipamento || 'Equipamento'} — PAT ${c.patrimonio_msa || '—'}`
+    });
+  }
   res.json({ ok: true });
 }));
 
@@ -1079,6 +1230,24 @@ app.post('/api/chamados/:chave/interacao', exigirAuth, wrap(async (req, res) => 
   const result = await eurosaCall(() => eurosaRequest('PUT', '/Chamados', dados));
   console.log('[interacao] status:', result.status, JSON.stringify(result.data).slice(0, 200));
   if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status + ': ' + JSON.stringify(result.data));
+
+  let mensagemInt = `nº ${codigo || chave}`;
+  try {
+    const ch = await query(
+      'SELECT TOP 1 patrimonio_msa, ns FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE numero_chamado_msa = @c',
+      { c: S(codigo) });
+    const row = ch.recordset[0];
+    if (row && (row.patrimonio_msa || trim(row.ns))) {
+      const eq = await lookupEquip(row.patrimonio_msa, row.ns);
+      mensagemInt += ` · ${eq.equipamento || 'Equipamento'} — PAT ${row.patrimonio_msa || '—'}`;
+    }
+  } catch { /* lookup é apenas enriquecimento da mensagem */ }
+  await notificar({
+    tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', email: true,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: 'Nova interação no chamado',
+    mensagem: mensagemInt
+  });
   res.status(201).json(result.data);
 }));
 
@@ -1144,6 +1313,17 @@ app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
       criadoPor:  req.user.email,
     });
   } catch (e) { console.warn('[intecs-msa enrich] falhou:', e.message); }
+
+  const patChamado = trim(req.body.patrimonio || '');
+  const eqChamado = await lookupEquip(patChamado, req.body.ns);
+  await notificar({
+    tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', email: true,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: 'Chamado aberto',
+    mensagem: `${assuntoText || descricao}`
+            + (patChamado ? ` · ${eqChamado.equipamento || 'Equipamento'} — PAT ${patChamado}` : '')
+            + (codigo ? ` · nº ${codigo}` : '')
+  });
 
   res.status(201).json(result.data);
 }));

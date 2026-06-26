@@ -858,6 +858,44 @@
       .dash-stat-value { font-size: 1.35rem; }
       .dash-title { font-size: 1.35rem; }
     }
+
+    /* ---------- Notificações (sininho) ---------- */
+    #notifMenu { border-radius: 12px; border: 1px solid var(--line); }
+    /* Apenas a lista rola; cabeçalho e rodapé ficam fixos e os cantos
+       arredondados não sofrem com a barra de rolagem. */
+    #notifLista {
+      max-height: 330px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+    #notifLista::-webkit-scrollbar { width: 9px; }
+    #notifLista::-webkit-scrollbar-track { background: transparent; }
+    #notifLista::-webkit-scrollbar-thumb {
+      background-color: transparent;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+      transition: background-color .2s ease;
+    }
+    #notifLista:hover { scrollbar-color: var(--line) transparent; }
+    #notifLista:hover::-webkit-scrollbar-thumb { background-color: var(--line); }
+    #notifLista:hover::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+    #notifLista .notif-item {
+      display: block; width: 100%; text-align: left;
+      padding: .6rem .9rem; border: 0; border-bottom: 1px solid var(--line);
+      background: #fff; cursor: pointer; line-height: 1.3;
+    }
+    #notifLista .notif-item:last-child { border-bottom: 0; }
+    #notifLista .notif-item:hover { background: var(--bg-soft); }
+    #notifLista .notif-item.nao-lida { background: var(--bg-soft); }
+    #notifLista .notif-titulo { font-weight: 600; font-size: .9rem; display: flex; align-items: center; gap: .4rem; }
+    #notifLista .notif-titulo .ph { color: var(--muted); }
+    #notifLista .notif-msg { font-size: .82rem; color: #444; margin-top: .15rem; word-break: break-word; }
+    #notifLista .notif-meta { font-size: .72rem; color: var(--muted); margin-top: .2rem; }
+    #notifLista .notif-vazio { padding: 1.1rem .9rem; color: var(--muted); font-size: .85rem; text-align: center; }
+    #btnNotificacoes .ph { font-size: 1.15rem; line-height: 1; }
+    #notifBadge { font-size: .6rem; }
   </style>
 </head>
 <body>
@@ -927,6 +965,28 @@
         </h5>
         <div class="d-flex align-items-center gap-2">
           <small id="userEmail" class="d-none d-sm-inline"></small>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-light position-relative" id="btnNotificacoes" type="button"
+              data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Notificações">
+              <i class="ph ph-bell"></i>
+              <span id="notifBadge" class="badge rounded-pill bg-danger position-absolute top-0 start-100 translate-middle"
+                style="display:none;">0</span>
+            </button>
+            <div class="dropdown-menu dropdown-menu-end shadow-sm p-0" id="notifMenu"
+              style="min-width:340px;overflow:hidden;">
+              <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                <strong>Notificações</strong>
+                <button class="btn btn-link p-0 text-decoration-none text-muted" id="btnMarcarLidas" type="button" style="font-size:.72rem;">Marcar todas como lidas</button>
+              </div>
+              <div id="notifLista"></div>
+              <div class="border-top px-3 py-2 text-center">
+                <button class="btn btn-sm btn-outline-secondary" id="btnNotifTeste" type="button">
+                  <i class="ph ph-flask"></i> Gerar notificações de exemplo
+                </button>
+                <small id="notifTesteStatus" class="d-block mt-1"></small>
+              </div>
+            </div>
+          </div>
           <button class="btn btn-sm btn-light" id="btnSair">Sair</button>
         </div>
       </div>

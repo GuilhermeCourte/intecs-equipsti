@@ -159,6 +159,27 @@ CREATE TABLE dbo.EQUIPSTI_webauthn (
   rotulo        NVARCHAR(255) NULL,              -- ex.: "Celular do Fulano"
   criado_em     DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
+
+-- Notificações in-app (sininho). Uma linha por destinatário; o autor da ação
+-- nunca recebe. 'lido' controla o contador do sininho.
+IF OBJECT_ID('dbo.EQUIPSTI_notificacoes', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_notificacoes (
+  id          INT IDENTITY(1,1) PRIMARY KEY,
+  usuario_id  INT NOT NULL,            -- destinatário (EQUIPSTI_usuarios.id)
+  tipo        NVARCHAR(20) NOT NULL,   -- REGISTRO | EMPRESTIMO | CHAMADO
+  acao        NVARCHAR(20) NOT NULL,   -- CRIADO | ATUALIZADO | EXCLUIDO | DEVOLVIDO | TRANSFERIDO
+  titulo      NVARCHAR(200) NOT NULL,
+  mensagem    NVARCHAR(MAX) NULL,
+  link        NVARCHAR(60) NULL,       -- id da aba alvo (tab-registros, tab-emprestimos, tab-chamados)
+  ref_id      INT NULL,                -- id da entidade afetada
+  ator_email  NVARCHAR(255) NULL,      -- quem executou a ação
+  lido        BIT NOT NULL DEFAULT 0,
+  criado_em   DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_notif_dest')
+  CREATE INDEX IX_EQUIPSTI_notif_dest
+    ON dbo.EQUIPSTI_notificacoes (usuario_id, lido, criado_em DESC);
 `;
 
 async function main() {

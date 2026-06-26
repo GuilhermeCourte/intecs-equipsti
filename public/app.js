@@ -2922,10 +2922,122 @@ async function carregarDashboard() {
 // ============================================================
 let dadosCarregados = false;
 
+// ---------- Notificações (sininho) ----------
+const NOTIF_ICONES = { REGISTRO: 'ph-table', EMPRESTIMO: 'ph-hand-arrow-up', CHAMADO: 'ph-headset', TESTE: 'ph-flask' };
+
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// criado_em vem em UTC (SYSUTCDATETIME, formato "YYYY-MM-DD HH:MM:SS" sem 'Z').
+function tempoRelativo(isoUtc) {
+  if (!isoUtc) return '';
+  const t = new Date(String(isoUtc).replace(' ', 'T') + 'Z');
+  const seg = Math.floor((Date.now() - t.getTime()) / 1000);
+  if (isNaN(seg)) return '';
+  if (seg < 60) return 'agora';
+  const min = Math.floor(seg / 60);
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `há ${d} d`;
+  return t.toLocaleDateString('pt-BR');
+}
+
+function renderNotificacoes({ itens = [], naoLidas = 0 } = {}) {
+  const badge = $('notifBadge');
+  if (badge) {
+    badge.textContent = naoLidas > 99 ? '99+' : String(naoLidas);
+    badge.style.display = naoLidas > 0 ? '' : 'none';
+  }
+  const lista = $('notifLista');
+  if (!lista) return;
+  if (!itens.length) {
+    lista.innerHTML = '<div class="notif-vazio">Sem notificações.</div>';
+    return;
+  }
+  lista.innerHTML = itens.map((n) => {
+    const icone = NOTIF_ICONES[n.tipo] || 'ph-bell';
+    const meta = [tempoRelativo(n.criadoEm), n.ator].filter(Boolean).join(' · ');
+    return `<button type="button" class="notif-item ${n.lido ? '' : 'nao-lida'}" data-id="${n.id}" data-link="${escHtml(n.link || '')}">
+      <div class="notif-titulo"><i class="ph ${icone}"></i>${escHtml(n.titulo)}</div>
+      ${n.mensagem ? `<div class="notif-msg">${escHtml(n.mensagem)}</div>` : ''}
+      <div class="notif-meta">${escHtml(meta)}</div>
+    </button>`;
+  }).join('');
+}
+
+async function carregarNotificacoes() {
+  try {
+    renderNotificacoes(await api('GET', '/api/notifications'));
+  } catch (err) {
+    console.error('Falha ao carregar notificações:', err);
+  }
+}
+
+async function abrirNotificacao(id, link) {
+  try { await api('PUT', `/api/notifications/${id}/read`, {}); } catch (e) { console.error(e); }
+  const btn = $('btnNotificacoes');
+  if (btn && window.bootstrap) bootstrap.Dropdown.getOrCreateInstance(btn).hide();
+  if (link) {
+    const abaEl = $(link);
+    if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
+  }
+  carregarNotificacoes();
+}
+
+function initNotificacoes() {
+  const lista = $('notifLista');
+  if (lista) {
+    lista.addEventListener('click', (e) => {
+      const item = e.target.closest('.notif-item');
+      if (item) abrirNotificacao(item.dataset.id, item.dataset.link);
+    });
+  }
+  const btnMarcar = $('btnMarcarLidas');
+  if (btnMarcar) {
+    btnMarcar.addEventListener('click', async () => {
+      try { await api('PUT', '/api/notifications/read-all', {}); carregarNotificacoes(); }
+      catch (err) { console.error(err); }
+    });
+  }
+  const btnTeste = $('btnNotifTeste');
+  if (btnTeste) {
+    btnTeste.addEventListener('click', async () => {
+      const status = $('notifTesteStatus');
+      btnTeste.disabled = true;
+      if (status) { status.className = 'd-block mt-1 text-muted'; status.textContent = 'Gerando…'; }
+      try {
+        const r = await api('POST', '/api/notifications/test', {});
+        await carregarNotificacoes();
+        if (status) {
+          const base = `${r.criadas ?? 0} notificações de exemplo no sininho`;
+          if (r.emailEnviado) {
+            status.className = 'd-block mt-1 text-success';
+            status.textContent = `${base} · e-mail enviado para ${r.email}.`;
+          } else {
+            const naoConfig = /configurad/i.test(r.erro || '');
+            status.className = 'd-block mt-1 ' + (naoConfig ? 'text-warning' : 'text-danger');
+            status.textContent = `${base} · e-mail NÃO enviado`
+              + (r.erro ? ': ' + r.erro : ' (configure o SMTP no .env).');
+          }
+        }
+      } catch (err) {
+        if (status) { status.className = 'd-block mt-1 text-danger'; status.textContent = 'Falha: ' + err.message; }
+      } finally {
+        btnTeste.disabled = false;
+      }
+    });
+  }
+}
+
 async function entrarNoApp(email, restaurarAba = false) {
   $('authView').classList.add('hidden');
   $('appView').classList.remove('hidden');
   $('userEmail').textContent = email || '';
+  carregarNotificacoes();
   if (restaurarAba) {
     const abaId = localStorage.getItem('abaAtiva');
     if (abaId && abaId !== 'tab-dashboard') {
@@ -3338,6 +3450,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.modal').forEach(el => {
     el.addEventListener('hidePrevented.bs.modal', () => el.classList.remove('modal-static'));
   });
+  initNotificacoes();
   $('btnVoltarLog').addEventListener('click', () => {
     const id = $('edit_id').value;
     modalLog.hide();
