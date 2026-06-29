@@ -564,14 +564,14 @@ async function lookupEquip(pat, ns) {
   const p = trim(pat);
   const n = trim(ns);
   const r = await query(
-    `SELECT TOP 1 equipamento, setor, unidade FROM dbo.EQUIPSTI_registros
+    `SELECT TOP 1 equipamento, setor, unidade, ns FROM dbo.EQUIPSTI_registros
       WHERE pat = @pat${n ? ' AND ns = @ns' : ''}
       ORDER BY criado_em DESC`,
     n ? { pat: S(p), ns: S(n) } : { pat: S(p) });
   const row = r.recordset[0];
   return row
-    ? { equipamento: row.equipamento || '', setor: row.setor || '', unidade: row.unidade || '' }
-    : { equipamento: '', setor: '', unidade: '' };
+    ? { equipamento: row.equipamento || '', setor: row.setor || '', unidade: row.unidade || '', ns: row.ns || '' }
+    : { equipamento: '', setor: '', unidade: '', ns: '' };
 }
 
 app.get('/api/pats/:pat/lookup', exigirAuth, wrap(async (req, res) => {
@@ -1260,7 +1260,30 @@ app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
   const unidade       = trim(req.body.unidade       || '');
 
   if (!codCatalogo) return res.status(400).json({ error: 'Selecione o assunto.' });
-  if (!descricao)   return res.status(400).json({ error: 'Informe a descrição.' });
+
+  // Resolve o equipamento (nome + N/S) a partir do patrimônio para montar o
+  // cabeçalho padrão da descrição. Quando o PAT tem N/S único, o front não envia
+  // o NS, então derivamos do banco (eqChamado.ns).
+  const patChamado = trim(req.body.patrimonio || '');
+  const nsForm     = trim(req.body.ns || '');
+  const eqChamado  = patChamado
+    ? await lookupEquip(patChamado, nsForm)
+    : { equipamento: '', setor: '', unidade: '', ns: '' };
+  const nsChamado  = nsForm || eqChamado.ns;
+
+  // Descrição = cabeçalho do equipamento (nome / PAT / N/S) + observação opcional,
+  // separados por uma linha em branco. Linhas sem valor são omitidas.
+  const linhasEquip = [];
+  if (eqChamado.equipamento) linhasEquip.push(eqChamado.equipamento);
+  if (patChamado)            linhasEquip.push('PAT: ' + patChamado);
+  if (nsChamado)             linhasEquip.push('N/S: ' + nsChamado);
+
+  const partes = [];
+  if (linhasEquip.length) partes.push(linhasEquip.join('<br>'));
+  if (descricao)          partes.push(descricao);
+  const descricaoHtml = partes.map(p => '<p>' + p + '</p>').join('');
+
+  if (!descricaoHtml) return res.status(400).json({ error: 'Informe o patrimônio ou uma observação.' });
 
   // AutoCategoriaArvore = parte após o último " - " no texto do assunto
   const arvore = assuntoText.includes(' - ')
@@ -1276,7 +1299,7 @@ app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
       AutoCategoria:        codCatalogo + '\\',
       AutoCategoriaArvore:  arvore,
       CodSolIC:             EUROSA_CODUSUARIO,
-      Descricao:            '<p>' + descricao + '</p>'
+      Descricao:            descricaoHtml
     },
     TCampoExtra: {
       '12310': localTrabalho,
@@ -1308,14 +1331,12 @@ app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
       dataSolic:  new Date().toISOString().slice(0, 10),
       problema:   assuntoText || descricao,
       unidade:    unidadeSistema,
-      patrimonio: trim(req.body.patrimonio || ''),
-      ns:         trim(req.body.ns || ''),
+      patrimonio: patChamado,
+      ns:         nsChamado,
       criadoPor:  req.user.email,
     });
   } catch (e) { console.warn('[intecs-msa enrich] falhou:', e.message); }
 
-  const patChamado = trim(req.body.patrimonio || '');
-  const eqChamado = await lookupEquip(patChamado, req.body.ns);
   await notificar({
     tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', email: true,
     ator: { id: req.user.sub, email: req.user.email },
