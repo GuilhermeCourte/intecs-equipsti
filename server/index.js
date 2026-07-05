@@ -212,7 +212,7 @@ app.put('/api/users/:id', exigirAuth, wrap(async (req, res) => {
 
 // ===================== OPÇÕES =====================
 app.get('/api/options', exigirAuth, wrap(async (req, res) => {
-  const r = await query('SELECT lista, valor, oculto, detalhe, preco, tipo_aquisicao, quantidade FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
+  const r = await query('SELECT lista, valor, oculto, detalhe, preco, tipo_aquisicao, quantidade, cnpj, endereco FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
   const counts = await query(`
     SELECT equipamento, COUNT(*) AS total
     FROM dbo.EQUIPSTI_registros
@@ -227,7 +227,9 @@ app.get('/api/options', exigirAuth, wrap(async (req, res) => {
     const item = {
       valor: row.valor, oculto: !!row.oculto, detalhe: row.detalhe || null,
       preco: row.preco != null ? Number(row.preco) : null,
-      tipo_aquisicao: row.tipo_aquisicao || null
+      tipo_aquisicao: row.tipo_aquisicao || null,
+      cnpj: row.cnpj || null,
+      endereco: row.endereco || null
     };
     if (row.lista === 'INSUMOS') item.quantidade = row.quantidade ?? 0;
     if (row.lista === 'EQUIPAMENTO') item.qtd_registros = equipCount[row.valor] ?? 0;
@@ -293,11 +295,20 @@ app.put('/api/options/detalhe', exigirAuth, wrap(async (req, res) => {
     ? Number(String(req.body.preco).replace(',', '.')) : null;
   const preco = precoRaw != null && !isNaN(precoRaw) ? precoRaw : null;
   const tipoAquisicao = trim(req.body.tipo_aquisicao || '') || null;
+  const cnpjDigits = trim(req.body.cnpj || '').replace(/\D/g, '');
+  let cnpj = null;
+  if (cnpjDigits) {
+    if (cnpjDigits.length !== 14) return res.status(400).json({ error: 'CNPJ inválido — informe 14 dígitos.' });
+    cnpj = cnpjDigits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  }
+  const endereco = trim(req.body.endereco || '') || null;
   if (!OPTION_LISTS.includes(lista)) return res.status(400).json({ error: 'Lista inválida.' });
-  await query('UPDATE dbo.EQUIPSTI_opcoes SET detalhe = @detalhe, preco = @preco, tipo_aquisicao = @tipoAquisicao WHERE lista = @lista AND valor = @valor',
+  await query('UPDATE dbo.EQUIPSTI_opcoes SET detalhe = @detalhe, preco = @preco, tipo_aquisicao = @tipoAquisicao, cnpj = @cnpj, endereco = @endereco WHERE lista = @lista AND valor = @valor',
     { detalhe: { type: sql.NVarChar, value: detalhe },
       preco: preco != null ? { type: sql.Decimal(15,2), value: preco } : S(null),
       tipoAquisicao: S(tipoAquisicao),
+      cnpj: S(cnpj),
+      endereco: S(endereco),
       lista: S(lista), valor: S(valor) });
   res.json({ ok: true });
 }));

@@ -80,6 +80,14 @@ IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'preco') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'tipo_aquisicao') IS NULL
   ALTER TABLE dbo.EQUIPSTI_opcoes ADD tipo_aquisicao NVARCHAR(20) NULL;
 
+-- Migração: CNPJ da unidade.
+IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'cnpj') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_opcoes ADD cnpj NVARCHAR(18) NULL;
+
+-- Migração: endereço da unidade.
+IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'endereco') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_opcoes ADD endereco NVARCHAR(255) NULL;
+
 -- Migração: insumo (toner) vinculado ao registro de impressora.
 IF COL_LENGTH('dbo.EQUIPSTI_registros', 'insumo') IS NULL
   ALTER TABLE dbo.EQUIPSTI_registros ADD insumo NVARCHAR(255) NULL;

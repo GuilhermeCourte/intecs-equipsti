@@ -48,6 +48,8 @@ let EQUIP_PRECO = {};
 let EQUIP_TIPO = {};
 let EQUIP_QTD_REG = {};
 let UNIDADE_MSA = {};      // UNIDADE do sistema -> unidade correspondente na MSA (col. detalhe)
+let UNIDADE_CNPJ = {};     // UNIDADE do sistema -> CNPJ (col. cnpj)
+let UNIDADE_ENDERECO = {}; // UNIDADE do sistema -> endereço (col. endereco)
 let MSA_UNIDADES = [];     // lista fixa de unidades da MSA (CHAMADO_UNIDADES)
 let INSUMO_QTD = {};
 let INSUMOS = [];
@@ -57,6 +59,7 @@ let modalMsg = null;
 let modalAsk = null;
 let askResolve = null;
 let askSelect2Ativo = false;   // campo 2 do uiAsk está em modo lista (select)?
+let askInput3Mask = null;      // máscara ativa do campo 3 do uiAsk (ex.: 'cnpj')
 const fpMap = {};
 let modalHistorico = null;
 let modalRegistrar = null;
@@ -110,7 +113,7 @@ function showAlert(_containerId, type, message) {
 // ---------- Confirmar / perguntar via modal (substitui confirm/prompt) ----------
 let askOnOk = null; // async handler — quando definido, OK não fecha o dialog direto
 
-function uiAsk({ title, message, input, value, input2Label, value2, input2Select, input3Label, value3, input4Label, value4, okText, danger, transfer, onOk }) {
+function uiAsk({ title, message, input, value, input2Label, value2, input2Select, input3Label, value3, input3Mask, input4Label, value4, input5Label, value5, okText, danger, transfer, onOk }) {
   return new Promise((resolve) => {
     askResolve = resolve;
     askOnOk = onOk || null;
@@ -170,9 +173,14 @@ function uiAsk({ title, message, input, value, input2Label, value2, input2Select
       wrap2.classList.add('hidden');
     }
     const wrap3 = $('askInput3Wrap');
+    const inp3 = $('askInput3');
+    askInput3Mask = input3Mask || null;
+    // O campo 3 é <input type="number"> (preço). No modo CNPJ vira texto para aceitar a máscara.
+    if (askInput3Mask === 'cnpj') { inp3.type = 'text'; inp3.setAttribute('inputmode', 'numeric'); }
+    else { inp3.type = 'number'; inp3.removeAttribute('inputmode'); }
     if (input3Label !== undefined) {
       $('askInput3Label').textContent = input3Label;
-      $('askInput3').value = value3 != null ? value3 : '';
+      inp3.value = value3 != null ? value3 : '';
       wrap3.classList.remove('hidden');
     } else {
       wrap3.classList.add('hidden');
@@ -184,6 +192,14 @@ function uiAsk({ title, message, input, value, input2Label, value2, input2Select
       wrap4.classList.remove('hidden');
     } else {
       wrap4.classList.add('hidden');
+    }
+    const wrap5 = $('askInput5Wrap');
+    if (input5Label !== undefined) {
+      $('askInput5Label').textContent = input5Label;
+      $('askInput5').value = value5 != null ? value5 : '';
+      wrap5.classList.remove('hidden');
+    } else {
+      wrap5.classList.add('hidden');
     }
     const ok = $('askOk');
     ok.textContent = okText || 'OK';
@@ -209,12 +225,15 @@ async function finishAsk(confirmado) {
   if (!confirmado) { askClose(inputVisivel ? null : false); return; }
 
   const input4Visivel = !$('askInput4Wrap').classList.contains('hidden');
+  const input5Visivel = !$('askInput5Wrap').classList.contains('hidden');
   const detalhe2 = askSelect2Ativo ? $('askSelect2').value : $('askInput2').value;
   const result = !inputVisivel ? true
     : input2Visivel
       ? { valor: $('askInput').value, detalhe: detalhe2,
           preco: input3Visivel ? ($('askInput3').value !== '' ? $('askInput3').value : null) : undefined,
-          tipo: input4Visivel ? ($('askInput4').value || null) : undefined }
+          input3: input3Visivel ? $('askInput3').value : undefined,
+          tipo: input4Visivel ? ($('askInput4').value || null) : undefined,
+          input5: input5Visivel ? $('askInput5').value : undefined }
       : $('askInput').value;
 
   if (askOnOk) {
@@ -270,6 +289,21 @@ function formatarMoeda(val) {
   const num = Number(val);
   if (isNaN(num)) return '';
   return 'R$ ' + num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Só os dígitos do CNPJ (para validar o comprimento de 14).
+function cnpjDigits(val) {
+  return String(val == null ? '' : val).replace(/\D/g, '');
+}
+
+// Máscara de CNPJ: formata progressivamente como XX.XXX.XXX/XXXX-XX (até 14 dígitos).
+function maskCNPJ(val) {
+  const d = cnpjDigits(val).slice(0, 14);
+  if (d.length > 12) return d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5, 8) + '/' + d.slice(8, 12) + '-' + d.slice(12);
+  if (d.length > 8) return d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5, 8) + '/' + d.slice(8);
+  if (d.length > 5) return d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5);
+  if (d.length > 2) return d.slice(0, 2) + '.' + d.slice(2);
+  return d;
 }
 
 function parseMoeda(str) {
@@ -553,7 +587,13 @@ async function loadOptions() {
     EQUIP_QTD_REG[o.valor] = o.qtd_registros ?? 0;
   });
   UNIDADE_MSA = {};
-  (data['UNIDADE'] || []).forEach((o) => { if (o.detalhe) UNIDADE_MSA[o.valor] = o.detalhe; });
+  UNIDADE_CNPJ = {};
+  UNIDADE_ENDERECO = {};
+  (data['UNIDADE'] || []).forEach((o) => {
+    if (o.detalhe) UNIDADE_MSA[o.valor] = o.detalhe;
+    if (o.cnpj) UNIDADE_CNPJ[o.valor] = o.cnpj;
+    if (o.endereco) UNIDADE_ENDERECO[o.valor] = o.endereco;
+  });
   if (!MSA_UNIDADES.length) {
     try { MSA_UNIDADES = await api('GET', '/api/chamados/unidades'); }
     catch { MSA_UNIDADES = []; }
@@ -615,8 +655,10 @@ function renderListaOpcoes() {
         vEsc + '" data-hide="0"><i class="ph ph-eye"></i> Exibir</button>';
     const precoAttr = isEquip && EQUIP_PRECO[v] != null ? ' data-preco="' + EQUIP_PRECO[v] + '"' : '';
     const tipoAttr = isEquip && EQUIP_TIPO[v] ? ' data-tipo="' + escapeHtml(EQUIP_TIPO[v]) + '"' : '';
+    const cnpjAttr = isUnidade && UNIDADE_CNPJ[v] ? ' data-cnpj="' + escapeHtml(UNIDADE_CNPJ[v]) + '"' : '';
+    const enderecoAttr = isUnidade && UNIDADE_ENDERECO[v] ? ' data-endereco="' + escapeHtml(UNIDADE_ENDERECO[v]) + '"' : '';
     const editar = '<button type="button" class="acao-link acao-editar ms-3" ' +
-      'data-edit-opt data-val="' + vEsc + '" data-detalhe="' + escapeHtml(detalhe) + '"' + precoAttr + tipoAttr + '>' +
+      'data-edit-opt data-val="' + vEsc + '" data-detalhe="' + escapeHtml(detalhe) + '"' + precoAttr + tipoAttr + cnpjAttr + enderecoAttr + '>' +
       '<i class="ph ph-pencil-simple"></i> Editar</button>';
 
     let qtdCell = '';
@@ -630,6 +672,12 @@ function renderListaOpcoes() {
       const cnt = EQUIP_QTD_REG[v] ?? 0;
       qtdCell = '<td><span class="badge bg-secondary bg-opacity-10 text-secondary fw-normal">' +
         cnt + '</span></td>';
+    } else if (isUnidade) {
+      const cnpj = UNIDADE_CNPJ[v] || '';
+      const endereco = UNIDADE_ENDERECO[v] || '';
+      const cnpjLine = cnpj ? escapeHtml(cnpj) : '<span class="text-muted">—</span>';
+      const endLine = endereco ? '<br><small class="text-muted">' + escapeHtml(endereco) + '</small>' : '';
+      qtdCell = '<td>' + cnpjLine + endLine + '</td>';
     } else {
       qtdCell = '<td></td>';
     }
@@ -651,9 +699,10 @@ function renderListaOpcoes() {
 function opcoesThead(lista) {
   const isEquip = lista === 'EQUIPAMENTO';
   const isInsumo = lista === 'INSUMOS';
+  const isUnidade = lista === 'UNIDADE';
   const th = (col, label) => '<th class="th-filterable" data-col="' + col + '">' +
     escapeHtml(label) + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>';
-  const qtdHeader = isInsumo ? th(1, 'Qtd. em estoque') : isEquip ? th(1, 'Registros') : '<th></th>';
+  const qtdHeader = isInsumo ? th(1, 'Qtd. em estoque') : isEquip ? th(1, 'Registros') : isUnidade ? th(1, 'CNPJ / Endereço') : '<th></th>';
   return th(0, 'Opção') + qtdHeader + th(2, 'Status') + '<th class="text-end">Ação</th>';
 }
 
@@ -665,6 +714,7 @@ function opcoesColVal(v, col) {
   if (col === 1) {
     if (lista === 'INSUMOS') return String(INSUMO_QTD[v] ?? 0);
     if (lista === 'EQUIPAMENTO') return String(EQUIP_QTD_REG[v] ?? 0);
+    if (lista === 'UNIDADE') return UNIDADE_CNPJ[v] || '';
   }
   return '';
 }
@@ -1111,8 +1161,10 @@ function wireCtxFiltro(ctx, theadEl) {
 
 // Cabeçalho com colunas filtráveis (ícone de funil) a partir de um array de COLS.
 function thFiltravel(cols) {
+  // \n no label vira quebra de linha no cabeçalho (escapa antes, então só os
+  // <br> injetados aqui são HTML — labels sem \n não mudam).
   return cols.map((c, i) => '<th class="th-filterable" data-col="' + i + '">' +
-    escapeHtml(c.label) + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>').join('');
+    escapeHtml(c.label).replace(/\n/g, '<br>') + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>').join('');
 }
 
 // Contexto da tabela de Registros (mantém o comportamento existente).
@@ -2135,8 +2187,10 @@ function configurarFormOpcao() {
       const val = btnEdit.getAttribute('data-val');
       const detalheAtual = btnEdit.getAttribute('data-detalhe') || '';
       const precoAtual = btnEdit.getAttribute('data-preco');
+      const cnpjAtual = btnEdit.getAttribute('data-cnpj') || '';
+      const enderecoAtual = btnEdit.getAttribute('data-endereco') || '';
 
-      let limpo, novoDetalhe, novoPreco, novoTipo;
+      let limpo, novoDetalhe, novoPreco, novoTipo, novoCnpj = null, novoEndereco = null;
       if (lista === 'EQUIPAMENTO') {
         const tipoAtual = btnEdit.getAttribute('data-tipo') || '';
         const res = await uiAsk({
@@ -2159,11 +2213,20 @@ function configurarFormOpcao() {
           title: 'Editar unidade', message: 'Nome da unidade:',
           input: true, value: val,
           input2Label: 'Unidade na MSA (opcional)', value2: detalheAtual, input2Select: MSA_UNIDADES,
+          input3Label: 'CNPJ (opcional)', value3: cnpjAtual, input3Mask: 'cnpj',
+          input5Label: 'Endereço (opcional)', value5: enderecoAtual,
           okText: 'Salvar'
         });
         if (res === null) return;
         limpo = trim(res.valor).toUpperCase();
         novoDetalhe = trim(res.detalhe) || null;
+        const cnpjLimpo = cnpjDigits(res.input3);
+        if (cnpjLimpo && cnpjLimpo.length !== 14) {
+          showAlert('alertGerenciar', 'warning', 'CNPJ inválido — informe 14 dígitos.');
+          return;
+        }
+        novoCnpj = cnpjLimpo ? maskCNPJ(cnpjLimpo) : null;
+        novoEndereco = trim(res.input5) || null;
       } else {
         const novo = await uiPrompt('Editar opção:', { title: 'Editar opção', value: val });
         if (novo === null) return;
@@ -2179,7 +2242,7 @@ function configurarFormOpcao() {
         if (lista === 'EQUIPAMENTO') {
           await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: novoPreco, tipo_aquisicao: novoTipo });
         } else if (lista === 'UNIDADE') {
-          await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: null, tipo_aquisicao: null });
+          await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: null, tipo_aquisicao: null, cnpj: novoCnpj, endereco: novoEndereco });
         }
         await loadOptions();
         showAlert('alertGerenciar', 'success', 'Opção atualizada.');
@@ -3154,12 +3217,20 @@ let _intecsMsaTodos = [];
 const fpIM = {};
 
 const INTECSMSA_COLS = [
-  { key: 'data_solicitacao',   label: 'Solicitação', fmt: imDataBR },
-  { key: 'numero_chamado_msa', label: 'Nº MSA'      },
-  { key: 'unidade',            label: 'Unidade'     },
-  { key: 'patrimonio_msa',     label: 'Patrimônio'  },
-  { key: 'status_msa',         label: 'Status MSA'  },
-  { key: 'status_intecs',      label: 'Status INTECS' },
+  { key: 'data_solicitacao',      label: 'DATA\nSOLICITACAO',      fmt: imDataBR },
+  { key: 'unidade',               label: 'UNIDADE'               },
+  { key: 'glpi',                  label: 'GLPI'                  },
+  { key: 'patrimonio_msa',        label: 'PAT'                   },
+  { key: 'ns',                    label: 'Nº SERIE'              },
+  { key: 'ponto_instalacao',      label: 'PONTO DE\nINSTALAÇÃO'  },
+  { key: 'descricao_equip',       label: 'EQUIPAMENTO'           },
+  { key: 'patrimonio_bkp_intecs', label: 'PAT BKP'               },
+  { key: 'bkp_unidade',           label: 'BKP\nUNIDADE'          },
+  { key: 'status_intecs',         label: 'STATUS INTECS'         },
+  { key: 'status_msa',            label: 'STATUS MSA'            },
+  { key: 'numero_chamado_msa',    label: 'CHAMADO MSA'           },
+  { key: 'data_retirada_equip',   label: 'DATA RETIRADA',          fmt: imDataBR },
+  { key: 'data_entrega_equip',    label: 'DATA ENTREGA',           fmt: imDataBR },
 ];
 
 function imDataBR(v) { return v ? v.split('-').reverse().join('/') : ''; }
@@ -3492,6 +3563,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('progressImport').classList.add('hidden');
   });
   $('askInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); finishAsk(true); } });
+  $('askInput3').addEventListener('input', (ev) => { if (askInput3Mask === 'cnpj') ev.target.value = maskCNPJ(ev.target.value); });
   initChoices();
   initFlatpickr();
   initIntecsMsaDatas();
