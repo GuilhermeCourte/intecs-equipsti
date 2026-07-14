@@ -80,6 +80,8 @@ let _fdOutside  = null;
 let _fdScroll   = null;
 let _fdActive   = null; // contexto (tabela) ativo do dropdown
 let _fdScrollEl = null; // container rolável da tabela ativa
+let _fdTh       = null; // <th> que abriu o dropdown (para o retry do estado de erro)
+let _fdToken    = 0;    // invalida aberturas em voo quando o dropdown fecha/reabre
 
 // ============================================================
 //  Utilidades de UI
@@ -740,6 +742,8 @@ async function aoEscolherNovo(selectId) {
 //  Opções
 // ============================================================
 async function loadOptions() {
+  // Dispara em paralelo: /api/chamados/unidades independe de /api/options.
+  const pMsaUnidades = MSA_UNIDADES.length ? null : api('GET', '/api/chamados/unidades').catch(() => []);
   const data = await api('GET', '/api/options');
   OPTION_LISTS.forEach((l) => {
     const arr = data[l] || [];
@@ -764,10 +768,7 @@ async function loadOptions() {
     if (o.cnpj) UNIDADE_CNPJ[o.valor] = o.cnpj;
     if (o.endereco) UNIDADE_ENDERECO[o.valor] = o.endereco;
   });
-  if (!MSA_UNIDADES.length) {
-    try { MSA_UNIDADES = await api('GET', '/api/chamados/unidades'); }
-    catch { MSA_UNIDADES = []; }
-  }
+  if (pMsaUnidades) MSA_UNIDADES = await pMsaUnidades;
   INSUMO_QTD = {};
   (data['INSUMOS'] || []).forEach((o) => { INSUMO_QTD[o.valor] = o.quantidade ?? 0; });
   INSUMOS = (data['INSUMOS'] || []).filter((o) => !o.oculto).map((o) => o.valor);
@@ -928,6 +929,8 @@ let _recAllLoaded = false;
 let _todosRegistros = [];
 let _todosCarregados = false;
 let _todosCarregando = null;
+let _facets = null;          // valores únicos por coluna (GET /api/records/facets)
+let _facetsCarregando = null;
 
 async function carregarTodosParaFiltro() {
   if (_todosCarregados) return;
@@ -944,6 +947,37 @@ function invalidarCacheTodos() {
   _todosRegistros = [];
   _todosCarregados = false;
   _todosCarregando = null;
+  _facets = null;
+  _facetsCarregando = null;
+}
+
+// Facetas: valores únicos por coluna direto do servidor (SELECT DISTINCT) —
+// poucos KB no lugar do dump completo só para montar o dropdown do funil.
+// campos: array para busca sob demanda (ex.: ['obs']) ou null para o pacote
+// padrão (todas as colunas exceto obs, quase única por linha).
+function carregarFacetas(campos) {
+  const faltando = (campos || COL_FIELDS.filter((f) => f !== 'obs'))
+    .filter((f) => !_facets || !(f in _facets));
+  if (!faltando.length) return Promise.resolve();
+  if (!campos && _facetsCarregando) return _facetsCarregando;
+  const p = api('GET', '/api/records/facets' + (campos ? '?campo=' + faltando.join(',') : ''))
+    .then((d) => { _facets = { ...(_facets || {}), ...d }; })
+    .finally(() => { if (!campos) _facetsCarregando = null; });
+  if (!campos) _facetsCarregando = p;
+  return p; // sem catch: fdAbrir mostra o estado de erro com retry
+}
+
+// Opções do dropdown a partir das facetas, formatadas exatamente como colVal
+// formata as linhas (fmtData, Sim/Não, brancos) — paridade com ctxUnique.
+function facetVals(col) {
+  const f = COL_FIELDS[col];
+  const brutos = (_facets && _facets[f]) || [];
+  const seen = new Set(), out = [];
+  for (const raw of brutos) {
+    const v = colVal({ [f]: raw }, col);
+    if (!seen.has(v)) { seen.add(v); out.push(v); }
+  }
+  return out.sort((a, b) => a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'pt-BR'));
 }
 
 // Recarrega a lista descartando o cache; com filtro ativo, rebaixa todos os
@@ -1237,7 +1271,7 @@ function fdRenderList() {
 }
 
 // --- Filtro de coluna genérico (funciona em qualquer tabela via "contexto") ---
-// ctx = { theadSel, getRows(), colVal(r,col), filters{}, onApply(), beforeOpen? }
+// ctx = { theadSel, getRows(), colVal(r,col), filters{}, onApply(), beforeOpen?(col), uniqueVals?(col) }
 function ctxUnique(ctx, col) {
   const seen = new Set(), out = [];
   for (const r of ctx.getRows()) {
@@ -1264,30 +1298,50 @@ function ctxAtualizarTh(ctx) {
   }
 }
 
+// Skeleton exibido no dropdown enquanto beforeOpen busca os dados.
+function fdRenderCarregando() {
+  _fdEl.querySelector('#fdTools').style.display = 'none';
+  _fdEl.querySelector('#fdFooter').style.display = 'none';
+  _fdEl.querySelector('#fdList').innerHTML =
+    '<div class="text-muted text-center py-3" style="font-size:.85rem">' +
+    '<i class="ph ph-circle-notch fd-spin" style="font-size:1.3rem"></i>' +
+    '<div class="mt-1">Carregando opções...</div></div>';
+}
+
+// Falha ao buscar os dados do filtro: erro visível com retry (nada de lista
+// vazia silenciosa — em rede lenta isso filtraria errado sem avisar).
+function fdRenderErro(msg) {
+  _fdEl.querySelector('#fdTools').style.display = 'none';
+  _fdEl.querySelector('#fdFooter').style.display = 'none';
+  _fdEl.querySelector('#fdList').innerHTML =
+    '<div class="text-center py-3" style="font-size:.85rem">' +
+    '<i class="ph ph-wifi-slash text-danger" style="font-size:1.3rem"></i>' +
+    '<div class="text-muted my-1">' + escapeHtml(msg) + '</div>' +
+    '<button type="button" class="btn btn-outline-secondary btn-sm" id="fdRetry">' +
+    '<i class="ph ph-arrow-clockwise me-1"></i>Tentar novamente</button></div>';
+  _fdEl.querySelector('#fdRetry').addEventListener('click', () => {
+    const ctx = _fdActive, col = _fdCol, th = _fdTh;
+    fdFechar();
+    fdAbrir(ctx, col, th);
+  });
+}
+
 async function fdAbrir(ctx, col, thEl) {
   criarFilterDropdown();
   if (_fdOutside) { document.removeEventListener('mousedown', _fdOutside); _fdOutside = null; }
-  if (ctx.beforeOpen) await ctx.beforeOpen();
   _fdActive = ctx;
   _fdCol = col;
-  _fdAllVals = ctxUnique(ctx, col);
-  const atual = ctx.filters[String(col)];
-  _fdPendente = atual ? new Set(atual) : new Set(_fdAllVals);
-  _fdEl.querySelector('#fdSearch').value = '';
-  // Coluna "um ou outro" aplica na hora: sem busca, "selecionar tudo/limpar" nem OK/Cancelar.
-  _fdEl.querySelector('#fdTools').style.display = fdIsRadio() ? 'none' : '';
-  _fdEl.querySelector('#fdFooter').style.display = fdIsRadio() ? 'none' : 'flex';
-  fdRenderList();
+  _fdTh = thEl;
+  const token = ++_fdToken;
+  // Posiciona e exibe imediatamente; se houver carga (beforeOpen), o usuário
+  // vê o skeleton em vez de a UI congelar esperando a rede.
   const rect = thEl.getBoundingClientRect();
-  _fdEl.style.display = 'flex';
   _fdEl.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 290)) + 'px';
   _fdEl.style.top = (rect.bottom + 4) + 'px';
-  // Limita a quantidade de itens visíveis (ex.: 4) quando o contexto pedir.
-  const _list = _fdEl.querySelector('#fdList');
-  const _item = _list.querySelector('.col-filter-item');
-  _list.style.maxHeight = (ctx.maxItems && _item) ? (_item.offsetHeight * ctx.maxItems) + 'px' : '';
+  _fdEl.style.display = 'flex';
   _fdScrollEl = thEl.closest('.table-scroll-x, .table-responsive');
   setTimeout(() => {
+    if (token !== _fdToken) return;
     _fdOutside = (e) => {
       if (!_fdEl.contains(e.target) && !e.target.closest('th[data-col]')) fdFechar();
     };
@@ -1301,9 +1355,32 @@ async function fdAbrir(ctx, col, thEl) {
     window.addEventListener('scroll', _fdScroll, { passive: true });
     if (_fdScrollEl) _fdScrollEl.addEventListener('scroll', _fdScroll, { passive: true });
   }, 10);
+  if (ctx.beforeOpen) {
+    fdRenderCarregando();
+    try {
+      await ctx.beforeOpen(col);
+    } catch {
+      if (token === _fdToken) fdRenderErro('Falha ao carregar opções.');
+      return;
+    }
+    if (token !== _fdToken) return; // fechado ou reaberto durante a carga
+  }
+  _fdAllVals = ctx.uniqueVals ? ctx.uniqueVals(col) : ctxUnique(ctx, col);
+  const atual = ctx.filters[String(col)];
+  _fdPendente = atual ? new Set(atual) : new Set(_fdAllVals);
+  _fdEl.querySelector('#fdSearch').value = '';
+  // Coluna "um ou outro" aplica na hora: sem busca, "selecionar tudo/limpar" nem OK/Cancelar.
+  _fdEl.querySelector('#fdTools').style.display = fdIsRadio() ? 'none' : '';
+  _fdEl.querySelector('#fdFooter').style.display = fdIsRadio() ? 'none' : 'flex';
+  fdRenderList();
+  // Limita a quantidade de itens visíveis (ex.: 4) quando o contexto pedir.
+  const _list = _fdEl.querySelector('#fdList');
+  const _item = _list.querySelector('.col-filter-item');
+  _list.style.maxHeight = (ctx.maxItems && _item) ? (_item.offsetHeight * ctx.maxItems) + 'px' : '';
 }
 
 function fdFechar() {
+  _fdToken++; // mata qualquer abertura em voo (skeleton aguardando rede)
   if (_fdEl) _fdEl.style.display = 'none';
   if (_fdOutside) { document.removeEventListener('mousedown', _fdOutside); _fdOutside = null; }
   if (_fdScroll) {
@@ -1349,14 +1426,35 @@ function thFiltravel(cols) {
     escapeHtml(c.label).replace(/\n/g, '<br>') + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>').join('');
 }
 
-// Contexto da tabela de Registros (mantém o comportamento existente).
+// Aplica o filtro da tabela de Registros. O dropdown abre com as facetas
+// (leves); o dump completo só é necessário aqui, para filtrar de verdade —
+// e, se falhar, o erro fica visível em vez de filtrar só a página atual.
+async function aplicarFiltroRegistros() {
+  if (Object.keys(colFilters).length && !_todosCarregados) {
+    $('corpoTabela').innerHTML =
+      '<tr><td colspan="11" class="text-muted"><i class="ph ph-circle-notch fd-spin me-1"></i>Aplicando filtro...</td></tr>';
+    await carregarTodosParaFiltro();
+    if (!_todosCarregados) {
+      showAlert('alertRegistros', 'danger', 'Não foi possível carregar todos os registros para filtrar. Tente novamente.');
+      Object.keys(colFilters).forEach((k) => delete colFilters[k]);
+      renderTabela();
+      atualizarThFiltro();
+      return;
+    }
+  }
+  renderTabela();
+}
+
+// Contexto da tabela de Registros: opções do funil vêm das facetas do
+// servidor (obs só sob demanda); o dump completo fica para o apply.
 const registrosFilterCtx = {
   theadSel: '#tabelaScroll thead th[data-col]',
   getRows: () => (_todosCarregados ? _todosRegistros : REGISTROS),
   colVal,
   filters: colFilters,
-  onApply: renderTabela,
-  beforeOpen: carregarTodosParaFiltro,
+  onApply: aplicarFiltroRegistros,
+  beforeOpen: (col) => carregarFacetas(COL_FIELDS[col] === 'obs' ? ['obs'] : null),
+  uniqueVals: facetVals,
 };
 
 // Alterna a visão da tabela de Registros: 'detalhada' (todas as colunas) ou
@@ -3294,6 +3392,7 @@ async function entrarNoApp(email, restaurarAba = false) {
 function sairDoApp() {
   dadosCarregados = false;
   TOKEN = '';
+  invalidarCacheTodos(); // não herdar registros/facetas na próxima sessão da aba
   localStorage.removeItem('token');
   document.documentElement.classList.remove('sessao-ativa');
   $('appView').classList.add('hidden');
@@ -3764,7 +3863,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btn = $('dashFiltroBtn');
     if (btn) bootstrap.Dropdown.getInstance(btn)?.hide();
   }, { passive: true });
-  $('tab-registros').addEventListener('shown.bs.tab', () => loadRecords(true));
+  $('tab-registros').addEventListener('shown.bs.tab', () => {
+    loadRecords(true);
+    // Pré-carrega em background: facetas (KBs, abrem o funil na hora) e o dump
+    // completo (para o OK do filtro), sem competir com a 1ª página da tabela.
+    carregarFacetas().catch(() => {});
+    setTimeout(carregarTodosParaFiltro, 800);
+  });
   $('btnAtualizarLista').addEventListener('click', () => { recarregarRegistros(); });
   $('btnViewSimples').addEventListener('click', () => setRegistrosView('simples'));
   $('btnViewDetalhada').addEventListener('click', () => setRegistrosView('detalhada'));

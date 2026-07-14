@@ -400,6 +400,8 @@
     }
     .col-filter-item:last-child { border-bottom: none; }
     .col-filter-item input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: var(--ink); }
+    .fd-spin { display: inline-block; animation: fd-rot .9s linear infinite; }
+    @keyframes fd-rot { to { transform: rotate(360deg); } }
 
     /* ---------- Abas (liquid slider) ---------- */
     .app-tabs {
