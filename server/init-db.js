@@ -88,6 +88,28 @@ IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'cnpj') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'endereco') IS NULL
   ALTER TABLE dbo.EQUIPSTI_opcoes ADD endereco NVARCHAR(255) NULL;
 
+-- Tabela de contratos de internet por unidade.
+IF OBJECT_ID('dbo.EQUIPSTI_internet', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_internet (
+  id               INT IDENTITY(1,1) PRIMARY KEY,
+  unidade          NVARCHAR(255) NOT NULL,
+  empresa          NVARCHAR(255) NULL,
+  contrato_cnpj    NVARCHAR(18)  NULL,
+  ip_internet      NVARCHAR(255) NULL,
+  up_down          NVARCHAR(100) NULL,
+  valor            DECIMAL(15,2) NULL,
+  vencimento_dia   INT           NULL,
+  telefone_suporte NVARCHAR(100) NULL,
+  linha_acesso     NVARCHAR(255) NULL,
+  link_acesso      NVARCHAR(500) NULL,
+  email_contas     NVARCHAR(255) NULL,
+  observacao       NVARCHAR(MAX) NULL,
+  criado_em        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  criado_por       NVARCHAR(255) NULL,
+  atualizado_por   NVARCHAR(255) NULL
+);
+
 -- Migração: insumo (toner) vinculado ao registro de impressora.
 IF COL_LENGTH('dbo.EQUIPSTI_registros', 'insumo') IS NULL
   ALTER TABLE dbo.EQUIPSTI_registros ADD insumo NVARCHAR(255) NULL;

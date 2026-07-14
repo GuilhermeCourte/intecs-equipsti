@@ -519,6 +519,81 @@ app.delete('/api/records/:id', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ===================== INTERNET =====================
+function lerInternet(body) {
+  const valor = body.valor !== undefined && body.valor !== '' ? Number(String(body.valor).replace(',', '.')) : null;
+  const diaRaw = parseInt(body.vencimentoDia ?? body.vencimento_dia, 10);
+  const vencimentoDia = Number.isInteger(diaRaw) && diaRaw >= 1 && diaRaw <= 31 ? diaRaw : null;
+  return {
+    unidade: trim(body.unidade),
+    empresa: trim(body.empresa) || null,
+    contratoCnpj: trim(body.contratoCnpj ?? body.contrato_cnpj) || null,
+    ipInternet: trim(body.ipInternet ?? body.ip_internet) || null,
+    upDown: trim(body.upDown ?? body.up_down) || null,
+    valor: isNaN(valor) ? null : valor,
+    vencimentoDia,
+    telefoneSuporte: trim(body.telefoneSuporte ?? body.telefone_suporte) || null,
+    linhaAcesso: trim(body.linhaAcesso ?? body.linha_acesso) || null,
+    linkAcesso: trim(body.linkAcesso ?? body.link_acesso) || null,
+    emailContas: trim(body.emailContas ?? body.email_contas) || null,
+    observacao: trim(body.observacao) || null
+  };
+}
+
+const INTERNET_SELECT = `SELECT id, unidade, empresa, contrato_cnpj AS contratoCnpj,
+  ip_internet AS ipInternet, up_down AS upDown, valor, vencimento_dia AS vencimentoDia,
+  telefone_suporte AS telefoneSuporte, linha_acesso AS linhaAcesso, link_acesso AS linkAcesso,
+  email_contas AS emailContas, observacao,
+  criado_por AS criadoPor, atualizado_por AS atualizadoPor,
+  CONVERT(varchar(19), criado_em, 120) AS criadoEm,
+  CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
+  FROM dbo.EQUIPSTI_internet`;
+
+function paramsInternet(d) {
+  return {
+    unidade: S(d.unidade), empresa: S(d.empresa), contratoCnpj: S(d.contratoCnpj),
+    ipInternet: S(d.ipInternet), upDown: S(d.upDown),
+    valor: d.valor != null ? { type: sql.Decimal(15,2), value: d.valor } : S(null),
+    vencimentoDia: d.vencimentoDia != null ? { type: sql.Int, value: d.vencimentoDia } : S(null),
+    telefoneSuporte: S(d.telefoneSuporte), linhaAcesso: S(d.linhaAcesso),
+    linkAcesso: S(d.linkAcesso), emailContas: S(d.emailContas), observacao: S(d.observacao)
+  };
+}
+
+app.get('/api/internet', exigirAuth, wrap(async (req, res) => {
+  const r = await query(`${INTERNET_SELECT} ORDER BY unidade, id DESC`);
+  res.json(r.recordset);
+}));
+
+app.post('/api/internet', exigirAuth, wrap(async (req, res) => {
+  const d = lerInternet(req.body);
+  if (!d.unidade) return res.status(400).json({ error: 'Selecione a unidade.' });
+  await query(`INSERT INTO dbo.EQUIPSTI_internet
+    (unidade, empresa, contrato_cnpj, ip_internet, up_down, valor, vencimento_dia, telefone_suporte, linha_acesso, link_acesso, email_contas, observacao, criado_por, atualizado_por)
+    VALUES (@unidade, @empresa, @contratoCnpj, @ipInternet, @upDown, @valor, @vencimentoDia, @telefoneSuporte, @linhaAcesso, @linkAcesso, @emailContas, @observacao, @criadoPor, @criadoPor)`,
+    { ...paramsInternet(d), criadoPor: S(req.user.email) });
+  res.status(201).json({ ok: true });
+}));
+
+app.put('/api/internet/:id', exigirAuth, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const d = lerInternet(req.body);
+  if (!d.unidade) return res.status(400).json({ error: 'Selecione a unidade.' });
+  await query(`UPDATE dbo.EQUIPSTI_internet SET
+    unidade=@unidade, empresa=@empresa, contrato_cnpj=@contratoCnpj, ip_internet=@ipInternet, up_down=@upDown,
+    valor=@valor, vencimento_dia=@vencimentoDia, telefone_suporte=@telefoneSuporte, linha_acesso=@linhaAcesso,
+    link_acesso=@linkAcesso, email_contas=@emailContas, observacao=@observacao,
+    atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
+    WHERE id=@id`,
+    { ...paramsInternet(d), id, atualizadoPor: S(req.user.email) });
+  res.json({ ok: true });
+}));
+
+app.delete('/api/internet/:id', exigirAuth, wrap(async (req, res) => {
+  await query('DELETE FROM dbo.EQUIPSTI_internet WHERE id = @id', { id: Number(req.params.id) });
+  res.json({ ok: true });
+}));
+
 // ===================== PATs (origem dos empréstimos) =====================
 app.get('/api/pats', exigirAuth, wrap(async (req, res) => {
   const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_registros

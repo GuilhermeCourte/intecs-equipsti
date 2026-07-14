@@ -27,7 +27,7 @@ async function api(method, path, body) {
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
 const FORM_SELECTS = ['unidade', 'status', 'setor', 'equipamento'];
 const SELECT_TO_LIST = { unidade: 'UNIDADE', status: 'STATUS', setor: 'SETOR', equipamento: 'EQUIPAMENTO' };
-const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat', 'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns', 'im_unidade', 'im_bkp_pat']);
+const SEARCHABLE = new Set(['setor', 'edit_setor', 'equipamento', 'edit_equipamento', 'emp_pat', 'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns', 'im_unidade', 'im_bkp_pat', 'internet_unidade', 'internet_contrato']);
 const CHOICES_IDS = [
   'unidade', 'status', 'setor', 'equipamento',
   'edit_unidade', 'edit_status', 'edit_setor', 'edit_equipamento',
@@ -35,7 +35,8 @@ const CHOICES_IDS = [
   'listaAlvo', 'emp_pat', 'emp_unidade',
   'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns',
   'im_unidade', 'im_bkp_pat',
-  'imFiltroStatus', 'chamadosFiltroStatus'
+  'imFiltroStatus', 'chamadosFiltroStatus',
+  'internet_unidade', 'internet_contrato'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
 const FILTRO_STATUS_IDS = new Set(['imFiltroStatus', 'chamadosFiltroStatus']);
@@ -306,6 +307,18 @@ function maskCNPJ(val) {
   return d;
 }
 
+// Máscara de telefone BR: fixo (XX) XXXX-XXXX (10 díg.) ou celular (XX) XXXXX-XXXX (11 díg.).
+function maskTelefone(val) {
+  const d = String(val == null ? '' : val).replace(/\D/g, '').slice(0, 11);
+  if (!d.length) return '';
+  if (d.length <= 2) return '(' + d;
+  const ddd = d.slice(0, 2);
+  const resto = d.slice(2);
+  if (resto.length <= 4) return '(' + ddd + ') ' + resto;
+  if (d.length <= 10) return '(' + ddd + ') ' + resto.slice(0, 4) + '-' + resto.slice(4);
+  return '(' + ddd + ') ' + resto.slice(0, 5) + '-' + resto.slice(5);
+}
+
 function parseMoeda(str) {
   if (!str) return null;
   const clean = String(str).replace(/R\$\s?/g, '').replace(/\./g, '').replace(',', '.').trim();
@@ -507,6 +520,163 @@ function valsParaEdicao(list, atual) {
 
 function renderAllSelects() {
   FORM_SELECTS.forEach((id) => fillSelect(id, activeValues(SELECT_TO_LIST[id]), undefined, true));
+}
+
+// ===================== INTERNET =====================
+let INTERNET = [];
+let modalInternet = null;
+
+async function carregarInternet() {
+  const cont = $('corpoTabelaInternet');
+  try {
+    if (!OPTIONS.UNIDADE || !OPTIONS.UNIDADE.length) { try { await loadOptions(); } catch {} }
+    INTERNET = await api('GET', '/api/internet');
+    renderTabelaInternet();
+  } catch (err) {
+    cont.innerHTML = '<tr><td colspan="5" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
+  }
+}
+
+function linkCellInternet(url) {
+  const u = trim(url);
+  if (!u) return '<span class="text-muted">—</span>';
+  const href = /^https?:\/\//i.test(u) ? u : 'http://' + u;
+  return '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener" title="' + escapeHtml(u) + '">' + escapeHtml(u) + '</a>';
+}
+
+function rowHtmlInternet(r) {
+  const muted = (v) => v ? escapeHtml(v) : '<span class="text-muted">—</span>';
+  return '<tr class="row-internet" data-id="' + escapeHtml(r.id) + '" style="cursor:pointer">' +
+    '<td title="' + escapeHtml(r.unidade) + '">' + escapeHtml(r.unidade) + '</td>' +
+    '<td>' + muted(r.empresa) + '</td>' +
+    '<td>' + muted(r.ipInternet) + '</td>' +
+    '<td>' + muted(r.upDown) + '</td>' +
+    '<td>' + linkCellInternet(r.linkAcesso) + '</td>' +
+    '</tr>';
+}
+
+function renderTabelaInternet() {
+  const cont = $('corpoTabelaInternet');
+  if (!INTERNET.length) {
+    cont.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Nenhum contrato de internet cadastrado.</td></tr>';
+    return;
+  }
+  cont.innerHTML = INTERNET.map(rowHtmlInternet).join('');
+}
+
+// Popula o select CONTRATO com os CNPJs cadastrados nas unidades (Opções).
+function preencherContratoSelect(atual) {
+  const pares = Object.keys(UNIDADE_CNPJ)
+    .filter((u) => UNIDADE_CNPJ[u])
+    .map((u) => ({ cnpj: UNIDADE_CNPJ[u], unidade: u }))
+    .sort((a, b) => a.unidade.localeCompare(b.unidade));
+  const itens = [{ value: '', label: 'Selecione...', placeholder: true, selected: !atual }]
+    .concat(pares.map((p) => ({ value: p.cnpj, label: p.cnpj + ' (' + p.unidade + ')', selected: p.cnpj === atual })));
+  const inst = choicesMap['internet_contrato'];
+  if (inst) {
+    inst.setChoices(itens, 'value', 'label', true);
+    if (atual) inst.setChoiceByValue(atual);
+  } else {
+    $('internet_contrato').innerHTML = itens.map((o) =>
+      '<option value="' + escapeHtml(o.value) + '"' + (o.selected ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>').join('');
+  }
+}
+
+// CNPJ e endereço são derivados da unidade escolhida (somente leitura).
+function aplicarUnidadeInternet(unidade) {
+  $('internet_cnpj').value = UNIDADE_CNPJ[unidade] || '';
+  $('internet_endereco').value = UNIDADE_ENDERECO[unidade] || '';
+}
+
+// Alterna o modal de internet entre visualização (campos travados) e edição.
+function setInternetModo(editavel) {
+  const inputs = ['internet_empresa', 'internet_ip', 'internet_up_down', 'internet_valor', 'internet_vencimento', 'internet_telefone', 'internet_linha_acesso', 'internet_link_acesso', 'internet_email_contas', 'internet_observacao'];
+  inputs.forEach((id) => { $(id).disabled = !editavel; });
+  ['internet_unidade', 'internet_contrato'].forEach((id) => {
+    const c = choicesMap[id];
+    if (c) { if (editavel) c.enable(); else c.disable(); }
+    else $(id).disabled = !editavel;
+  });
+  const temId = !!$('internet_id').value;
+  $('internetModalTitle').textContent = editavel ? (temId ? 'Editar contrato de internet' : 'Novo contrato de internet') : 'Contrato de internet';
+  $('btnEditarInternet').classList.toggle('d-none', editavel);
+  $('btnSalvarInternet').classList.toggle('d-none', !editavel);
+  $('btnExcluirInternet').classList.toggle('d-none', !(editavel && temId));
+}
+
+function abrirInternet(id) {
+  const r = id != null ? INTERNET.find((x) => String(x.id) === String(id)) : null;
+  $('alertInternetModal').innerHTML = '';
+  $('formInternet').classList.remove('was-validated');
+  $('internet_id').value = r ? r.id : '';
+
+  fillSelect('internet_unidade', valsParaEdicao('UNIDADE', r ? r.unidade : ''), r ? r.unidade : '');
+  preencherContratoSelect(r ? r.contratoCnpj : '');
+  $('internet_empresa').value = r ? (r.empresa || '') : '';
+  $('internet_ip').value = r ? (r.ipInternet || '') : '';
+  $('internet_up_down').value = r ? (r.upDown || '') : '';
+  $('internet_valor').value = r && r.valor != null ? formatarMoeda(r.valor) : '';
+  $('internet_vencimento').value = r && r.vencimentoDia != null ? r.vencimentoDia : '';
+  $('internet_telefone').value = maskTelefone(r ? (r.telefoneSuporte || '') : '');
+  $('internet_linha_acesso').value = r ? (r.linhaAcesso || '') : '';
+  $('internet_link_acesso').value = r ? (r.linkAcesso || '') : '';
+  $('internet_email_contas').value = r ? (r.emailContas || '') : '';
+  $('internet_observacao').value = r ? (r.observacao || '') : '';
+  aplicarUnidadeInternet(r ? r.unidade : '');
+  setInternetModo(id == null);
+  modalInternet.show();
+}
+
+function dadosInternet() {
+  return {
+    unidade: trim($('internet_unidade').value),
+    empresa: trim($('internet_empresa').value),
+    contratoCnpj: trim($('internet_contrato').value),
+    ipInternet: trim($('internet_ip').value),
+    upDown: trim($('internet_up_down').value),
+    valor: parseMoeda($('internet_valor').value),
+    vencimentoDia: $('internet_vencimento').value !== '' ? parseInt($('internet_vencimento').value, 10) : null,
+    telefoneSuporte: trim($('internet_telefone').value),
+    linhaAcesso: trim($('internet_linha_acesso').value),
+    linkAcesso: trim($('internet_link_acesso').value),
+    emailContas: trim($('internet_email_contas').value),
+    observacao: trim($('internet_observacao').value)
+  };
+}
+
+async function salvarInternet(ev) {
+  ev.preventDefault();
+  const form = $('formInternet');
+  if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+  const id = $('internet_id').value;
+  const btn = $('btnSalvarInternet');
+  btn.disabled = true;
+  try {
+    if (id) await api('PUT', '/api/internet/' + id, dadosInternet());
+    else await api('POST', '/api/internet', dadosInternet());
+    modalInternet.hide();
+    await carregarInternet();
+    showAlert('alertInternet', 'success', 'Contrato salvo.');
+  } catch (err) {
+    showAlert('alertInternetModal', 'danger', 'Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function excluirInternet() {
+  const id = $('internet_id').value;
+  if (!id) return;
+  const ok = await uiConfirm('Excluir este contrato de internet?', { title: 'Excluir', okText: 'Excluir' });
+  if (!ok) return;
+  try {
+    await api('DELETE', '/api/internet/' + id);
+    modalInternet.hide();
+    await carregarInternet();
+    showAlert('alertInternet', 'success', 'Contrato excluído.');
+  } catch (err) {
+    showAlert('alertInternetModal', 'danger', 'Erro: ' + err.message);
+  }
 }
 
 function clearFormSelects() {
@@ -3515,6 +3685,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalHistorico = new bootstrap.Modal($('modalHistorico'));
   modalLog = new bootstrap.Modal($('modalLog'));
   modalRegistrar = new bootstrap.Modal($('modalRegistrar'));
+  modalInternet = new bootstrap.Modal($('modalInternet'));
   modalNovoChamado = new bootstrap.Modal($('modalNovoChamado'));
   modalChamadoDetalhe = new bootstrap.Modal($('modalChamadoDetalhe'));
   modalIntecsMsa = new bootstrap.Modal($('modalIntecsMsa'));
@@ -3613,6 +3784,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnAtualizarEmprestimos').addEventListener('click', loadEmprestimos);
   $('tab-usuarios').addEventListener('shown.bs.tab', loadUsuarios);
   $('btnAtualizarUsuarios').addEventListener('click', loadUsuarios);
+  $('tab-internet').addEventListener('shown.bs.tab', carregarInternet);
+  $('btnAtualizarInternet').addEventListener('click', carregarInternet);
+  $('btnNovoInternet').addEventListener('click', () => abrirInternet(null));
+  $('btnExcluirInternet').addEventListener('click', excluirInternet);
+  $('btnEditarInternet').addEventListener('click', () => setInternetModo(true));
+  $('internet_unidade').addEventListener('change', (e) => aplicarUnidadeInternet(e.target.value));
+  $('internet_telefone').addEventListener('input', (e) => { e.target.value = maskTelefone(e.target.value); });
+  $('formInternet').addEventListener('submit', salvarInternet);
+  $('corpoTabelaInternet').addEventListener('click', (e) => {
+    if (e.target.closest('a')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) abrirInternet(tr.getAttribute('data-id'));
+  });
   // Aba Chamados: sub-aba padrão é INTECS vs MSA; MSA (Eurosa) carrega ao abrir sua sub-aba.
   $('tab-chamados').addEventListener('shown.bs.tab', carregarIntecsMsa);
   $('sub-tab-intecsmsa').addEventListener('shown.bs.tab', carregarIntecsMsa);

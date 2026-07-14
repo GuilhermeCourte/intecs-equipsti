@@ -1043,6 +1043,10 @@
             data-bs-target="#pane-chamados" type="button" role="tab">
             <i class="ph ph-headset"></i> Chamados
           </button>
+          <button class="nav-link" id="tab-internet" data-bs-toggle="tab"
+            data-bs-target="#pane-internet" type="button" role="tab">
+            <i class="ph ph-wifi-high"></i> Internet
+          </button>
           <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
             data-bs-target="#pane-gerenciar" type="button" role="tab">
             <i class="ph ph-sliders-horizontal"></i> Opções
@@ -1325,6 +1329,38 @@
             </div>
           </div>
 
+          <!-- ABA INTERNET -->
+          <div class="tab-pane fade" id="pane-internet" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+              <p class="text-muted mb-0">Contratos de internet por unidade.</p>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary btn-sm" id="btnNovoInternet">
+                  <i class="ph ph-plus"></i> Novo
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarInternet" title="Atualizar">
+                  <i class="ph ph-arrow-clockwise fs-5"></i>
+                </button>
+              </div>
+            </div>
+            <div id="alertInternet"></div>
+            <div class="table-scroll-x table-sticky">
+              <table class="table table-striped table-hover align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th>UNIDADE</th>
+                    <th>EMPRESA</th>
+                    <th>IP DE INTERNET</th>
+                    <th>UP/DOWN</th>
+                    <th>LINK DE ACESSO</th>
+                  </tr>
+                </thead>
+                <tbody id="corpoTabelaInternet">
+                  <tr><td colspan="5" class="text-muted">Carregando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- ABA CHAMADOS -->
           <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
 
@@ -1585,6 +1621,95 @@
             </div>
             <div class="col-12 d-grid">
               <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL INTERNET ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalInternet" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-wifi-high me-2"></i><span id="internetModalTitle">Novo contrato de internet</span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertInternetModal"></div>
+          <form id="formInternet" class="needs-validation row g-3" novalidate>
+            <input type="hidden" id="internet_id">
+            <div class="col-md-6">
+              <label class="form-label" for="internet_unidade">UNIDADE *</label>
+              <select class="form-select" id="internet_unidade" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione a unidade.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_cnpj">CNPJ (da unidade)</label>
+              <input type="text" class="form-control" id="internet_cnpj" readonly autocomplete="off" tabindex="-1">
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="internet_endereco">ENDEREÇO DA UNIDADE</label>
+              <input type="text" class="form-control" id="internet_endereco" readonly autocomplete="off" tabindex="-1">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_empresa">EMPRESA</label>
+              <input type="text" class="form-control" id="internet_empresa" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_contrato">CONTRATO (CNPJ)</label>
+              <select class="form-select" id="internet_contrato">
+                <option value="">Selecione...</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_ip">IP DE INTERNET</label>
+              <input type="text" class="form-control" id="internet_ip" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_up_down">UP/DOWN</label>
+              <input type="text" class="form-control" id="internet_up_down" autocomplete="off" placeholder="ex.: 100/50 Mbps">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_valor">VALOR (R$)</label>
+              <input type="text" class="form-control" id="internet_valor" autocomplete="off" inputmode="decimal">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_vencimento">VENCIMENTO (dia do mês)</label>
+              <input type="number" class="form-control" id="internet_vencimento" min="1" max="31" autocomplete="off" placeholder="1 a 31">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_telefone">TELEFONE DE SUPORTE</label>
+              <input type="text" class="form-control" id="internet_telefone" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_linha_acesso">LINHA DE ACESSO</label>
+              <input type="text" class="form-control" id="internet_linha_acesso" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_link_acesso">LINK DE ACESSO</label>
+              <input type="text" class="form-control" id="internet_link_acesso" autocomplete="off" placeholder="http://...">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="internet_email_contas">EMAIL CONTAS</label>
+              <input type="text" class="form-control" id="internet_email_contas" autocomplete="off">
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="internet_observacao">OBSERVAÇÃO</label>
+              <textarea class="form-control" id="internet_observacao" rows="3" autocomplete="off"></textarea>
+            </div>
+            <div class="col-12 d-flex justify-content-between gap-2">
+              <button type="button" class="btn btn-outline-danger" id="btnExcluirInternet">
+                <i class="ph ph-trash"></i> Excluir
+              </button>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-primary" id="btnEditarInternet"><i class="ph ph-pencil-simple"></i> Editar</button>
+                <button type="submit" class="btn btn-primary" id="btnSalvarInternet">Salvar</button>
+              </div>
             </div>
           </form>
         </div>
