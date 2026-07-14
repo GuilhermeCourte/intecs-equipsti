@@ -1013,12 +1013,6 @@
                 <button class="btn btn-link p-0 text-decoration-none text-muted" id="btnMarcarLidas" type="button" style="font-size:.72rem;">Marcar todas como lidas</button>
               </div>
               <div id="notifLista"></div>
-              <div class="border-top px-3 py-2 text-center">
-                <button class="btn btn-sm btn-outline-secondary" id="btnNotifTeste" type="button">
-                  <i class="ph ph-flask"></i> Gerar notificações de exemplo
-                </button>
-                <small id="notifTesteStatus" class="d-block mt-1"></small>
-              </div>
             </div>
           </div>
           <button class="btn btn-sm btn-light" id="btnSair">Sair</button>
@@ -1225,6 +1219,7 @@
                   <option value="">Selecione...</option>
                 </select>
                 <div class="invalid-feedback">Selecione o PAT.</div>
+                <div id="emp_pat_info" class="text-muted mt-1" style="font-size:.8rem"></div>
               </div>
               <div class="col-md-6" id="emp_ns_grupo" style="display:none">
                 <label class="form-label" for="emp_ns">N/S *</label>
@@ -1648,7 +1643,7 @@
               <div class="invalid-feedback">Selecione a unidade.</div>
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="internet_cnpj">CNPJ (da unidade)</label>
+              <label class="form-label" for="internet_cnpj">CNPJ da unidade</label>
               <input type="text" class="form-control" id="internet_cnpj" readonly autocomplete="off" tabindex="-1">
             </div>
             <div class="col-12">

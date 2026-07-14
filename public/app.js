@@ -946,6 +946,17 @@ function invalidarCacheTodos() {
   _todosCarregando = null;
 }
 
+// Recarrega a lista descartando o cache; com filtro ativo, rebaixa todos os
+// registros para que renderTabela não caia no fallback da página atual.
+async function recarregarRegistros() {
+  invalidarCacheTodos();
+  await loadRecords(true);
+  if (Object.keys(colFilters).length > 0) {
+    await carregarTodosParaFiltro();
+    renderTabela();
+  }
+}
+
 async function loadRecords(reset = true) {
   if (_recLoading) return;
   if (!reset && _recAllLoaded) return;
@@ -1046,7 +1057,8 @@ function carregarFotosEdicao(id) {
 }
 
 function abrirEdicao(id) {
-  const r = REGISTROS.filter((x) => String(x.id) === String(id))[0];
+  const fonte = _todosCarregados ? _todosRegistros : REGISTROS;
+  const r = fonte.find((x) => String(x.id) === String(id));
   if (!r) return;
   $('edit_id').value = r.id;
   fillSelect('edit_unidade', valsParaEdicao('UNIDADE', r.unidade), r.unidade);
@@ -1592,7 +1604,7 @@ async function importarXlsx() {
       '<ul class="mt-2 mb-0 ps-3 small">' + listaErros + '</ul>' +
       '</div>';
   }
-  invalidarCacheTodos(); await loadRecords(true);
+  await recarregarRegistros();
 }
 
 // ============================================================
@@ -1663,6 +1675,7 @@ async function loadEmprestimoForm() {
   $('emp_ns_grupo').style.display = 'none';
   $('emp_ns').required = false;
   fillSelect('emp_ns', []);
+  $('emp_pat_info').textContent = '';
   // Data padrão = hoje.
   const hoje = new Date();
   if (fpMap['emp_data']) {
@@ -1674,24 +1687,38 @@ async function loadEmprestimoForm() {
 }
 
 async function atualizarNsEmprestimo(pat) {
+  const info = $('emp_pat_info');
   $('emp_ns_grupo').style.display = 'none';
   $('emp_ns').required = false;
   fillSelect('emp_ns', []);
+  info.textContent = '';
   if (!pat) return;
+  info.textContent = 'Buscando...';
   try {
-    const nsList = await api('GET', '/api/pats/' + encodeURIComponent(pat) + '/ns');
+    const [nsList, d] = await Promise.all([
+      api('GET', '/api/pats/' + encodeURIComponent(pat) + '/ns'),
+      api('GET', '/api/pats/' + encodeURIComponent(pat) + '/info')
+    ]);
+
     if (nsList.length <= 1) {
       // Apenas 1 NS (ou nenhum): auto-seleciona e esconde o campo.
       if (nsList.length === 1) {
         fillSelect('emp_ns', nsList);
         $('emp_ns').value = nsList[0];
       }
-      return;
+    } else {
+      fillSelect('emp_ns', nsList);
+      $('emp_ns').required = true;
+      $('emp_ns_grupo').style.display = '';
     }
-    fillSelect('emp_ns', nsList);
-    $('emp_ns').required = true;
-    $('emp_ns_grupo').style.display = '';
+
+    const ns = nsList.length === 1 ? nsList[0] : '';
+    info.innerHTML = d.equipamento
+      ? `<i class="ph ph-desktop-tower me-1"></i><strong>${escapeHtml(d.equipamento)}</strong>` +
+        (ns ? ` <span class="ms-2 text-secondary">N/S: ${escapeHtml(ns)}</span>` : '')
+      : '';
   } catch (err) {
+    info.textContent = '';
     showAlert('alertEmprestimos', 'danger', 'Erro ao carregar N/S: ' + err.message);
   }
 }
@@ -2271,7 +2298,7 @@ function configurarFormInventario() {
       $('foto_3_slot').classList.add('d-none');
       $('btnAddFoto').classList.remove('d-none');
       modalRegistrar.hide();
-      invalidarCacheTodos(); await loadRecords(true);
+      await recarregarRegistros();
     } catch (err) {
       showAlert('alertRegistrar', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
@@ -2527,7 +2554,7 @@ function configurarFormEditar() {
       $('formEditar').classList.remove('was-validated');
       $('alertEditar').innerHTML = '<div class="alert alert-success py-2 mb-0">Registro atualizado com sucesso!</div>';
       setTimeout(() => { $('alertEditar').innerHTML = ''; }, 4000);
-      invalidarCacheTodos(); await loadRecords(true);
+      await recarregarRegistros();
     } catch (err) {
       showAlert('alertRegistros', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
@@ -3236,34 +3263,6 @@ function initNotificacoes() {
       catch (err) { console.error(err); }
     });
   }
-  const btnTeste = $('btnNotifTeste');
-  if (btnTeste) {
-    btnTeste.addEventListener('click', async () => {
-      const status = $('notifTesteStatus');
-      btnTeste.disabled = true;
-      if (status) { status.className = 'd-block mt-1 text-muted'; status.textContent = 'Gerando…'; }
-      try {
-        const r = await api('POST', '/api/notifications/test', {});
-        await carregarNotificacoes();
-        if (status) {
-          const base = `${r.criadas ?? 0} notificações de exemplo no sininho`;
-          if (r.emailEnviado) {
-            status.className = 'd-block mt-1 text-success';
-            status.textContent = `${base} · e-mail enviado para ${r.email}.`;
-          } else {
-            const naoConfig = /configurad/i.test(r.erro || '');
-            status.className = 'd-block mt-1 ' + (naoConfig ? 'text-warning' : 'text-danger');
-            status.textContent = `${base} · e-mail NÃO enviado`
-              + (r.erro ? ': ' + r.erro : ' (configure o SMTP no .env).');
-          }
-        }
-      } catch (err) {
-        if (status) { status.className = 'd-block mt-1 text-danger'; status.textContent = 'Falha: ' + err.message; }
-      } finally {
-        btnTeste.disabled = false;
-      }
-    });
-  }
 }
 
 async function entrarNoApp(email, restaurarAba = false) {
@@ -3766,7 +3765,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btn) bootstrap.Dropdown.getInstance(btn)?.hide();
   }, { passive: true });
   $('tab-registros').addEventListener('shown.bs.tab', () => loadRecords(true));
-  $('btnAtualizarLista').addEventListener('click', () => { invalidarCacheTodos(); loadRecords(true); });
+  $('btnAtualizarLista').addEventListener('click', () => { recarregarRegistros(); });
   $('btnViewSimples').addEventListener('click', () => setRegistrosView('simples'));
   $('btnViewDetalhada').addEventListener('click', () => setRegistrosView('detalhada'));
   setRegistrosView(localStorage.getItem('registrosView') || 'simples');
