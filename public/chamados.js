@@ -194,6 +194,17 @@ function configurarLogin() {
     }
   });
   $('btnSairChamados').addEventListener('click', sair);
+
+  // Olho de mostrar/ocultar senha (mesmo comportamento do login da Gestão TI)
+  const olho = $('olhoSenha');
+  if (olho) olho.addEventListener('click', () => {
+    const campo = $('loginSenha');
+    const mostrar = campo.type === 'password';
+    campo.type = mostrar ? 'text' : 'password';
+    olho.classList.toggle('ph-eye', !mostrar);
+    olho.classList.toggle('ph-eye-slash', mostrar);
+    olho.setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
+  });
 }
 
 async function carregarCategorias() {
