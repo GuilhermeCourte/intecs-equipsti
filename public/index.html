@@ -107,16 +107,21 @@
     /* Painel escuro decorativo (esquerda no desktop) */
     .auth-aside {
       position: relative; flex: 1 1 50%;
-      background: var(--ink); color: #fff; overflow: hidden;
+      color: #fff; overflow: hidden;
       display: flex; flex-direction: column; justify-content: center;
       padding: 56px 48px;
+      /* Fundo com orbes suaves + vinheta (mesma linguagem do login de chamados, em charcoal) */
+      background:
+        radial-gradient(620px 620px at -10% 30%, rgba(255,255,255,.12) 0%, rgba(255,255,255,.04) 30%, rgba(255,255,255,0) 60%),
+        radial-gradient(210px 210px at 72% 34%, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 55%, rgba(255,255,255,0) 80%),
+        radial-gradient(640px 540px at 96% 114%, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 60%),
+        linear-gradient(160deg, #3A3A3A 0%, #2b2b2b 52%, #191919 100%);
     }
-    .auth-aside::before, .auth-aside::after {
-      content: ""; position: absolute; border-radius: 50%;
-      background: rgba(255,255,255,.06);
+    .auth-aside::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+      opacity: .08; mix-blend-mode: overlay;
     }
-    .auth-aside::before { width: 380px; height: 380px; top: -150px; right: -130px; }
-    .auth-aside::after  { width: 250px; height: 250px; bottom: -120px; left: -100px; }
     .auth-aside .auth-head { position: relative; z-index: 1; }
     .auth-aside .brand-mark {
       display: inline-flex; align-items: center; justify-content: center; margin-bottom: 26px;
@@ -157,8 +162,14 @@
         border-radius: 0; box-shadow: none;
       }
       .auth-aside { flex: 0 0 auto; padding: 44px 32px 36px; }
-      .auth-aside::before { width: 240px; height: 240px; top: -90px; right: -90px; }
-      .auth-aside::after  { width: 170px; height: 170px; bottom: -70px; left: -70px; }
+      /* Orbes menores e mais claros para a faixa compacta do mobile */
+      .auth-aside {
+        background:
+          radial-gradient(240px 240px at -6% 60%, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 35%, rgba(255,255,255,0) 65%),
+          radial-gradient(150px 150px at 80% 25%, rgba(255,255,255,.2) 0%, rgba(255,255,255,.07) 55%, rgba(255,255,255,0) 80%),
+          radial-gradient(260px 220px at 100% 130%, rgba(0,0,0,.45) 0%, rgba(0,0,0,0) 60%),
+          linear-gradient(160deg, #3A3A3A 0%, #2b2b2b 55%, #1D1D1D 100%);
+      }
       .auth-aside h1 { font-size: 2.4rem; }
       .auth-aside p { max-width: 260px; font-size: .92rem; }
       .auth-main { padding: 32px 28px 40px; justify-content: flex-start; }
@@ -173,21 +184,6 @@
       }
       .auth-aside { flex: 1 1 41.7%; }
       .auth-main { flex: 1 1 58.3%; }
-      /* Fundo estilo login de chamados (orbes suaves + grain), em tons charcoal */
-      .auth-aside {
-        background:
-          radial-gradient(620px 620px at -10% 30%, rgba(255,255,255,.12) 0%, rgba(255,255,255,.04) 30%, rgba(255,255,255,0) 60%),
-          radial-gradient(210px 210px at 72% 34%, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 55%, rgba(255,255,255,0) 80%),
-          radial-gradient(640px 540px at 96% 114%, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 60%),
-          linear-gradient(160deg, #3A3A3A 0%, #2b2b2b 52%, #191919 100%);
-      }
-      .auth-aside::before { display: none; }
-      .auth-aside::after {
-        top: 0; right: 0; bottom: 0; left: 0;
-        width: auto; height: auto; border-radius: 0;
-        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
-        opacity: .08; mix-blend-mode: overlay; pointer-events: none;
-      }
       .auth-panel { width: 100%; max-width: 420px; margin: 0 auto; }
       /* Tipografia proporcional à tela cheia (mesma escala do login de chamados) */
       .auth-aside .brand-mark img { width: clamp(72px, 6vw, 88px); height: clamp(72px, 6vw, 88px); }
