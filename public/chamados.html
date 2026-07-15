@@ -4,203 +4,779 @@
   <meta charset="utf-8">
   <script>try { if (localStorage.getItem('token')) document.documentElement.classList.add('sessao-ativa'); } catch (e) {}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#2b2b2b">
+  <meta name="theme-color" content="#F7F6F3">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <title>Chamados — Gestão TI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <title>Central de Chamados — Intecs</title>
   <link rel="icon" type="image/png" href="favicon_intecs.png?v=5">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
   <link href="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/styles/choices.min.css" rel="stylesheet" crossorigin="anonymous">
   <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
   <style>
+    /* ============ 1. Design tokens ============ */
     :root {
-      --ink: #2b2b2b;
-      --ink-2: #1c1c1c;
-      --muted: #9a9a9a;
-      --line: #e4e4e4;
-      --bg: #ffffff;
-      --bg-soft: #f4f4f5;
-      --radius: 16px;
-      --bs-primary: #2b2b2b;
-      --bs-primary-rgb: 43, 43, 43;
+      /* Marca Intecs — gradiente confinado a: hero do login, avatares, brand-mark, arte do empty state */
+      --grad-brand: linear-gradient(135deg, #F0731E 0%, #B0559E 48%, #5B3DF0 100%);
+
+      /* Papéis de cor: índigo = estrutura (foco/links/seleção) · laranja = sinal de ação (CTAs) */
+      --primary: #5B45E0;
+      --primary-soft: #EEEBFA;
+      --ring: rgba(91, 69, 224, .18);
+      --cta: #C25409;
+      --cta-hover: #A94708;
+      --cta-soft: #FAEEE1;
+      --cta-ring: rgba(194, 84, 9, .28);
+      --cta-shadow: 0 8px 24px -8px rgba(194, 84, 9, .35);
+
+      /* Neutros quentes (família única, tipo stone) */
+      --bg: #F7F6F3;
+      --surface: #FFFFFF;
+      --surface-2: #FBFAF8;
+      --ink: #1C1917;
+      --ink-2: #44403C;
+      --muted: #78716C;
+      --faint: #A8A29E;
+      --line: #E7E5E0;
+      --line-strong: #D6D3CD;
+
+      /* Semânticas (fundo suave + texto forte, temperadas para o canvas quente) */
+      --ok-bg: #E6F4EA;      --ok-fg: #1A7F37;
+      --warn-bg: #FCF3E0;    --warn-fg: #9A6700;
+      --danger-bg: #FBECEA;  --danger-fg: #B3261E;
+      --info-bg: #EDEBFA;    --info-fg: #4A3BD1;
+      --teal-bg: #DFF0EE;    --teal-fg: #0E7569;
+      --violet-bg: #F2EDFC;  --violet-fg: #7C3AED;
+      --neutral-bg: #EFEDE9; --neutral-fg: #57534E;
+      --accent-soft: #FAEEE1; --accent-fg: #B4530F;
+
+      /* Tipografia */
+      --font: 'Plus Jakarta Sans', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+      /* Sombras (receitas "beautiful-shadows": sm inclui anel 1px que substitui borda) */
+      --shadow-sm:
+        0px 2px 3px -1px rgba(0, 0, 0, 0.1),
+        0px 1px 0px 0px rgba(25, 28, 33, 0.02),
+        0px 0px 0px 1px rgba(25, 28, 33, 0.08);
+      --shadow-md:
+        0px 0px 0px 1px rgba(0, 0, 0, 0.06),
+        0px 1px 1px -0.5px rgba(0, 0, 0, 0.06),
+        0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
+        0px 6px 6px -3px rgba(0, 0, 0, 0.06),
+        0px 12px 12px -6px rgba(0, 0, 0, 0.06),
+        0px 24px 24px -12px rgba(0, 0, 0, 0.06);
+      --shadow-lg:
+        0 2.8px 2.2px rgba(0, 0, 0, 0.034),
+        0 6.7px 5.3px rgba(0, 0, 0, 0.048),
+        0 12.5px 10px rgba(0, 0, 0, 0.06),
+        0 22.3px 17.9px rgba(0, 0, 0, 0.072),
+        0 41.8px 33.4px rgba(0, 0, 0, 0.086),
+        0 100px 80px rgba(0, 0, 0, 0.12);
+
+      /* Raios crispos */
+      --r-btn: 8px; --r-md: 12px; --r-lg: 16px; --r-login: 22px;
+
+      /* Motion */
+      --dur-micro: 150ms;
+      --dur-state: 220ms;
+      --dur-pop: 260ms;
+      --dur-entrance: 480ms;
+      --ease-out: cubic-bezier(.16, 1, .3, 1);
+      --ease-in: cubic-bezier(.4, 0, 1, 1);
+
+      /* Ponte Bootstrap */
+      --bs-primary: #5B45E0;
+      --bs-primary-rgb: 91, 69, 224;
+      --bs-body-font-family: var(--font);
+      --bs-border-radius: 12px;
     }
+
+    /* ============ 2. Base ============ */
     * { -webkit-tap-highlight-color: transparent; }
     body {
-      background-color: var(--bg-soft);
-      font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      font-family: var(--font);
       color: var(--ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
     }
     html.sessao-ativa #loginBox { display: none !important; }
+    ::selection { background: var(--primary-soft); }
     .text-muted { color: var(--muted) !important; }
-    .form-label { font-weight: 600; font-size: .85rem; letter-spacing: .3px; color: #555; }
+    a { color: var(--primary); }
+    i.ph { line-height: 1; }
+    h1, h2, h3, h5, h6 { text-wrap: balance; }
 
-    .btn { border-radius: 10px; font-weight: 600; letter-spacing: .4px; }
-    .btn-primary, .btn-success {
-      background: var(--ink); border-color: var(--ink); color: #fff;
-    }
-    .btn-primary:hover, .btn-primary:focus, .btn-primary:active,
-    .btn-success:hover, .btn-success:focus, .btn-success:active {
-      background: var(--ink-2) !important; border-color: var(--ink-2) !important; color: #fff !important;
-    }
-    .btn-outline-primary, .btn-outline-secondary { color: var(--ink); border-color: #cfcfcf; }
-    .btn-outline-primary:hover, .btn-outline-secondary:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
-    .btn-light { background: #fff; border-color: rgba(255,255,255,.6); color: var(--ink); }
-
-    /* Bootstrap usa azul no anel de foco/clique por padrão — troca pro tom do sistema. */
+    /* ============ 3. Overrides Bootstrap ============ */
+    .btn { border-radius: var(--r-btn); font-weight: 600; }
     .btn:focus, .btn:focus-visible, .btn.focus,
     .btn-check:focus + .btn, .btn:active:focus {
-      box-shadow: 0 0 0 .2rem rgba(43,43,43,.25) !important;
+      box-shadow: 0 0 0 4px var(--ring) !important;
     }
-    .btn-close:focus { box-shadow: 0 0 0 .2rem rgba(43,43,43,.25); }
-    .form-check-input:focus { border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12); }
-    .form-check-input:checked { background-color: var(--ink); border-color: var(--ink); }
-    a { color: var(--ink); }
+    .btn-close:focus { box-shadow: 0 0 0 4px var(--ring); }
+    .btn-sm { padding: .4rem .75rem; font-size: .8rem; }
 
-    .form-control, .form-select { border-radius: 10px; }
+    .form-label { font-weight: 600; font-size: .8rem; letter-spacing: .01em; color: var(--ink-2); margin-bottom: 6px; }
+    .form-control, .form-select {
+      border-radius: var(--r-md); border-color: var(--line-strong); color: var(--ink);
+      min-height: 46px; font-size: .92rem; background: var(--surface);
+      transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+    }
+    textarea.form-control { min-height: 0; padding-top: 10px; }
+    .form-control::placeholder { color: var(--faint); }
     .form-control:focus, .form-select:focus {
-      border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12);
+      border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring);
+    }
+    .form-select-sm { min-height: 38px; }
+    input:-webkit-autofill {
+      -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+      -webkit-text-fill-color: var(--ink);
     }
 
-    .app-card { margin: 22px auto; border: none; border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.06); }
-    .app-card .card-header {
-      background: var(--ink) !important; color: #fff;
-      border-radius: var(--radius) var(--radius) 0 0 !important;
-      padding: 1rem 1.25rem;
-    }
-    .app-card .card-body { padding: 1.5rem; }
+    .alert { border: 0; border-radius: var(--r-md); font-size: .86rem; font-weight: 500; padding: .7rem .95rem; }
+    .alert-danger { background: var(--danger-bg); color: var(--danger-fg); }
+    .alert-warning { background: var(--warn-bg); color: var(--warn-fg); }
+    #alertLogin .alert, #alertNovo .alert { margin-bottom: 16px !important; }
 
-    .badge-status {
-      display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .5px;
-      padding: .35em .7em; border-radius: 6px;
+    /* Badges — base + re-skin das classes que o slaInfo() injeta */
+    .badge {
+      font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+      border-radius: 999px; padding: .42em .8em; font-size: .6875rem; line-height: 1.15;
+      display: inline-flex; align-items: center;
     }
-    .ticket-row {
-      border: 1px solid var(--line); border-radius: 12px; cursor: pointer; transition: box-shadow .15s;
-    }
-    .ticket-row:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+    .badge.bg-success   { background: var(--ok-bg) !important;      color: var(--ok-fg) !important; }
+    .badge.bg-warning   { background: var(--warn-bg) !important;    color: var(--warn-fg) !important; }
+    .badge.bg-danger    { background: var(--danger-bg) !important;  color: var(--danger-fg) !important; }
+    .badge.bg-secondary { background: var(--neutral-bg) !important; color: var(--neutral-fg) !important; }
 
-    /* Dropdowns (Choices.js) — opção em destaque no hover fica escura, igual ao resto do sistema. */
-    .choices[data-type*="select-one"]::after { border-color: var(--ink) transparent transparent; }
+    .modal-content { border: 0; border-radius: var(--r-lg); box-shadow: var(--shadow-lg); }
+    .modal-header { border-bottom: 1px solid var(--line); padding: 18px 24px; }
+    .modal-title { font-weight: 700; font-size: 1.05rem; letter-spacing: -.01em; }
+    .modal-sub { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+    .modal-body { padding: 22px 24px; }
+    .modal-footer { border-top: 1px solid var(--line); padding: 14px 24px; }
+    .modal-backdrop { background: #221E18; }
+    /* Entrada scale+fade no lugar do slide -50px do Bootstrap */
+    .modal.fade .modal-dialog {
+      transform: translateY(10px) scale(.985);
+      transition: transform var(--dur-pop) var(--ease-out);
+    }
+    .modal.show .modal-dialog { transform: none; }
+
+    /* ============ 4. Botões próprios ============ */
+    .btn-cta {
+      background: var(--cta); border: 0; color: #fff; font-weight: 700;
+      border-radius: var(--r-btn); display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px; padding: .62rem 1.2rem; box-shadow: var(--cta-shadow);
+      transition: background var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+    }
+    .btn-cta:hover { background: var(--cta-hover); color: #fff; }
+    .btn-cta:active { transform: scale(.98); color: #fff; }
+    .btn-cta:disabled { opacity: .6; box-shadow: none; color: #fff; }
+    .btn-cta:focus, .btn-cta:focus-visible { box-shadow: var(--cta-shadow), 0 0 0 4px var(--cta-ring) !important; }
+    .btn-ghost {
+      background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink-2);
+      font-weight: 600; border-radius: var(--r-btn); display: inline-flex; align-items: center; gap: 6px;
+      transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+    }
+    .btn-ghost:hover { background: var(--surface-2); border-color: var(--faint); color: var(--ink); }
+    .btn-ghost:active { transform: scale(.98); }
+    .btn-send {
+      width: 46px; height: 46px; min-width: 46px; border-radius: 50%;
+      padding: 0; font-size: 18px;
+    }
+
+    /* ============ 5. Inputs com ícone ============ */
+    .input-icon { position: relative; }
+    .input-icon > i {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      color: var(--faint); font-size: 18px; pointer-events: none; z-index: 5;
+    }
+    .input-icon .form-control { padding-left: 42px; height: 48px; }
+
+    /* ============ 6. Re-skin Choices.js ============ */
+    .choices { margin-bottom: 0; }
+    .choices__inner {
+      background: var(--surface); border: 1px solid var(--line-strong);
+      border-radius: var(--r-md) !important; min-height: 46px; padding: 8px 12px; font-size: .92rem;
+      transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+    }
+    .choices.is-focused .choices__inner, .choices.is-open .choices__inner {
+      border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring);
+    }
+    .choices__placeholder { color: var(--faint); opacity: 1; }
+    .choices[data-type*="select-one"]::after { border-color: var(--muted) transparent transparent; right: 14px; }
+    .choices[data-type*="select-one"].is-open::after { border-color: transparent transparent var(--muted); margin-top: -6px; }
     .choices__list--dropdown, .choices__list[aria-expanded] {
-      border: 1px solid #ced4da; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden; z-index: 9999;
+      border: 0; border-radius: var(--r-md); box-shadow: var(--shadow-md);
+      overflow: hidden; z-index: 9999; margin-top: 4px; background: var(--surface);
     }
     .choices__list--dropdown .choices__item, .choices__list[aria-expanded] .choices__item {
-      padding: 10px 14px; font-size: .95rem; border-bottom: 1px solid #f1f1f1;
+      padding: 10px 14px; font-size: .9rem;
     }
     .choices__list--dropdown .choices__item--selectable.is-highlighted,
     .choices__list[aria-expanded] .choices__item--selectable.is-highlighted {
-      background: #000; color: #fff;
+      background: var(--primary-soft); color: var(--primary);
     }
     .choices__list--dropdown .choices__item--selectable.is-selected,
     .choices__list[aria-expanded] .choices__item--selectable.is-selected {
-      font-weight: 600; background: var(--bg-soft);
+      font-weight: 600; background: var(--surface-2);
     }
     .choices__list--dropdown .choices__item--selectable.is-selected.is-highlighted,
     .choices__list[aria-expanded] .choices__item--selectable.is-selected.is-highlighted {
-      background: #000; color: #fff;
+      background: var(--primary-soft); color: var(--primary);
     }
-    .choices__inner { border-radius: 10px !important; }
+
+    /* ============ 7. Login ============ */
+    .login-shell {
+      min-height: 100vh; min-height: 100dvh;
+      display: grid; background: var(--bg);
+    }
+    .login-card {
+      position: relative;
+      display: grid; grid-template-columns: 1fr 1.4fr;
+      width: 100%; min-height: 100vh; min-height: 100dvh; overflow: hidden;
+      background: var(--surface);
+    }
+    .login-hero {
+      position: relative; display: flex; flex-direction: column;
+      justify-content: space-between; gap: 28px; padding: 48px 52px; color: #fff;
+      background:
+        radial-gradient(620px 620px at -10% 30%, #F97C26 0%, rgba(249, 124, 38, .55) 30%, rgba(249, 124, 38, 0) 60%),
+        radial-gradient(200px 200px at 72% 34%, rgba(250, 140, 60, .95) 0%, rgba(160, 90, 190, .55) 55%, rgba(44, 54, 232, 0) 80%),
+        radial-gradient(640px 540px at 96% 114%, rgba(18, 14, 106, .95) 0%, rgba(18, 14, 106, 0) 60%),
+        linear-gradient(160deg, #3B45F2 0%, #2C36E8 52%, #241F9E 100%);
+    }
+    .login-hero::after {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+      opacity: .08; mix-blend-mode: overlay;
+    }
+    .login-hero > * { position: relative; z-index: 1; }
+    .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .hero-top img { height: 42px; width: auto; }
+    .hero-tag {
+      font-family: var(--mono); font-size: .6rem; letter-spacing: .16em;
+      text-transform: uppercase; opacity: .7; white-space: nowrap;
+    }
+    .login-hero h1 { font-size: clamp(2.2rem, 3.2vw, 3.4rem); font-weight: 800; letter-spacing: -.025em; line-height: 1.1; margin: 0 0 14px; }
+    .login-hero p { font-size: clamp(1.05rem, 1.3vw, 1.3rem); opacity: .88; max-width: 420px; margin: 0; line-height: 1.55; }
+    .hero-glass {
+      display: inline-flex; align-items: center; gap: 14px; width: fit-content;
+      margin-top: 28px; padding: 14px 20px; border-radius: var(--r-md);
+      background: rgba(255, 255, 255, .17); border: 1px solid rgba(255, 255, 255, .3);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+    .hg-check {
+      width: 32px; height: 32px; min-width: 32px; border-radius: 50%;
+      background: rgba(74, 222, 128, .35); color: #C9F9DB;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 17px;
+    }
+    .hg-bars { display: flex; flex-direction: column; gap: 7px; }
+    .hg-bars span { display: block; height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .65); width: 132px; }
+    .hg-bars span + span { width: 80px; background: rgba(255, 255, 255, .35); }
+    .hero-foot { display: flex; flex-direction: column; gap: 8px; }
+    .login-tagline { font-size: .82rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; opacity: .8; }
+    .hero-meta { font-family: var(--mono); font-size: .68rem; letter-spacing: .14em; opacity: .55; }
+    .hero-corner { position: absolute; width: 6px; height: 6px; background: rgba(255, 255, 255, .3); z-index: 1; }
+    .hero-corner.tr { top: 14px; right: 14px; }
+    .hero-corner.bl { bottom: 14px; left: 14px; }
+
+    .login-pane {
+      padding: 48px 44px; display: flex; flex-direction: column; justify-content: center; align-items: center;
+    }
+    .login-pane > * { width: 100%; max-width: 420px; }
+    @media (min-width: 1200px) {
+      .login-hero { padding: 64px; }
+      .hero-top img { height: 48px; }
+      .hero-corner.tr { top: 20px; right: 20px; }
+      .hero-corner.bl { bottom: 20px; left: 20px; }
+      .login-sub { margin-bottom: 30px; }
+      .login-form .form-label { font-size: .85rem; margin-top: 18px; }
+      .input-icon .form-control { height: 54px; font-size: 1rem; padding-left: 46px; }
+      .input-icon > i { font-size: 20px; left: 16px; }
+      .login-form .btn-cta { height: 54px; font-size: 1.05rem; margin-top: 28px; }
+    }
+    .login-title { font-size: clamp(1.45rem, 1.8vw, 2.1rem); font-weight: 800; letter-spacing: -.015em; margin: 0 0 6px; }
+    .login-sub { color: var(--muted); font-size: clamp(.88rem, 1vw, 1.05rem); margin: 0 0 22px; }
+    .login-form .form-label { margin-top: 14px; }
+    .login-form .form-label:first-of-type { margin-top: 0; }
+    .login-form .btn-cta { margin-top: 24px; height: 48px; font-size: .95rem; width: 100%; }
+    /* Entrance única do login (coreografia hero → título → form) */
+    .login-hero .hero-top    { animation: entra var(--dur-entrance) var(--ease-out) both; }
+    .login-hero .hero-copy   { animation: entra var(--dur-entrance) var(--ease-out) 60ms both; }
+    .login-hero .hero-foot   { animation: entra var(--dur-entrance) var(--ease-out) 120ms both; }
+    .login-pane .login-title { animation: entra var(--dur-entrance) var(--ease-out) 100ms both; }
+    .login-pane .login-sub   { animation: entra var(--dur-entrance) var(--ease-out) 160ms both; }
+    .login-pane .login-form  { animation: entra var(--dur-entrance) var(--ease-out) 220ms both; }
+
+    @media (max-width: 820px) {
+      .login-card { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      .login-hero { padding: 26px 24px; gap: 16px; }
+      .hero-top img { height: 32px; }
+      .hero-tag { display: none; }
+      .login-hero h1 { font-size: 1.6rem; margin-bottom: 4px; }
+      .login-hero p, .hero-glass, .hero-corner { display: none; }
+      .login-pane { padding: 30px 26px 34px; }
+    }
+
+    /* ============ 8. Topbar ============ */
+    .topbar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(255, 255, 255, .82);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar-inner {
+      max-width: 960px; margin: 0 auto; padding: 10px 20px;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand img { height: 26px; width: auto; display: block; }
+    .brand-duo { display: flex; align-items: center; gap: 12px; }
+    .brand-sep { width: 1px; height: 22px; background: var(--line-strong); }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .user-chip {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface); box-shadow: var(--shadow-sm);
+      border-radius: 999px; padding: 4px 12px 4px 4px;
+    }
+    .user-chip small { font-size: .78rem; color: var(--ink-2); font-weight: 500; }
+    .user-avatar {
+      width: 26px; height: 26px; border-radius: 50%; background: var(--grad-brand);
+      color: #fff; font-size: .6rem; font-weight: 700; letter-spacing: .04em;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    @media (max-width: 576px) {
+      .user-chip { padding: 4px; box-shadow: none; background: transparent; }
+      .user-chip small { display: none; }
+      .brand img { height: 22px; }
+    }
+
+    /* ============ 9. Página / molduras técnicas / hero ============ */
+    .page { position: relative; max-width: 960px; margin: 0 auto; padding: 8px 20px 72px; }
+    @media (min-width: 992px) {
+      .page::before, .page::after {
+        content: ''; position: absolute; top: 0; bottom: 0; width: 1px;
+        background: rgba(28, 25, 23, .06); pointer-events: none;
+      }
+      .page::before { left: 0; }
+      .page::after { right: 0; }
+      .page-corner { position: absolute; width: 4px; height: 4px; background: var(--line-strong); pointer-events: none; }
+      .page-corner.tl { top: 0; left: 0; transform: translate(-50%, -50%); }
+      .page-corner.tr { top: 0; right: 0; transform: translate(50%, -50%); }
+    }
+    @media (max-width: 991.98px) { .page-corner { display: none; } }
+
+    .hero-row {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      gap: 16px; margin: 26px 0 20px; flex-wrap: wrap;
+    }
+    .hero-row h1 { font-size: 1.55rem; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+    .hero-sub { color: var(--muted); font-size: .9rem; margin-top: 4px; }
+    @media (max-width: 576px) {
+      .hero-row { flex-direction: column; align-items: stretch; margin-top: 20px; }
+      .hero-row .btn-cta { width: 100%; }
+    }
+
+    .eyebrow {
+      display: flex; align-items: center; gap: 12px;
+      font-family: var(--mono); font-size: .66rem; font-weight: 500;
+      letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+      margin: 28px 0 12px;
+    }
+    .eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+    /* ============ 10. Stats ============ */
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .stat-card {
+      background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow-sm);
+      padding: 16px; display: flex; gap: 12px; align-items: center;
+    }
+    .stat-icon {
+      width: 40px; height: 40px; min-width: 40px; border-radius: 10px;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 20px;
+    }
+    .ic-indigo { background: var(--info-bg);    color: var(--info-fg); }
+    .ic-violet { background: var(--violet-bg);  color: var(--violet-fg); }
+    .ic-orange { background: var(--accent-soft); color: var(--accent-fg); }
+    .ic-green  { background: var(--ok-bg);      color: var(--ok-fg); }
+    .stat-info { display: flex; flex-direction: column; min-width: 0; }
+    .stat-value { font-size: 1.45rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .stat-label { font-size: .74rem; color: var(--muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    @media (max-width: 820px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 400px) { .stats-grid { grid-template-columns: 1fr; } }
+
+    /* ============ 11. Toolbar (busca + chips) ============ */
+    .toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 0 0 12px; }
+    .search-box { flex: 1 1 240px; position: relative; min-width: 200px; }
+    .search-box > i {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      color: var(--faint); font-size: 17px; pointer-events: none;
+    }
+    .search-box input {
+      width: 100%; height: 44px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
+      background: var(--surface); padding: 0 44px 0 42px; font-size: .9rem; color: var(--ink);
+      outline: 0; transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+    }
+    .search-box input::placeholder { color: var(--faint); }
+    .search-box input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px var(--ring); }
+    .search-kbd {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      font-family: var(--mono); font-size: .62rem; color: var(--faint);
+      border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px;
+      background: var(--surface-2); pointer-events: none;
+    }
+    @media (max-width: 767.98px) { .search-kbd { display: none; } }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2);
+      border-radius: 999px; padding: .42rem .9rem; font-size: .8rem; font-weight: 600;
+      transition: border-color var(--dur-micro) var(--ease-out), background var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+      cursor: pointer;
+    }
+    .chip:hover { border-color: var(--faint); color: var(--ink); }
+    .chip.active { background: var(--primary-soft); border-color: transparent; color: var(--primary); }
+    .chip:focus-visible { outline: 0; box-shadow: 0 0 0 4px var(--ring); }
+    .lista-status { font-family: var(--mono); font-size: .7rem; color: var(--muted); margin-bottom: 10px; min-height: 1em; letter-spacing: .02em; }
+
+    /* ============ 12. Tickets + badges de status/prioridade ============ */
+    .tickets { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: 84px; }
+    .ticket-row {
+      background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow-sm);
+      padding: 16px 18px; display: flex; align-items: center; gap: 14px; cursor: pointer;
+      transition: box-shadow var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+    }
+    @media (hover: hover) {
+      .ticket-row:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+      .ticket-row:hover .ticket-chev { transform: translateX(2px); color: var(--muted); }
+    }
+    .ticket-row:active { transform: scale(.99); }
+    .ticket-main { flex: 1; min-width: 0; }
+    .ticket-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .ticket-num { font-family: var(--mono); font-size: .7rem; font-weight: 500; color: var(--faint); }
+    .ticket-title { font-size: .95rem; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ticket-meta { font-size: .78rem; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ticket-meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--faint); display: inline-block; }
+    .ticket-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .ticket-chev { color: var(--faint); font-size: 16px; transition: transform var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out); }
+    @media (max-width: 576px) {
+      .ticket-row { flex-wrap: wrap; padding: 14px 16px; }
+      .ticket-main { flex: 1 1 100%; }
+      .ticket-title { white-space: normal; }
+      .ticket-side { flex-direction: row; align-items: center; margin-top: 2px; }
+      .ticket-chev { display: none; }
+    }
+
+    /* Status (fallback neutro cobre status novos do status-config) */
+    .badge-status { background: var(--neutral-bg); color: var(--neutral-fg); }
+    .st-ABERTO                { background: var(--info-bg);    color: var(--info-fg); }
+    .st-EM_ANALISE            { background: var(--violet-bg);  color: var(--violet-fg); }
+    .st-EM_ATENDIMENTO        { background: var(--teal-bg);    color: var(--teal-fg); }
+    .st-AGUARDANDO_USUARIO    { background: var(--accent-soft); color: var(--accent-fg); }
+    .st-AGUARDANDO_FORNECEDOR { background: var(--warn-bg);    color: var(--warn-fg); }
+    .st-RESOLVIDO             { background: var(--ok-bg);      color: var(--ok-fg); }
+    .st-FECHADO               { background: var(--neutral-bg); color: var(--neutral-fg); }
+    .st-CANCELADO             { background: var(--neutral-bg); color: var(--neutral-fg); }
+
+    /* Prioridade */
+    .badge-prio { background: var(--neutral-bg); color: var(--neutral-fg); }
+    .prio-BAIXA   { background: var(--neutral-bg); color: var(--neutral-fg); }
+    .prio-MEDIA   { background: var(--info-bg);    color: var(--info-fg); }
+    .prio-ALTA    { background: var(--accent-soft); color: var(--accent-fg); }
+    .prio-CRITICA { background: var(--danger-bg);  color: var(--danger-fg); }
+    .prio-CRITICA::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: currentColor; margin-right: 6px;
+    }
+
+    /* ============ 13. Paginação ============ */
+    .paginacao { display: flex; gap: 6px; justify-content: center; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+    .page-btn {
+      width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line-strong);
+      background: var(--surface); color: var(--ink-2); font-size: .82rem; font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: border-color var(--dur-micro) var(--ease-out), background var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+    }
+    .page-btn:hover:not(:disabled):not(.active) { border-color: var(--faint); color: var(--ink); }
+    .page-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .page-btn:disabled { opacity: .4; cursor: default; }
+    .page-btn:focus-visible { outline: 0; box-shadow: 0 0 0 4px var(--ring); }
+    .page-dots { color: var(--faint); padding: 0 2px; }
+
+    /* ============ 14. Skeleton + empty state ============ */
+    .sk { display: block; background: var(--line); border-radius: 6px; position: relative; overflow: hidden; }
+    .sk::after, .sk-stat::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent);
+      transform: translateX(-100%); animation: shimmer 1.4s infinite;
+    }
+    .sk-card {
+      background: var(--surface); box-shadow: var(--shadow-sm); border-radius: var(--r-md);
+      padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; gap: 14px;
+    }
+    .sk-col { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .sk-right { align-items: flex-end; flex: 0 0 90px; }
+    .sk-sm { width: 56px; height: 10px; }
+    .sk-lg { width: min(320px, 70%); height: 14px; }
+    .sk-md { width: min(200px, 50%); height: 10px; }
+    .sk-pill { width: 82px; height: 22px; border-radius: 999px; }
+    .sk-stat {
+      height: 72px; border-radius: var(--r-md); background: var(--surface);
+      box-shadow: var(--shadow-sm); position: relative; overflow: hidden;
+    }
+    .empty-state {
+      text-align: center; padding: 48px 20px;
+      background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--r-lg);
+    }
+    .empty-state h3 { font-size: 1.02rem; font-weight: 700; margin: 14px 0 4px; }
+    .empty-state p { font-size: .86rem; color: var(--muted); margin: 0 auto; max-width: 360px; }
+    .empty-state .chip { margin-top: 16px; }
+    .empty-state i.ph { font-size: 40px; color: var(--faint); }
+
+    /* ============ 15. Modais — conteúdo ============ */
+    .callout {
+      display: flex; gap: 12px; align-items: flex-start;
+      background: var(--primary-soft); border: 1px dashed #D5CEF5;
+      border-radius: var(--r-md); padding: 14px 16px;
+    }
+    .callout > i { font-size: 20px; color: var(--primary); margin-top: 1px; }
+    .callout-body { flex: 1; min-width: 0; }
+    .callout-text { font-size: .84rem; color: var(--ink-2); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .det-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .det-meta { font-size: .78rem; color: var(--muted); margin-top: 8px; }
+    .det-desc {
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+      padding: 14px 16px; font-size: .9rem; margin-top: 12px; white-space: pre-wrap; word-break: break-word;
+    }
+    .det-heading {
+      font-family: var(--mono); font-size: .66rem; font-weight: 500; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--muted); display: flex; align-items: center; gap: 6px; margin: 20px 0 10px;
+    }
+    .det-heading i.ph { font-size: 14px; }
+    .det-vazio { font-size: .84rem; color: var(--faint); }
+    .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 18px; }
+    .kv-chave { display: block; font-family: var(--mono); font-size: .6rem; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .kv-valor { display: block; font-size: .84rem; word-break: break-word; }
+
+    .comment { display: flex; gap: 10px; margin-bottom: 12px; }
+    .comment-avatar {
+      width: 30px; height: 30px; min-width: 30px; border-radius: 50%;
+      background: var(--grad-brand); color: #fff; font-size: .6rem; font-weight: 700;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .comment-bubble {
+      background: var(--surface-2); border: 1px solid var(--line);
+      border-radius: 4px 14px 14px 14px; padding: 10px 14px; max-width: 85%; min-width: 0;
+    }
+    .comment-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 2px; }
+    .comment-autor { font-size: .75rem; font-weight: 700; color: var(--ink-2); }
+    .comment-data { font-family: var(--mono); font-size: .62rem; color: var(--faint); }
+    .comment-texto { font-size: .88rem; white-space: pre-wrap; word-break: break-word; }
+    .comment--me { flex-direction: row-reverse; }
+    .comment--me .comment-bubble { background: var(--primary-soft); border-color: #DDD6F8; border-radius: 14px 4px 14px 14px; }
+    .comment--me .comment-head { flex-direction: row-reverse; }
+    .composer { display: flex; gap: 10px; align-items: flex-end; margin-top: 14px; }
+    .composer textarea { resize: vertical; }
+
+    /* ============ 16. Toast + spinner ============ */
+    .toast-zone {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 2000; display: flex; flex-direction: column; align-items: center; gap: 8px;
+      pointer-events: none; width: max-content; max-width: calc(100vw - 32px);
+    }
+    .toastx {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface); border-radius: 999px; box-shadow: var(--shadow-md);
+      padding: 10px 18px 10px 14px;
+      font-size: .86rem; font-weight: 600; color: var(--ink);
+      animation: toast-in var(--dur-pop) var(--ease-out); pointer-events: auto;
+    }
+    .toastx i.ph { font-size: 18px; color: var(--ok-fg); }
+    .toastx-erro i.ph { color: var(--danger-fg); }
+    .toastx.saindo { opacity: 0; transform: translateY(6px); transition: opacity 350ms var(--ease-in), transform 350ms var(--ease-in); }
+    .spin {
+      width: 14px; height: 14px; min-width: 14px; display: inline-block;
+      border: 2px solid var(--line-strong); border-top-color: var(--primary);
+      border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px;
+    }
+
+    /* ============ 17. Animações + acessibilidade ============ */
+    .entra { animation: entra var(--dur-entrance) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
+    @keyframes entra { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes shimmer { to { transform: translateX(100%); } }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important; scroll-behavior: auto !important;
+      }
+    }
   </style>
 </head>
 <body>
 
-  <div class="container py-4" id="loginBox" style="max-width:640px;">
-    <div class="card app-card">
-      <div class="card-header d-flex align-items-center gap-2">
-        <img src="logo_intecs.png" alt="Intecs" style="height:28px;width:auto;">
-        <h5 class="mb-0">Chamados — Gestão TI</h5>
-      </div>
-      <div class="card-body">
+  <!-- ===== Login ===== -->
+  <div id="loginBox" class="login-shell">
+    <div class="login-card">
+      <aside class="login-hero">
+        <span class="hero-corner tr" aria-hidden="true"></span>
+        <span class="hero-corner bl" aria-hidden="true"></span>
+        <div class="hero-top">
+          <img src="logo_intecs.png" alt="Intecs">
+        </div>
+        <div class="hero-copy">
+          <h1>Central de<br>Chamados</h1>
+          <p>Abra e acompanhe suas solicitações</p>
+          <div class="hero-glass" aria-hidden="true">
+            <span class="hg-check"><i class="ph ph-check"></i></span>
+            <span class="hg-bars"><span></span><span></span></span>
+          </div>
+        </div>
+        <div class="hero-foot">
+          <span class="login-tagline">Inovação em desenvolvimento social</span>
+          <span class="hero-meta">INTECS · SUPORTE INTERNO DE TI</span>
+        </div>
+      </aside>
+      <div class="login-pane">
+        <h2 class="login-title">Bem-vindo(a)</h2>
+        <p class="login-sub">Entre com seu e-mail corporativo para continuar.</p>
         <div id="alertLogin"></div>
-        <form id="formLogin" class="row g-3">
-          <div class="col-12">
-            <label class="form-label">E-mail</label>
-            <input type="email" class="form-control" id="loginEmail" required>
+        <form id="formLogin" class="login-form">
+          <label class="form-label" for="loginEmail">E-mail</label>
+          <div class="input-icon">
+            <i class="ph ph-envelope-simple"></i>
+            <input type="email" class="form-control" id="loginEmail" required autocomplete="email" placeholder="voce@intecsbr.org">
           </div>
-          <div class="col-12">
-            <label class="form-label">Senha</label>
-            <input type="password" class="form-control" id="loginSenha" required>
+          <label class="form-label" for="loginSenha">Senha</label>
+          <div class="input-icon">
+            <i class="ph ph-lock-key"></i>
+            <input type="password" class="form-control" id="loginSenha" required autocomplete="current-password" placeholder="Sua senha">
           </div>
-          <div class="col-12">
-            <button type="submit" class="btn btn-primary w-100" id="btnLogin">Entrar</button>
-          </div>
+          <button type="submit" class="btn btn-cta" id="btnLogin">Entrar <i class="ph ph-arrow-right"></i></button>
         </form>
       </div>
     </div>
   </div>
 
-  <div class="container py-4" id="appBox" style="display:none;">
-    <div class="card app-card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0 d-flex align-items-center gap-2">
-          <img src="logo_intecs.png" alt="Intecs" style="height:28px;width:auto;">
-          Chamados
-        </h5>
-        <div class="d-flex align-items-center gap-2">
-          <small id="userEmailChamados" class="d-none d-sm-inline"></small>
-          <button type="button" class="btn btn-sm btn-light" id="btnSairChamados">Sair</button>
+  <!-- ===== App ===== -->
+  <div id="appBox" style="display:none;">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <img src="logo_intecs_cor.png" alt="Intecs">
+          <span id="brandArmazem" class="brand-duo" style="display:none">
+            <span class="brand-sep"></span>
+            <img src="logo_armazem.png" alt="Armazém Solidário">
+          </span>
+        </div>
+        <div class="topbar-right">
+          <span class="user-chip">
+            <span class="user-avatar" id="userAvatar" aria-hidden="true"></span>
+            <small id="userEmailChamados"></small>
+          </span>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnSairChamados"><i class="ph ph-sign-out"></i> Sair</button>
         </div>
       </div>
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h6 class="mb-0">Meus Chamados</h6>
-          <button type="button" class="btn btn-primary btn-sm" id="btnNovo"><i class="ph ph-plus"></i> Abrir Chamado</button>
+    </header>
+
+    <main class="page">
+      <span class="page-corner tl" aria-hidden="true"></span>
+      <span class="page-corner tr" aria-hidden="true"></span>
+
+      <section class="hero-row">
+        <div>
+          <h1 id="heroTitulo">Olá!</h1>
+          <div class="hero-sub">Acompanhe suas solicitações ou abra um novo chamado para a equipe de TI.</div>
         </div>
-        <div id="listaStatus" class="text-muted small mb-2"></div>
-        <div id="listaChamados" class="d-flex flex-column gap-2"></div>
-      </div>
-    </div>
+        <button type="button" class="btn btn-cta" id="btnNovo"><i class="ph ph-plus"></i> Novo chamado</button>
+      </section>
+
+      <section class="stats-grid" id="statsGrid"></section>
+
+      <div class="eyebrow">Meus chamados</div>
+
+      <section class="toolbar">
+        <div class="search-box">
+          <i class="ph ph-magnifying-glass"></i>
+          <input type="search" id="buscaChamados" placeholder="Buscar por título ou nº..." aria-label="Buscar chamados">
+          <span class="search-kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="chips" id="filtroStatus">
+          <button type="button" class="chip active" data-filtro="todos">Todos</button>
+          <button type="button" class="chip" data-filtro="andamento">Em andamento</button>
+          <button type="button" class="chip" data-filtro="voce">Aguardando você</button>
+          <button type="button" class="chip" data-filtro="concluidos">Concluídos</button>
+        </div>
+      </section>
+
+      <div id="listaStatus" class="lista-status"></div>
+      <div id="listaChamados" class="tickets"></div>
+      <nav id="listaPaginacao" class="paginacao" aria-label="Paginação de chamados"></nav>
+    </main>
   </div>
 
   <!-- Modal Novo Chamado -->
   <div class="modal fade" data-bs-backdrop="static" id="modalNovo" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
       <div class="modal-content">
-        <div class="modal-header" style="background:var(--ink);color:#fff;">
-          <h5 class="modal-title">Novo Chamado</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title">Novo chamado</h5>
+            <div class="modal-sub">Conte o que aconteceu — a equipe de TI recebe na hora.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
         </div>
         <div class="modal-body">
           <div id="alertNovo"></div>
           <form id="formNovo" class="row g-3">
             <div class="col-12">
-              <label class="form-label">Título *</label>
-              <input type="text" class="form-control" id="nc_titulo" required>
+              <label class="form-label" for="nc_titulo">Título *</label>
+              <input type="text" class="form-control" id="nc_titulo" placeholder="Ex.: Computador não liga" required>
             </div>
-            <div class="col-6">
-              <label class="form-label">Categoria</label>
+            <div class="col-md-6">
+              <label class="form-label" for="nc_categoria">Categoria</label>
               <select class="form-select" id="nc_categoria"><option value="">Selecione...</option></select>
             </div>
-            <div class="col-6">
-              <label class="form-label">Subcategoria</label>
+            <div class="col-md-6">
+              <label class="form-label" for="nc_subcategoria">Subcategoria</label>
               <select class="form-select" id="nc_subcategoria"><option value="">Selecione a categoria antes...</option></select>
             </div>
-            <div class="col-6">
-              <label class="form-label">Prioridade</label>
+            <div class="col-md-6">
+              <label class="form-label" for="nc_prioridade">Prioridade</label>
               <select class="form-select" id="nc_prioridade">
                 <option value="BAIXA">Baixa</option><option value="MEDIA" selected>Média</option>
                 <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
               </select>
             </div>
-            <div class="col-6">
-              <label class="form-label">Telefone</label>
-              <input type="text" class="form-control" id="nc_telefone">
+            <div class="col-md-6">
+              <label class="form-label" for="nc_telefone">Telefone</label>
+              <input type="text" class="form-control" id="nc_telefone" placeholder="Ramal ou celular" autocomplete="tel">
             </div>
             <div class="col-12">
-              <label class="form-label">Descrição</label>
-              <textarea class="form-control" id="nc_descricao" rows="4"></textarea>
+              <label class="form-label" for="nc_descricao">Descrição</label>
+              <textarea class="form-control" id="nc_descricao" rows="4" placeholder="Descreva o problema com o máximo de detalhes que puder."></textarea>
             </div>
             <div class="col-12">
-              <span id="nc_maquina" class="small text-muted"><i class="ph ph-spinner"></i> Detectando máquina...</span>
-              <div id="nc_maquina_select_wrap" class="mt-2" style="display:none">
-                <select class="form-select form-select-sm" id="nc_maquina_select"></select>
+              <div class="callout">
+                <i class="ph ph-desktop"></i>
+                <div class="callout-body">
+                  <span id="nc_maquina" class="callout-text"><span class="spin" aria-hidden="true"></span> Detectando máquina...</span>
+                  <div id="nc_maquina_select_wrap" class="mt-2" style="display:none">
+                    <select class="form-select form-select-sm" id="nc_maquina_select"></select>
+                  </div>
+                </div>
               </div>
             </div>
           </form>
         </div>
         <div class="modal-footer justify-content-between">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button type="button" class="btn btn-primary" id="btnAbrir"><i class="ph ph-headset"></i> Abrir Chamado</button>
+          <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-cta" id="btnAbrir"><i class="ph ph-headset"></i> Abrir chamado</button>
         </div>
       </div>
     </div>
@@ -208,25 +784,25 @@
 
   <!-- Modal Detalhe -->
   <div class="modal fade" data-bs-backdrop="static" id="modalDetalhe" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
       <div class="modal-content">
-        <div class="modal-header" style="background:var(--ink);color:#fff;">
+        <div class="modal-header">
           <h5 class="modal-title" id="detTitulo">Chamado</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
         </div>
         <div class="modal-body">
-          <div id="detResumo" class="mb-3"></div>
-          <h6>Equipamento</h6>
-          <div id="detEquipamento" class="mb-3 small"></div>
-          <h6>Comentários</h6>
-          <div id="detComentarios" class="mb-2"></div>
-          <div class="d-flex gap-2" id="detNovoComentarioBox">
+          <div id="detResumo"></div>
+          <h6 class="det-heading"><i class="ph ph-desktop"></i> Equipamento</h6>
+          <div id="detEquipamento"></div>
+          <h6 class="det-heading"><i class="ph ph-chats-circle"></i> Comentários</h6>
+          <div id="detComentarios"></div>
+          <div class="composer" id="detNovoComentarioBox">
             <textarea class="form-control" id="detNovoComentario" rows="2" placeholder="Escreva um comentário..."></textarea>
-            <button type="button" class="btn btn-primary" id="btnComentar"><i class="ph ph-paper-plane-tilt"></i></button>
+            <button type="button" class="btn btn-cta btn-send" id="btnComentar" aria-label="Enviar comentário"><i class="ph ph-paper-plane-tilt"></i></button>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+          <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">Fechar</button>
         </div>
       </div>
     </div>
@@ -234,6 +810,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/scripts/choices.min.js" crossorigin="anonymous"></script>
-  <script src="chamados.js"></script>
+  <script src="chamados.js?v=3"></script>
 </body>
 </html>
