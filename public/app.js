@@ -36,10 +36,16 @@ const CHOICES_IDS = [
   'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns',
   'im_unidade', 'im_bkp_pat',
   'imFiltroStatus', 'chamadosFiltroStatus',
-  'internet_unidade', 'internet_contrato'
+  'internet_unidade', 'internet_contrato',
+  'ci_categoria', 'ci_subcategoria', 'ci_prioridade',
+  'ci_unidade', 'ci_departamento', 'ciMaquinaSelect',
+  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
-const FILTRO_STATUS_IDS = new Set(['imFiltroStatus', 'chamadosFiltroStatus']);
+const FILTRO_STATUS_IDS = new Set([
+  'imFiltroStatus', 'chamadosFiltroStatus',
+  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel'
+]);
 
 // ---------- Estado em memória ----------
 let OPTIONS = { UNIDADE: [], STATUS: [], SETOR: [], EQUIPAMENTO: [], INSUMOS: [] };
@@ -778,6 +784,19 @@ async function loadOptions() {
 
 function renderListaOpcoes() {
   const lista = $('listaAlvo').value;
+  if (lista === 'CHAMADOS') {
+    $('opcoesGenericoView').style.display = 'none';
+    $('btnAdicionar').style.display = 'none';
+    $('ciCategoriasPainel').style.display = '';
+    carregarCategoriasPainel().catch((err) => {
+      $('alertCategoriasIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    });
+    return;
+  }
+  $('opcoesGenericoView').style.display = '';
+  $('btnAdicionar').style.display = '';
+  $('ciCategoriasPainel').style.display = 'none';
+
   $('rotuloLista').textContent = lista;
   const container = $('listaOpcoes');
   const values = OPTIONS[lista] || [];
@@ -1708,12 +1727,23 @@ async function importarXlsx() {
 // ============================================================
 //  Usuários
 // ============================================================
+let _souMasterCI = false;
+
+let _usuariosCache = [];
+
 async function loadUsuarios() {
   const container = $('listaUsuarios');
   if (!container) return;
   container.innerHTML = '<span class="text-muted">Carregando...</span>';
+
   try {
-    const usuarios = await api('GET', '/api/users');
+    const perfil = await api('GET', '/api/chamados-intecs/meu-perfil');
+    _souMasterCI = perfil.role === 'MASTER';
+  } catch { _souMasterCI = false; }
+
+  try {
+    const usuarios = await api('GET', _souMasterCI ? '/api/chamados-intecs/usuarios' : '/api/users');
+    _usuariosCache = usuarios;
     if (!usuarios.length) {
       container.innerHTML = '<span class="text-muted">Nenhum usuário cadastrado.</span>';
       return;
@@ -1733,29 +1763,90 @@ async function loadUsuarios() {
       const status = ativo
         ? '<span class="badge-status badge-ativo">ATIVO</span>'
         : '<span class="badge-status badge-inativo">INATIVO</span>';
-      const toggle = ativo
-        ? '<button type="button" class="acao-link acao-ocultar ms-3" data-user-ativo="' + u.id +
-          '" data-to="0" data-email="' + emailEsc + '"><i class="ph ph-prohibit"></i> Inativar</button>'
-        : '<button type="button" class="acao-link acao-exibir ms-3" data-user-ativo="' + u.id +
-          '" data-to="1" data-email="' + emailEsc + '"><i class="ph ph-check-circle"></i> Reativar</button>';
-      return '<tr><td class="opt-nome">' + emailHtml + '</td>' +
-        '<td>' + quando + '</td>' +
+      const papel = _souMasterCI ? '<td>' + escapeHtml(u.role || '') + '</td>' : '';
+      return '<tr class="row-clicavel" data-user-id="' + u.id + '">' +
+        '<td class="opt-nome">' + emailHtml + '</td>' +
+        papel +
         '<td>' + status + '</td>' +
-        '<td class="text-end">' +
-          '<button type="button" class="acao-link acao-editar" data-user-email="' + u.id +
-            '"><i class="ph ph-envelope"></i> E-mail</button>' +
-          '<button type="button" class="acao-link acao-editar ms-3" data-user-senha="' + u.id +
-            '"><i class="ph ph-key"></i> Senha</button>' +
-          toggle +
-        '</td></tr>';
+        '<td>' + quando + '</td>' +
+        '</tr>';
     }).join('');
+    const theadPapel = _souMasterCI ? '<th>Papel</th>' : '';
     container.innerHTML =
-      '<div class="table-responsive"><table class="table table-striped align-middle mb-0">' +
-      '<thead><tr><th>E-mail</th><th>Criado em</th><th>Status</th><th class="text-end">Ação</th></tr></thead>' +
+      '<div class="table-responsive"><table class="table table-striped table-hover align-middle mb-0">' +
+      '<thead><tr><th>E-mail</th>' + theadPapel + '<th>Status</th><th>Criado em</th></tr></thead>' +
       '<tbody>' + linhas + '</tbody></table></div>';
   } catch (err) {
     container.innerHTML = '<span class="text-danger">Erro ao carregar: ' + escapeHtml(err.message) + '</span>';
   }
+}
+
+let modalEditarUsuario = null;
+
+async function abrirEditarUsuario(id) {
+  const u = _usuariosCache.find((x) => String(x.id) === String(id));
+  if (!u) return;
+  $('eu_id').value = u.id;
+  $('euTitulo').textContent = 'Editar ' + u.email;
+  $('eu_email').value = u.email;
+  $('eu_senha').value = '';
+  $('eu_ativo').checked = !!u.ativo;
+  $('alertEditarUsuario').innerHTML = '';
+
+  $('eu_role_grupo').style.display = _souMasterCI ? '' : 'none';
+  $('eu_unidade_grupo').style.display = _souMasterCI ? '' : 'none';
+  $('eu_setor_grupo').style.display = _souMasterCI ? '' : 'none';
+  if (_souMasterCI) {
+    if (!OPTIONS.UNIDADE || !OPTIONS.UNIDADE.length) { try { await loadOptions(); } catch { /* ignora */ } }
+    const unidades = activeValues('UNIDADE');
+    const setores = activeValues('SETOR');
+    $('eu_role').innerHTML = ['BASICO', 'GESTOR', 'TECNICO', 'MASTER']
+      .map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r}</option>`).join('');
+    $('eu_unidade').innerHTML = '<option value="">-</option>' +
+      unidades.map((v) => `<option value="${escapeHtml(v)}" ${u.unidade === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+    $('eu_setor').innerHTML = '<option value="">-</option>' +
+      setores.map((v) => `<option value="${escapeHtml(v)}" ${u.setor === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+  }
+  modalEditarUsuario.show();
+}
+
+function configurarModalEditarUsuario() {
+  $('listaUsuarios').addEventListener('click', (ev) => {
+    const row = ev.target.closest('tr[data-user-id]');
+    if (row) abrirEditarUsuario(row.getAttribute('data-user-id'));
+  });
+
+  $('btnSalvarEditarUsuario').addEventListener('click', async () => {
+    const id = $('eu_id').value;
+    const email = trim($('eu_email').value).toLowerCase();
+    const senha = $('eu_senha').value;
+    const ativo = $('eu_ativo').checked;
+    const original = _usuariosCache.find((x) => String(x.id) === String(id));
+    $('alertEditarUsuario').innerHTML = '';
+
+    const btn = $('btnSalvarEditarUsuario');
+    btn.disabled = true;
+    try {
+      if (email && email !== original.email) await api('PUT', '/api/users/' + id, { email });
+      if (senha) {
+        if (senha.length < 6) throw new Error('A senha deve ter ao menos 6 caracteres.');
+        await api('PUT', '/api/users/' + id, { senha });
+      }
+      if (ativo !== !!original.ativo) await api('PUT', '/api/users/' + id, { ativo });
+      if (_souMasterCI) {
+        await api('PUT', '/api/chamados-intecs/usuarios/' + id, {
+          role: $('eu_role').value, unidade: $('eu_unidade').value, setor: $('eu_setor').value
+        });
+      }
+      modalEditarUsuario.hide();
+      await loadUsuarios();
+      showAlert('alertUsuarios', 'success', 'Usuário atualizado.');
+    } catch (err) {
+      $('alertEditarUsuario').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 // ============================================================
@@ -2550,64 +2641,48 @@ function configurarFormOpcao() {
 
 }
 
+let modalNovoUsuario = null;
+
+async function abrirNovoUsuario() {
+  $('formNovoUsuario').reset();
+  $('formNovoUsuario').classList.remove('was-validated');
+  $('alertNovoUsuario').innerHTML = '';
+  ['novo_role_grupo', 'novo_unidade_grupo', 'novo_setor_grupo'].forEach((id) => { $(id).style.display = _souMasterCI ? '' : 'none'; });
+  if (_souMasterCI) {
+    if (!OPTIONS.UNIDADE || !OPTIONS.UNIDADE.length) { try { await loadOptions(); } catch { /* ignora */ } }
+    const unidades = activeValues('UNIDADE');
+    const setores = activeValues('SETOR');
+    $('novo_unidade').innerHTML = '<option value="">-</option>' + unidades.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    $('novo_setor').innerHTML = '<option value="">-</option>' + setores.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  }
+  modalNovoUsuario.show();
+}
+
 function configurarFormUsuario() {
-  const form = $('formUsuario');
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
+  $('btnNovoUsuario').addEventListener('click', abrirNovoUsuario);
+
+  const form = $('formNovoUsuario');
+  $('btnCriarUsuario').addEventListener('click', async () => {
     if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
     const email = trim($('novo_email').value);
     const senha = $('novo_senha').value;
+    const role = $('novo_role').value;
+    const unidade = $('novo_unidade').value;
+    const setor = $('novo_setor').value;
     const btn = $('btnCriarUsuario');
     btn.disabled = true; btn.textContent = 'Criando...';
     try {
-      await api('POST', '/api/users', { email, senha });
-      form.reset();
-      form.classList.remove('was-validated');
+      const criado = await api('POST', '/api/users', { email, senha });
+      if (_souMasterCI && (role !== 'BASICO' || unidade || setor)) {
+        await api('PUT', '/api/chamados-intecs/usuarios/' + criado.id, { role, unidade, setor });
+      }
+      modalNovoUsuario.hide();
       showAlert('alertUsuarios', 'success', 'Usuário ' + email + ' criado com sucesso.');
       await loadUsuarios();
     } catch (err) {
-      showAlert('alertUsuarios', 'danger', err.message);
+      $('alertNovoUsuario').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
     } finally {
-      btn.disabled = false; btn.textContent = 'Criar usuário';
-    }
-  });
-
-  // Editar e-mail / senha e excluir (delegação na tabela).
-  $('listaUsuarios').addEventListener('click', async (ev) => {
-    const bEmail = ev.target.closest('[data-user-email]');
-    const bSenha = ev.target.closest('[data-user-senha]');
-    const bAtivo = ev.target.closest('[data-user-ativo]');
-
-    try {
-      if (bEmail) {
-        const id = bEmail.getAttribute('data-user-email');
-        const novo = trim(await uiPrompt('Novo e-mail:', { title: 'Editar e-mail' }) || '');
-        if (!novo) return;
-        await api('PUT', '/api/users/' + id, { email: novo });
-        showAlert('alertUsuarios', 'success', 'E-mail atualizado.');
-        await loadUsuarios();
-      } else if (bSenha) {
-        const id = bSenha.getAttribute('data-user-senha');
-        const nova = await uiPrompt('Nova senha (mínimo 6 caracteres):', { title: 'Editar senha' }) || '';
-        if (!nova) return;
-        await api('PUT', '/api/users/' + id, { senha: nova });
-        showAlert('alertUsuarios', 'success', 'Senha atualizada.');
-      } else if (bAtivo) {
-        const id = bAtivo.getAttribute('data-user-ativo');
-        const email = bAtivo.getAttribute('data-email');
-        const ativar = bAtivo.getAttribute('data-to') === '1';
-        if (ativar && !(await uiConfirm(
-          'Reativar o acesso de ' + email + '? Ele voltará a conseguir entrar no sistema.',
-          { title: 'Reativar usuário', okText: 'Reativar' }))) return;
-        if (!ativar && !(await uiConfirm(
-          'Inativar o acesso de ' + email + '? Ele não conseguirá mais entrar.',
-          { title: 'Inativar usuário', okText: 'Inativar' }))) return;
-        await api('PUT', '/api/users/' + id, { ativo: ativar });
-        showAlert('alertUsuarios', 'success', ativar ? 'Usuário reativado.' : 'Usuário inativado.');
-        await loadUsuarios();
-      }
-    } catch (err) {
-      showAlert('alertUsuarios', 'danger', err.message);
+      btn.disabled = false; btn.textContent = 'Criar';
     }
   });
 }
@@ -3018,6 +3093,781 @@ function configurarNovoChamado() {
       btn.innerHTML = '<i class="ph ph-headset"></i> Abrir Chamado';
     }
   });
+}
+
+// ============================================================
+//  Chamados INTECS (interno) + equipamento (Tactical RMM)
+// ============================================================
+let modalNovoChamadoIntecs = null;
+let modalChamadoIntecsDetalhe = null;
+let _chamadosIntecs = [];
+let _chamadoIntecsAtual = null;
+let _ciCategorias = [];
+let _ciUsuarios = [];
+let _ciSort = { col: 'criado_em', dir: 'desc' };
+let _ciCharts = {};
+
+let CI_STATUS_LABEL = {
+  ABERTO: 'Aberto', EM_ANALISE: 'Em análise', AGUARDANDO_USUARIO: 'Aguardando usuário',
+  EM_ATENDIMENTO: 'Em atendimento', AGUARDANDO_FORNECEDOR: 'Aguardando fornecedor',
+  RESOLVIDO: 'Resolvido', FECHADO: 'Fechado', CANCELADO: 'Cancelado'
+};
+let CI_PRIORIDADE_LABEL = { BAIXA: 'Baixa', MEDIA: 'Média', ALTA: 'Alta', CRITICA: 'Crítica' };
+let _ciPrioridadesConfig = [];
+let _ciStatusConfig = [];
+const CI_ACAO_LABEL = {
+  CRIADO: 'Criado', STATUS: 'Status alterado', RESPONSAVEL: 'Responsável alterado',
+  PRIORIDADE: 'Prioridade alterada', CATEGORIA: 'Categoria alterada',
+  COMENTARIO: 'Comentário', EDITADO: 'Editado'
+};
+
+function fmtDataHora(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  return isNaN(d) ? '' : d.toLocaleString('pt-BR');
+}
+
+function fmtMinutos(min) {
+  if (min == null || isNaN(min)) return '-';
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h > 0 ? `${h}h ${m}min` : `${m}min`;
+}
+
+// Indicador de SLA (verde/amarelo/vermelho/expirado) — calculado no cliente
+// a partir do percentual de tempo decorrido até o prazo de conclusão.
+function slaInfo(c) {
+  if (['RESOLVIDO', 'FECHADO', 'CANCELADO'].includes(c.status)) {
+    return { texto: 'Concluído', classe: 'bg-secondary' };
+  }
+  if (!c.sla_conclusao_prazo) return { texto: '-', classe: 'bg-secondary' };
+  const agora = Date.now();
+  const criado = new Date(c.criado_em).getTime();
+  const prazo = new Date(c.sla_conclusao_prazo).getTime();
+  if (agora > prazo) return { texto: 'Expirado', classe: 'bg-danger' };
+  const pct = (agora - criado) / (prazo - criado);
+  if (pct >= 0.8) return { texto: 'Vermelho', classe: 'bg-danger' };
+  if (pct >= 0.5) return { texto: 'Amarelo', classe: 'bg-warning text-dark' };
+  return { texto: 'Verde', classe: 'bg-success' };
+}
+
+async function carregarCategoriasIntecs() {
+  _ciCategorias = await api('GET', '/api/chamados-intecs/categorias');
+  const itens = _ciCategorias.map((c) => ({ value: String(c.id), label: c.nome }));
+
+  const instCategoria = choicesMap['ci_categoria'];
+  if (instCategoria) {
+    instCategoria.clearChoices();
+    instCategoria.setChoices([{ value: '', label: 'Selecione...', placeholder: true }, ...itens], 'value', 'label', true);
+  } else {
+    $('ci_categoria').innerHTML = '<option value="">Selecione...</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
+  }
+  const instFiltro = choicesMap['ciFiltroCategoria'];
+  if (instFiltro) {
+    instFiltro.clearChoices();
+    instFiltro.setChoices([{ value: '', label: 'Categoria (todas)' }, ...itens], 'value', 'label', true);
+  } else {
+    $('ciFiltroCategoria').innerHTML = '<option value="">Categoria (todas)</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
+  }
+}
+
+function popularSubcategoriasSelect(selectId, categoriaId, selecionadoId) {
+  const cat = _ciCategorias.find((c) => String(c.id) === String(categoriaId));
+  const subs = cat ? cat.subcategorias : [];
+  const itens = subs.map((s) => ({ value: String(s.id), label: s.nome }));
+
+  const inst = choicesMap[selectId];
+  if (inst) {
+    inst.clearChoices();
+    inst.setChoices(
+      itens.length ? [{ value: '', label: 'Selecione...', placeholder: true }, ...itens] : [{ value: '', label: 'Sem subcategorias', placeholder: true }],
+      'value', 'label', true
+    );
+    if (selecionadoId != null) inst.setChoiceByValue(String(selecionadoId));
+    return;
+  }
+  $(selectId).innerHTML = itens.length
+    ? '<option value="">Selecione...</option>' + itens.map((i) => `<option value="${i.value}" ${i.value === String(selecionadoId) ? 'selected' : ''}>${escapeHtml(i.label)}</option>`).join('')
+    : '<option value="">Sem subcategorias</option>';
+}
+
+async function carregarUsuariosIntecs() {
+  if (!podeAtenderCI()) { _ciUsuarios = []; return; }
+  try {
+    _ciUsuarios = await api('GET', '/api/chamados-intecs/atendentes');
+  } catch { _ciUsuarios = []; }
+  const itens = _ciUsuarios.map((u) => ({ value: String(u.id), label: u.email }));
+  const instFiltro = choicesMap['ciFiltroResponsavel'];
+  if (instFiltro) {
+    instFiltro.clearChoices();
+    instFiltro.setChoices([{ value: '', label: 'Responsável (todos)' }, ...itens], 'value', 'label', true);
+  } else {
+    $('ciFiltroResponsavel').innerHTML = '<option value="">Responsável (todos)</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
+  }
+  $('ciDetResponsavel').innerHTML = '<option value="">Ninguém</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
+}
+
+// Prioridades/status configuráveis (Fase 5) — popula os selects que hoje
+// tinham <option> fixos no HTML, e estende os rótulos amigáveis com
+// qualquer nome customizado cadastrado no painel "Categorias".
+async function carregarPrioridadesEStatusIntecs() {
+  try {
+    [_ciPrioridadesConfig, _ciStatusConfig] = await Promise.all([
+      api('GET', '/api/chamados-intecs/prioridades'),
+      api('GET', '/api/chamados-intecs/status-config')
+    ]);
+  } catch { return; }
+
+  _ciPrioridadesConfig.forEach((p) => { if (!CI_PRIORIDADE_LABEL[p.nome]) CI_PRIORIDADE_LABEL[p.nome] = p.nome; });
+  _ciStatusConfig.forEach((s) => { if (!CI_STATUS_LABEL[s.nome]) CI_STATUS_LABEL[s.nome] = s.nome; });
+
+  const itensPrioridade = _ciPrioridadesConfig.map((p) => ({ value: p.nome, label: CI_PRIORIDADE_LABEL[p.nome] || p.nome }));
+  const itensStatus = _ciStatusConfig.map((s) => ({ value: s.nome, label: CI_STATUS_LABEL[s.nome] || s.nome }));
+
+  const setSelectPlano = (id, itens, comPlaceholder) => {
+    $(id).innerHTML = (comPlaceholder ? `<option value="">${comPlaceholder}</option>` : '') +
+      itens.map((i) => `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
+  };
+  const setSelectChoices = (id, itens, placeholderLabel) => {
+    const inst = choicesMap[id];
+    if (inst) {
+      inst.clearChoices();
+      inst.setChoices(
+        placeholderLabel ? [{ value: '', label: placeholderLabel }, ...itens] : itens,
+        'value', 'label', true
+      );
+    } else {
+      setSelectPlano(id, itens, placeholderLabel);
+    }
+  };
+
+  setSelectChoices('ci_prioridade', itensPrioridade, null);
+  choicesMap['ci_prioridade']?.setChoiceByValue('MEDIA');
+  setSelectChoices('ciFiltroPrioridade', itensPrioridade, 'Prioridade (todas)');
+  setSelectChoices('ciFiltroStatus', itensStatus, 'Status (todos)');
+  setSelectPlano('ciDetStatus', itensStatus, null);
+  setSelectPlano('ciDetPrioridade', itensPrioridade, null);
+}
+
+async function carregarChamadosIntecs() {
+  $('ciStatus').textContent = 'Carregando...';
+  try {
+    _chamadosIntecs = await api('GET', '/api/chamados-intecs');
+    renderChamadosIntecs();
+  } catch (err) {
+    $('ciTbody').innerHTML = '<tr><td colspan="8" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
+    $('ciStatus').textContent = '';
+  }
+}
+
+function renderChamadosIntecs() {
+  const busca = trim($('ciBusca').value).toLowerCase();
+  const fCategoria = $('ciFiltroCategoria').value;
+  const fPrioridade = $('ciFiltroPrioridade').value;
+  const fStatus = $('ciFiltroStatus').value;
+  const fResponsavel = $('ciFiltroResponsavel').value;
+  const fUnidade = trim($('ciFiltroUnidade').value).toLowerCase();
+  const fDepartamento = trim($('ciFiltroDepartamento').value).toLowerCase();
+  const fDataIni = $('ciFiltroDataInicial').value;
+  const fDataFim = $('ciFiltroDataFinal').value;
+
+  let rows = _chamadosIntecs.filter((c) => {
+    if (busca && !c.titulo.toLowerCase().includes(busca)) return false;
+    if (fCategoria && String(c.categoria_id) !== fCategoria) return false;
+    if (fPrioridade && c.prioridade !== fPrioridade) return false;
+    if (fStatus && c.status !== fStatus) return false;
+    if (fResponsavel && String(c.responsavel_id) !== fResponsavel) return false;
+    if (fUnidade && !(c.unidade || '').toLowerCase().includes(fUnidade)) return false;
+    if (fDepartamento && !(c.departamento || '').toLowerCase().includes(fDepartamento)) return false;
+    if (fDataIni && new Date(c.criado_em) < new Date(fDataIni)) return false;
+    if (fDataFim && new Date(c.criado_em) > new Date(fDataFim + 'T23:59:59')) return false;
+    return true;
+  });
+
+  const { col, dir } = _ciSort;
+  rows = rows.slice().sort((a, b) => {
+    const va = a[col] ?? '';
+    const vb = b[col] ?? '';
+    const cmp = typeof va === 'string' ? va.localeCompare(vb) : (va > vb ? 1 : va < vb ? -1 : 0);
+    return dir === 'asc' ? cmp : -cmp;
+  });
+
+  const tbody = $('ciTbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="text-muted text-center py-3">Nenhum chamado encontrado.</td></tr>';
+  } else {
+    tbody.innerHTML = rows.map((c) => {
+      const sla = slaInfo(c);
+      return `
+      <tr data-ci-id="${c.id}" style="cursor:pointer">
+        <td>${c.id}</td>
+        <td>${escapeHtml(c.titulo)}</td>
+        <td>${escapeHtml(c.categoria_nome || '-')}</td>
+        <td>${escapeHtml(CI_PRIORIDADE_LABEL[c.prioridade] || c.prioridade || '-')}</td>
+        <td>${escapeHtml(CI_STATUS_LABEL[c.status] || c.status || '-')}</td>
+        <td><span class="badge ${sla.classe}">${sla.texto}</span></td>
+        <td>${escapeHtml(c.responsavel_email || '-')}</td>
+        <td>${fmtDataHora(c.criado_em)}</td>
+        <td>${podeAtenderCI() && c.responsavel_id !== _ciPerfil.id
+          ? `<button type="button" class="btn btn-sm btn-outline-primary btn-pegar-chamado" data-ci-id="${c.id}" data-ci-titulo="${escapeHtml(c.titulo)}"><i class="ph ph-hand-palm"></i> Atribuir</button>`
+          : ''}</td>
+      </tr>
+    `;
+    }).join('');
+  }
+  $('ciStatus').textContent = `${rows.length} de ${_chamadosIntecs.length} chamado(s).`;
+}
+
+function configurarFiltrosChamadosIntecs() {
+  ['ciBusca', 'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
+    'ciFiltroUnidade', 'ciFiltroDepartamento', 'ciFiltroDataInicial', 'ciFiltroDataFinal'].forEach((id) => {
+    $(id).addEventListener('input', renderChamadosIntecs);
+    $(id).addEventListener('change', renderChamadosIntecs);
+  });
+  $('btnLimparFiltrosIntecs').addEventListener('click', () => {
+    ['ciBusca', 'ciFiltroUnidade', 'ciFiltroDepartamento', 'ciFiltroDataInicial', 'ciFiltroDataFinal'].forEach((id) => { $(id).value = ''; });
+    ['ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel'].forEach((id) => {
+      const inst = choicesMap[id];
+      if (inst) inst.setChoiceByValue(''); else $(id).value = '';
+    });
+    renderChamadosIntecs();
+  });
+  $('btnRefreshChamadosIntecs').addEventListener('click', carregarChamadosIntecs);
+  document.querySelectorAll('#tabelaChamadosIntecs th[data-sort]').forEach((th) => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const col = th.getAttribute('data-sort');
+      _ciSort = { col, dir: _ciSort.col === col && _ciSort.dir === 'asc' ? 'desc' : 'asc' };
+      renderChamadosIntecs();
+    });
+  });
+}
+
+function renderCamposEquipamento(obj) {
+  if (!obj || typeof obj !== 'object') return '<span class="text-muted">Sem dados.</span>';
+  const linhas = Object.entries(obj).map(([k, v]) => {
+    let valor;
+    if (v == null || v === '') valor = '<span class="text-muted">-</span>';
+    else if (Array.isArray(v) || typeof v === 'object') valor = '<pre class="mb-0 small">' + escapeHtml(JSON.stringify(v, null, 2)) + '</pre>';
+    else valor = escapeHtml(String(v));
+    return `<div class="row mb-1"><div class="col-5 text-muted small">${escapeHtml(k)}</div><div class="col-7">${valor}</div></div>`;
+  });
+  return linhas.join('') || '<span class="text-muted">Sem dados.</span>';
+}
+
+function renderDadosChamado(c) {
+  const linhas = [
+    ['Categoria', c.categoria_nome, c.subcategoria_nome ? `${c.categoria_nome || ''} / ${c.subcategoria_nome}` : c.categoria_nome],
+    ['Unidade', c.unidade, c.unidade],
+    ['Setor/Departamento', c.departamento, c.departamento],
+    ['Localização', c.localizacao, c.localizacao],
+    ['Telefone', c.telefone, c.telefone],
+    ['Ramal', c.ramal, c.ramal],
+    ['E-mail de contato', c.email_contato, c.email_contato],
+    ['Aberto por', c.criado_por, c.criado_por],
+    ['Aberto em', c.criado_em, fmtDataHora(c.criado_em)]
+  ].filter(([, raw]) => raw != null && raw !== '');
+
+  const camposHtml = linhas.map(([label, , valor]) =>
+    `<div class="col-6 col-md-4"><div class="small text-muted">${escapeHtml(label)}</div><div>${escapeHtml(String(valor))}</div></div>`
+  ).join('');
+
+  $('ciDetDadosChamado').innerHTML = `
+    <div class="mb-2">
+      <div class="small text-muted">Descrição do chamado</div>
+      <div class="border rounded p-2 bg-light">${c.descricao ? escapeHtml(c.descricao).replace(/\n/g, '<br>') : '<span class="text-muted">Sem descrição.</span>'}</div>
+    </div>
+    <div class="row g-2 mb-2">${camposHtml}</div>
+  `;
+}
+
+function renderComentarios(lista) {
+  $('ciComentariosLista').innerHTML = lista.length
+    ? lista.map((co) => `
+      <div class="border-bottom pb-2 mb-2">
+        <div class="small text-muted">${escapeHtml(co.usuario_email || '')} · ${fmtDataHora(co.criado_em)}</div>
+        <div>${escapeHtml(co.texto)}</div>
+      </div>`).join('')
+    : '<span class="text-muted">Nenhum comentário ainda.</span>';
+}
+
+function renderHistorico(lista) {
+  $('ciHistoricoLista').innerHTML = lista.length
+    ? '<ul class="list-unstyled mb-0">' + lista.map((h) => `
+      <li class="border-bottom pb-2 mb-2">
+        <div class="small text-muted">${fmtDataHora(h.criado_em)} · ${escapeHtml(h.usuario_email || 'sistema')}</div>
+        <div>${escapeHtml(CI_ACAO_LABEL[h.acao] || h.acao)}${h.valor_novo ? ': ' + escapeHtml(String(h.valor_novo)) : ''}</div>
+      </li>`).join('') + '</ul>'
+    : '<span class="text-muted">Sem histórico.</span>';
+}
+
+async function abrirChamadoIntecsDetalhe(id) {
+  _chamadoIntecsAtual = id;
+  $('ciDetalheTitle').textContent = 'Carregando...';
+  ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => {
+    $(elId).innerHTML = '<span class="text-muted">Carregando...</span>';
+  });
+  $('ciComentariosLista').innerHTML = '';
+  $('ciHistoricoLista').innerHTML = '';
+  modalChamadoIntecsDetalhe.show();
+
+  try {
+    const data = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id));
+    $('ciDetalheTitle').textContent = `#${data.id} — ${data.titulo}`;
+    $('ciDetStatus').value = data.status;
+    $('ciDetPrioridade').value = data.prioridade;
+    $('ciDetResponsavel').value = data.responsavel_id || '';
+    const sla = slaInfo(data);
+    $('ciDetSlaBadge').innerHTML = `<span class="badge ${sla.classe}">${sla.texto}</span> <span class="text-muted">até ${fmtDataHora(data.sla_conclusao_prazo)}</span>`;
+    renderDadosChamado(data);
+    renderComentarios(data.comentarios || []);
+    renderHistorico(data.historico || []);
+    aplicarPermissoesDetalheChamado(data);
+  } catch (err) {
+    $('ciDetalheTitle').textContent = 'Erro ao carregar chamado';
+  }
+
+  await carregarEquipamentoDoChamado(id);
+}
+
+async function carregarEquipamentoDoChamado(id) {
+  try {
+    const resumo = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id) + '/equipamento');
+    if (!resumo) {
+      const msg = '<span class="text-muted">Nenhum equipamento vinculado a este chamado.</span>';
+      ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => { $(elId).innerHTML = msg; });
+      return;
+    }
+    $('ci-eq-resumo').innerHTML = renderCamposEquipamento({
+      status: resumo.status_online ? 'Online' : 'Offline',
+      'CPU (%)': resumo.cpu_pct, 'RAM (%)': resumo.ram_pct, 'Uptime (seg)': resumo.uptime_seg,
+      'Coletado em': fmtDataHora(resumo.coletado_em)
+    });
+    $('ci-eq-hardware').innerHTML = renderCamposEquipamento({ ...resumo.hardware_info, ...resumo.os_info });
+    $('ci-eq-rede').innerHTML = renderCamposEquipamento(resumo.rede_info);
+    $('ci-eq-seguranca').innerHTML = renderCamposEquipamento(resumo.seguranca_info);
+  } catch (err) {
+    const msg = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+    ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => { $(elId).innerHTML = msg; });
+  }
+}
+
+async function atualizarCampoChamadoIntecs(campo, valor) {
+  if (!_chamadoIntecsAtual) return;
+  try {
+    await api('PATCH', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual), { [campo]: valor });
+    await abrirChamadoIntecsDetalhe(_chamadoIntecsAtual);
+    await carregarChamadosIntecs();
+  } catch (err) {
+    alert('Erro ao atualizar: ' + err.message);
+  }
+}
+
+function configurarChamadosIntecs() {
+  $('btnNovoChamadoIntecs').addEventListener('click', async () => {
+    $('formNovoChamadoIntecs').reset();
+    $('formNovoChamadoIntecs').classList.remove('was-validated');
+    $('alertNovoChamadoIntecs').innerHTML = '';
+    choicesMap['ci_categoria']?.setChoiceByValue('');
+    const instSub = choicesMap['ci_subcategoria'];
+    if (instSub) {
+      instSub.clearChoices();
+      instSub.setChoices([{ value: '', label: 'Selecione a categoria antes...', placeholder: true }], 'value', 'label', true);
+    } else {
+      $('ci_subcategoria').innerHTML = '<option value="">Selecione a categoria antes...</option>';
+    }
+    choicesMap['ci_prioridade']?.setChoiceByValue('MEDIA');
+    _ciMaquinaDetectadaId = null;
+    $('ciMaquinaDetectada').textContent = '';
+    $('ciMaquinaSelectWrap').style.display = 'none';
+
+    if (!OPTIONS.UNIDADE || !OPTIONS.UNIDADE.length) { try { await loadOptions(); } catch { /* ignora */ } }
+    fillSelect('ci_unidade', activeValues('UNIDADE'), _ciPerfil?.unidade || '');
+    fillSelect('ci_departamento', activeValues('SETOR'), _ciPerfil?.setor || '');
+
+    modalNovoChamadoIntecs.show();
+    verificarMaquinaAutomatico();
+  });
+
+  $('ci_categoria').addEventListener('change', () => {
+    popularSubcategoriasSelect('ci_subcategoria', $('ci_categoria').value, null);
+  });
+
+  $('btnAbrirChamadoIntecs').addEventListener('click', async () => {
+    const titulo = trim($('ci_titulo').value);
+    const form = $('formNovoChamadoIntecs');
+    if (!titulo) { form.classList.add('was-validated'); return; }
+
+    const btn = $('btnAbrirChamadoIntecs');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ph ph-spinner"></i> Abrindo...';
+    $('alertNovoChamadoIntecs').innerHTML = '';
+    try {
+      await api('POST', '/api/chamados-intecs', {
+        titulo,
+        categoria_id: $('ci_categoria').value || null,
+        subcategoria_id: $('ci_subcategoria').value || null,
+        prioridade: $('ci_prioridade').value,
+        unidade: trim($('ci_unidade').value),
+        departamento: trim($('ci_departamento').value),
+        localizacao: trim($('ci_localizacao').value),
+        telefone: trim($('ci_telefone').value),
+        ramal: trim($('ci_ramal').value),
+        email_contato: trim($('ci_email_contato').value),
+        descricao: trim($('ci_descricao').value),
+        tactical_agent_id: _ciMaquinaDetectadaId || null
+      });
+      modalNovoChamadoIntecs.hide();
+      await carregarChamadosIntecs();
+    } catch (err) {
+      $('alertNovoChamadoIntecs').innerHTML =
+        '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ph ph-headset"></i> Abrir Chamado';
+    }
+  });
+
+  $('ciTbody').addEventListener('click', async (ev) => {
+    const btnPegar = ev.target.closest('.btn-pegar-chamado');
+    if (btnPegar) {
+      ev.stopPropagation();
+      const id = btnPegar.getAttribute('data-ci-id');
+      const titulo = btnPegar.getAttribute('data-ci-titulo');
+      const ok = await uiConfirm('Atribuir o chamado "' + titulo + '" a você?', { title: 'Atribuir chamado', okText: 'Atribuir', danger: false });
+      if (!ok) return;
+      btnPegar.disabled = true;
+      try {
+        await api('PATCH', '/api/chamados-intecs/' + id, { responsavel_id: _ciPerfil.id });
+        await carregarChamadosIntecs();
+      } catch (err) {
+        alert('Erro ao atribuir: ' + err.message);
+        btnPegar.disabled = false;
+      }
+      return;
+    }
+    const row = ev.target.closest('tr[data-ci-id]');
+    if (!row) return;
+    abrirChamadoIntecsDetalhe(row.getAttribute('data-ci-id'));
+  });
+
+  $('ciDetStatus').addEventListener('change', () => atualizarCampoChamadoIntecs('status', $('ciDetStatus').value));
+  $('ciDetPrioridade').addEventListener('change', () => atualizarCampoChamadoIntecs('prioridade', $('ciDetPrioridade').value));
+  $('ciDetResponsavel').addEventListener('change', () => atualizarCampoChamadoIntecs('responsavel_id', $('ciDetResponsavel').value || null));
+  $('btnAtribuirAMim').addEventListener('click', () => atualizarCampoChamadoIntecs('responsavel_id', _ciPerfil.id));
+
+  $('btnEnviarComentarioIntecs').addEventListener('click', async () => {
+    if (!_chamadoIntecsAtual) return;
+    const texto = trim($('ciNovoComentario').value);
+    if (!texto) return;
+    const btn = $('btnEnviarComentarioIntecs');
+    btn.disabled = true;
+    try {
+      await api('POST', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual) + '/comentarios', { texto });
+      $('ciNovoComentario').value = '';
+      await abrirChamadoIntecsDetalhe(_chamadoIntecsAtual);
+    } catch (err) {
+      alert('Erro ao comentar: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('btnAtualizarEquipamentoIntecs').addEventListener('click', async () => {
+    if (!_chamadoIntecsAtual) return;
+    const btn = $('btnAtualizarEquipamentoIntecs');
+    btn.disabled = true;
+    try {
+      await api('POST', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual) + '/equipamento/atualizar');
+      await carregarEquipamentoDoChamado(_chamadoIntecsAtual);
+    } catch (err) {
+      $('ci-eq-resumo').innerHTML = '<span class="text-danger">Erro ao atualizar: ' + escapeHtml(err.message) + '</span>';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function renderBarChart(canvasId, labels, data, cor) {
+  if (_ciCharts[canvasId]) _ciCharts[canvasId].destroy();
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  _ciCharts[canvasId] = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: cor, borderRadius: 6, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+}
+
+async function carregarDashboardIntecs() {
+  try {
+    const d = await api('GET', '/api/chamados-intecs/dashboard');
+    $('ciDashAbertos').textContent = d.abertos ?? 0;
+    $('ciDashAndamento').textContent = d.em_andamento ?? 0;
+    $('ciDashResolvidosHoje').textContent = d.resolvidos_hoje ?? 0;
+    $('ciDashFechados').textContent = d.fechados ?? 0;
+    $('ciDashVencidos').textContent = d.vencidos ?? 0;
+    $('ciDashProxVenc').textContent = d.sla_proximos_vencimento ?? 0;
+    $('ciDashTempoAtend').textContent = fmtMinutos(d.tempo_medio_atendimento_min);
+    $('ciDashTempoResol').textContent = fmtMinutos(d.tempo_medio_resolucao_min);
+
+    renderBarChart('ciChartCategoria', d.por_categoria.map(r => r.categoria), d.por_categoria.map(r => r.total), '#4f7cf5');
+    renderBarChart('ciChartPrioridade', d.por_prioridade.map(r => CI_PRIORIDADE_LABEL[r.prioridade] || r.prioridade), d.por_prioridade.map(r => r.total), '#ff8c42');
+    renderBarChart('ciChartStatus', d.por_status.map(r => CI_STATUS_LABEL[r.status] || r.status), d.por_status.map(r => r.total), '#16a34a');
+    renderBarChart('ciChartMes', d.por_mes.map(r => r.mes), d.por_mes.map(r => r.total), '#a259ff');
+    renderBarChart('ciChartUnidade', d.por_unidade.map(r => r.unidade), d.por_unidade.map(r => r.total), '#0891b2');
+  } catch (err) {
+    console.error('[dashboard intecs] erro:', err.message);
+  }
+}
+
+function mostrarViewDashboardIntecs() {
+  $('ciDashboardPainel').style.display = '';
+  $('ciChamadosView').style.display = 'none';
+  $('btnDashboardIntecs').classList.replace('btn-outline-secondary', 'btn-dark');
+  $('btnChamadosIntecsView').classList.replace('btn-dark', 'btn-outline-secondary');
+}
+
+function mostrarViewChamadosIntecs() {
+  $('ciDashboardPainel').style.display = 'none';
+  $('ciChamadosView').style.display = '';
+  $('btnChamadosIntecsView').classList.replace('btn-outline-secondary', 'btn-dark');
+  $('btnDashboardIntecs').classList.replace('btn-dark', 'btn-outline-secondary');
+}
+
+function configurarDashboardIntecs() {
+  $('btnDashboardIntecs').addEventListener('click', async () => {
+    mostrarViewDashboardIntecs();
+    await carregarDashboardIntecs();
+  });
+  $('btnChamadosIntecsView').addEventListener('click', () => {
+    mostrarViewChamadosIntecs();
+  });
+}
+
+// ============================================================
+//  Categorias / Prioridades / Status configuráveis — Fase 5
+// ============================================================
+const TIPO_SISTEMA_LABEL = {
+  ABERTO: 'Aberto', ANDAMENTO: 'Em andamento', RESOLVIDO: 'Resolvido',
+  FECHADO: 'Fechado', CANCELADO: 'Cancelado'
+};
+
+async function carregarCategoriasPainel() {
+  const [categorias, prioridades, statusList] = await Promise.all([
+    api('GET', '/api/chamados-intecs/categorias'),
+    api('GET', '/api/chamados-intecs/prioridades'),
+    api('GET', '/api/chamados-intecs/status-config')
+  ]);
+
+  $('catTbody').innerHTML = categorias.map((c) => `
+    <tr data-cat-id="${c.id}">
+      <td>${escapeHtml(c.nome)}</td>
+      <td class="small text-muted">${c.subcategorias.map((s) => escapeHtml(s.nome)).join(', ') || '-'}</td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger btn-remover-categoria"><i class="ph ph-trash"></i></button></td>
+    </tr>
+  `).join('');
+  $('subcatCategoria').innerHTML = '<option value="">Categoria...</option>' +
+    categorias.map((c) => `<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
+
+  $('prTbody').innerHTML = prioridades.map((p) => `
+    <tr data-pr-id="${p.id}">
+      <td>${escapeHtml(p.nome)}</td>
+      <td><input type="number" step="0.5" min="0" class="form-control form-control-sm pr-resposta" value="${p.sla_resposta_horas}" style="max-width:90px"></td>
+      <td><input type="number" step="0.5" min="0" class="form-control form-control-sm pr-conclusao" value="${p.sla_conclusao_horas}" style="max-width:90px"></td>
+      <td><button type="button" class="btn btn-sm btn-outline-primary btn-salvar-prioridade">Salvar</button></td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger btn-remover-prioridade"><i class="ph ph-trash"></i></button></td>
+    </tr>
+  `).join('');
+
+  $('stTbody').innerHTML = statusList.map((s) => `
+    <tr data-st-id="${s.id}">
+      <td>${escapeHtml(s.nome)}</td>
+      <td class="small text-muted">${escapeHtml(TIPO_SISTEMA_LABEL[s.tipo_sistema] || s.tipo_sistema)}</td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger btn-remover-status"><i class="ph ph-trash"></i></button></td>
+    </tr>
+  `).join('');
+}
+
+function configurarCategoriasIntecs() {
+
+  $('btnAdicionarCategoria').addEventListener('click', async () => {
+    const nome = trim($('catNovoNome').value);
+    if (!nome) return;
+    try {
+      await api('POST', '/api/chamados-intecs/categorias', { nome });
+      $('catNovoNome').value = '';
+      await carregarCategoriasPainel();
+      await carregarCategoriasIntecs();
+    } catch (err) {
+      $('alertCategoriasIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    }
+  });
+
+  $('catTbody').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('.btn-remover-categoria');
+    if (!btn) return;
+    try {
+      await api('DELETE', '/api/chamados-intecs/categorias/' + btn.closest('tr[data-cat-id]').getAttribute('data-cat-id'));
+      await carregarCategoriasPainel();
+      await carregarCategoriasIntecs();
+    } catch (err) {
+      $('alertCategoriasIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    }
+  });
+
+  $('btnAdicionarSubcategoria').addEventListener('click', async () => {
+    const categoriaId = $('subcatCategoria').value;
+    const nome = trim($('subcatNovoNome').value);
+    if (!categoriaId || !nome) return;
+    try {
+      await api('POST', '/api/chamados-intecs/subcategorias', { categoria_id: categoriaId, nome });
+      $('subcatNovoNome').value = '';
+      await carregarCategoriasPainel();
+    } catch (err) {
+      $('alertCategoriasIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    }
+  });
+
+  $('btnAdicionarPrioridade').addEventListener('click', async () => {
+    const nome = trim($('prNovoNome').value);
+    const resposta = $('prNovaResposta').value;
+    const conclusao = $('prNovaConclusao').value;
+    if (!nome || !resposta || !conclusao) {
+      $('alertPrioridadesIntecs').innerHTML = '<div class="alert alert-warning py-2 mb-0">Informe nome e as duas horas de SLA.</div>';
+      return;
+    }
+    try {
+      await api('POST', '/api/chamados-intecs/prioridades', { nome, sla_resposta_horas: resposta, sla_conclusao_horas: conclusao });
+      $('prNovoNome').value = ''; $('prNovaResposta').value = ''; $('prNovaConclusao').value = '';
+      $('alertPrioridadesIntecs').innerHTML = '';
+      await carregarCategoriasPainel();
+      await carregarPrioridadesEStatusIntecs();
+    } catch (err) {
+      $('alertPrioridadesIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    }
+  });
+
+  $('prTbody').addEventListener('click', async (ev) => {
+    const btnSalvar = ev.target.closest('.btn-salvar-prioridade');
+    const btnRemover = ev.target.closest('.btn-remover-prioridade');
+    if (btnSalvar) {
+      const tr = btnSalvar.closest('tr[data-pr-id]');
+      try {
+        await api('PUT', '/api/chamados-intecs/prioridades/' + tr.getAttribute('data-pr-id'), {
+          sla_resposta_horas: tr.querySelector('.pr-resposta').value,
+          sla_conclusao_horas: tr.querySelector('.pr-conclusao').value
+        });
+      } catch (err) {
+        $('alertPrioridadesIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+      }
+    } else if (btnRemover) {
+      try {
+        await api('DELETE', '/api/chamados-intecs/prioridades/' + btnRemover.closest('tr[data-pr-id]').getAttribute('data-pr-id'));
+        await carregarCategoriasPainel();
+        await carregarPrioridadesEStatusIntecs();
+      } catch (err) {
+        $('alertPrioridadesIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+      }
+    }
+  });
+
+  $('btnAdicionarStatus').addEventListener('click', async () => {
+    const nome = trim($('stNovoNome').value);
+    const tipo = $('stNovoTipo').value;
+    if (!nome) return;
+    try {
+      await api('POST', '/api/chamados-intecs/status-config', { nome, tipo_sistema: tipo });
+      $('stNovoNome').value = '';
+      await carregarCategoriasPainel();
+      await carregarPrioridadesEStatusIntecs();
+    } catch (err) {
+      $('alertStatusIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    }
+  });
+
+  $('stTbody').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('.btn-remover-status');
+    if (!btn) return;
+    try {
+      await api('DELETE', '/api/chamados-intecs/status-config/' + btn.closest('tr[data-st-id]').getAttribute('data-st-id'));
+      await carregarCategoriasPainel();
+      await carregarPrioridadesEStatusIntecs();
+    } catch (err) {
+      $('alertStatusIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+    }
+  });
+}
+
+// ============================================================
+//  Detecção de máquina por IP ("Verificar Máquina") — Fase 3
+// ============================================================
+let _ciMaquinaDetectadaId = null;
+
+async function verificarMaquinaAutomatico() {
+  _ciMaquinaDetectadaId = null;
+  $('ciMaquinaSelectWrap').style.display = 'none';
+  $('ciMaquinaDetectada').innerHTML = '<i class="ph ph-spinner"></i> Detectando máquina...';
+  try {
+    const { matches } = await api('POST', '/api/chamados-intecs/verificar-maquina');
+    if (matches.length === 1) {
+      _ciMaquinaDetectadaId = matches[0].tactical_agent_id;
+      $('ciMaquinaDetectada').textContent = 'Máquina detectada: ' + (matches[0].hostname || matches[0].tactical_agent_id);
+    } else if (matches.length > 1) {
+      $('ciMaquinaDetectada').textContent = 'Mais de uma máquina encontrada nessa rede — selecione a sua:';
+      const itens = matches.map((a) => ({ value: a.tactical_agent_id, label: a.hostname || a.tactical_agent_id }));
+      const inst = choicesMap['ciMaquinaSelect'];
+      if (inst) {
+        inst.clearChoices();
+        inst.setChoices(itens, 'value', 'label', true);
+      } else {
+        $('ciMaquinaSelect').innerHTML = itens.map((i) => `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
+      }
+      $('ciMaquinaSelectWrap').style.display = '';
+      _ciMaquinaDetectadaId = matches[0].tactical_agent_id;
+    } else {
+      $('ciMaquinaDetectada').textContent = 'Não foi possível detectar automaticamente — o chamado será aberto sem equipamento.';
+    }
+  } catch (err) {
+    $('ciMaquinaDetectada').textContent = 'Erro ao verificar: ' + err.message;
+  }
+}
+
+function configurarVerificarMaquina() {
+  $('ciMaquinaSelect').addEventListener('change', () => {
+    _ciMaquinaDetectadaId = $('ciMaquinaSelect').value;
+  });
+}
+
+// ============================================================
+//  Perfil/papéis do usuário no módulo Chamados Intecs — Fase 3
+// ============================================================
+let _ciPerfil = null;
+
+async function carregarMeuPerfilCI() {
+  _ciPerfil = await api('GET', '/api/chamados-intecs/meu-perfil');
+  const podeDashboard = ['GESTOR', 'TECNICO', 'MASTER'].includes(_ciPerfil.role);
+  $('btnDashboardIntecs').style.display = podeDashboard ? '' : 'none';
+  $('btnChamadosIntecsView').style.display = '';
+}
+
+function podeAtenderCI() {
+  return !!_ciPerfil && ['TECNICO', 'MASTER'].includes(_ciPerfil.role);
+}
+
+function aplicarPermissoesDetalheChamado(chamado) {
+  const podeAtender = podeAtenderCI();
+  const podeComentar = podeAtender || chamado.usuario_id === _ciPerfil.id;
+  ['ciDetStatus', 'ciDetPrioridade', 'ciDetResponsavel'].forEach((id) => { $(id).disabled = !podeAtender; });
+  $('btnAtualizarEquipamentoIntecs').style.display = podeAtender ? '' : 'none';
+  $('ciNovoComentario').closest('.d-flex').style.display = podeComentar ? '' : 'none';
+  const btnAtribuir = $('btnAtribuirAMim');
+  btnAtribuir.style.display = podeAtender ? '' : 'none';
+  btnAtribuir.disabled = chamado.responsavel_id === _ciPerfil.id;
 }
 
 // ============================================================
@@ -3787,6 +4637,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalNovoChamado = new bootstrap.Modal($('modalNovoChamado'));
   modalChamadoDetalhe = new bootstrap.Modal($('modalChamadoDetalhe'));
   modalIntecsMsa = new bootstrap.Modal($('modalIntecsMsa'));
+  modalNovoChamadoIntecs = new bootstrap.Modal($('modalNovoChamadoIntecs'));
+  modalChamadoIntecsDetalhe = new bootstrap.Modal($('modalChamadoIntecsDetalhe'));
+  modalEditarUsuario = new bootstrap.Modal($('modalEditarUsuario'));
+  modalNovoUsuario = new bootstrap.Modal($('modalNovoUsuario'));
   document.querySelectorAll('.modal').forEach(el => {
     el.addEventListener('hidePrevented.bs.modal', () => el.classList.remove('modal-static'));
   });
@@ -3843,12 +4697,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarCameraEdicao();
   configurarFormOpcao();
   configurarFormUsuario();
+  configurarModalEditarUsuario();
   configurarFormEmprestimo();
   configurarFormEditar();
   configurarFiltrosTabela();
   configurarDetalheChamado();
   configurarNovoChamado();
   configurarIntecsMsa();
+  configurarChamadosIntecs();
+  configurarFiltrosChamadosIntecs();
+  configurarDashboardIntecs();
+  configurarCategoriasIntecs();
+  configurarVerificarMaquina();
 
   document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
     btn.addEventListener('shown.bs.tab', () => {
@@ -3905,6 +4765,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('tab-chamados').addEventListener('shown.bs.tab', carregarIntecsMsa);
   $('sub-tab-intecsmsa').addEventListener('shown.bs.tab', carregarIntecsMsa);
   $('sub-tab-msa').addEventListener('shown.bs.tab', carregarChamados);
+  $('sub-tab-intecs').addEventListener('shown.bs.tab', async () => {
+    if (!_ciPerfil) await carregarMeuPerfilCI();
+    if (!_ciCategorias.length) await carregarCategoriasIntecs();
+    if (!_ciUsuarios.length) await carregarUsuariosIntecs();
+    if (!_ciPrioridadesConfig.length) await carregarPrioridadesEStatusIntecs();
+    carregarChamadosIntecs();
+    if (_ciPerfil.role === 'BASICO') {
+      mostrarViewChamadosIntecs();
+    } else {
+      mostrarViewDashboardIntecs();
+      await carregarDashboardIntecs();
+    }
+  });
   $('btnRefreshChamados').addEventListener('click', carregarChamados);
   $('chamadosBusca').addEventListener('input', renderChamados);
   $('chamadosFiltroStatus').addEventListener('change', () => {

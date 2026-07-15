@@ -507,7 +507,7 @@
     }
     .choices__list--dropdown .choices__item--selectable.is-highlighted,
     .choices__list[aria-expanded] .choices__item--selectable.is-highlighted {
-      background: var(--ink); color: #fff;
+      background: #000; color: #fff;
     }
     .choices__list--dropdown .choices__item--selectable.is-selected,
     .choices__list[aria-expanded] .choices__item--selectable.is-selected {
@@ -516,21 +516,33 @@
     /* Hover na opção já selecionada: mantém fundo escuro (evita fonte branca sobre fundo claro) */
     .choices__list--dropdown .choices__item--selectable.is-selected.is-highlighted,
     .choices__list[aria-expanded] .choices__item--selectable.is-selected.is-highlighted {
-      background: var(--ink); color: #fff;
+      background: #000; color: #fff;
     }
     .choices__input { font-size: 1rem; }
 
     /* Filtros de status compactos (equivalente ao form-select-sm) */
     .choices:has(#imFiltroStatus) .choices__inner,
-    .choices:has(#chamadosFiltroStatus) .choices__inner {
+    .choices:has(#chamadosFiltroStatus) .choices__inner,
+    .choices:has(#ciFiltroCategoria) .choices__inner,
+    .choices:has(#ciFiltroPrioridade) .choices__inner,
+    .choices:has(#ciFiltroStatus) .choices__inner,
+    .choices:has(#ciFiltroResponsavel) .choices__inner {
       min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px;
     }
     .choices:has(#imFiltroStatus) .choices__list--single .choices__item,
-    .choices:has(#chamadosFiltroStatus) .choices__list--single .choices__item { font-size: .875rem; }
+    .choices:has(#chamadosFiltroStatus) .choices__list--single .choices__item,
+    .choices:has(#ciFiltroCategoria) .choices__list--single .choices__item,
+    .choices:has(#ciFiltroPrioridade) .choices__list--single .choices__item,
+    .choices:has(#ciFiltroStatus) .choices__list--single .choices__item,
+    .choices:has(#ciFiltroResponsavel) .choices__list--single .choices__item { font-size: .875rem; }
     .choices:has(#imFiltroStatus) .choices__list--dropdown .choices__item,
     .choices:has(#imFiltroStatus) .choices__list[aria-expanded] .choices__item,
     .choices:has(#chamadosFiltroStatus) .choices__list--dropdown .choices__item,
-    .choices:has(#chamadosFiltroStatus) .choices__list[aria-expanded] .choices__item {
+    .choices:has(#chamadosFiltroStatus) .choices__list[aria-expanded] .choices__item,
+    .choices:has(#ciFiltroCategoria) .choices__list--dropdown .choices__item,
+    .choices:has(#ciFiltroPrioridade) .choices__list--dropdown .choices__item,
+    .choices:has(#ciFiltroStatus) .choices__list--dropdown .choices__item,
+    .choices:has(#ciFiltroResponsavel) .choices__list--dropdown .choices__item {
       padding: 7px 10px; font-size: .875rem;
     }
 
@@ -667,7 +679,15 @@
       --dash-blue:   #4f7cf5;
       --dash-orange: #ff8c42;
       --dash-green:  #16a34a;
+      --dash-red:    #dc3545;
     }
+    .dash-stat-value--red { color: var(--dash-red); }
+    .dash-stat-value--orange { color: var(--dash-orange); }
+    .dash-dot--red { background: var(--dash-red); }
+    .dash-dot--green { background: var(--dash-green); }
+
+    .ci-secao-colapsavel .ph-caret-down { transition: transform .2s; }
+    .ci-secao-colapsavel button[data-bs-toggle="collapse"]:not(.collapsed) .ph-caret-down { transform: rotate(180deg); }
 
     /* Header */
     .dash-header {
@@ -1278,15 +1298,128 @@
                 <option value="SETOR">SETOR</option>
                 <option value="EQUIPAMENTO">EQUIPAMENTO</option>
                 <option value="INSUMOS">INSUMOS</option>
+                <option value="CHAMADOS">CHAMADOS</option>
               </select>
               </div>
               <button type="button" class="btn btn-success" id="btnAdicionar">
                 <i class="ph ph-plus"></i> Novo
               </button>
             </div>
-            <h6 class="mb-2">Opções atuais de <span id="rotuloLista">UNIDADE</span></h6>
-            <div id="listaOpcoes">
-              <span class="text-muted">Carregando...</span>
+
+            <div id="opcoesGenericoView">
+              <h6 class="mb-2">Opções atuais de <span id="rotuloLista">UNIDADE</span></h6>
+              <div id="listaOpcoes">
+                <span class="text-muted">Carregando...</span>
+              </div>
+            </div>
+
+            <div id="ciCategoriasPainel" style="display:none">
+              <div class="ci-secao-colapsavel mb-2">
+                <button type="button" class="btn btn-light border w-100 d-flex justify-content-between align-items-center"
+                  data-bs-toggle="collapse" data-bs-target="#ciColCategorias">
+                  <span><i class="ph ph-tag"></i> Categorias</span>
+                  <i class="ph ph-caret-down"></i>
+                </button>
+                <div class="collapse show" id="ciColCategorias">
+                  <div class="pt-3">
+                    <div id="alertCategoriasIntecs"></div>
+                    <div class="row g-2 mb-2">
+                      <div class="col-12 col-md-4">
+                        <input type="text" class="form-control form-control-sm" id="catNovoNome" placeholder="Nova categoria...">
+                      </div>
+                      <div class="col-12 col-md-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnAdicionarCategoria">Adicionar</button>
+                      </div>
+                    </div>
+                    <div class="table-responsive mb-4">
+                      <table class="table table-sm table-striped align-middle">
+                        <thead class="table-light"><tr><th>Categoria</th><th>Subcategorias</th><th></th></tr></thead>
+                        <tbody id="catTbody"></tbody>
+                      </table>
+                    </div>
+                    <div class="row g-2 mb-2">
+                      <div class="col-12 col-md-4">
+                        <select class="form-select form-select-sm" id="subcatCategoria"><option value="">Categoria...</option></select>
+                      </div>
+                      <div class="col-12 col-md-4">
+                        <input type="text" class="form-control form-control-sm" id="subcatNovoNome" placeholder="Nova subcategoria...">
+                      </div>
+                      <div class="col-12 col-md-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnAdicionarSubcategoria">Adicionar</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ci-secao-colapsavel mb-2">
+                <button type="button" class="btn btn-light border w-100 d-flex justify-content-between align-items-center collapsed"
+                  data-bs-toggle="collapse" data-bs-target="#ciColPrioridades">
+                  <span><i class="ph ph-flag"></i> Prioridades — SLA de atendimento</span>
+                  <i class="ph ph-caret-down"></i>
+                </button>
+                <div class="collapse" id="ciColPrioridades">
+                  <div class="pt-3">
+                    <div id="alertPrioridadesIntecs"></div>
+                    <div class="row g-2 mb-2">
+                      <div class="col-6 col-md-3">
+                        <input type="text" class="form-control form-control-sm" id="prNovoNome" placeholder="Nome (ex: URGENTE)">
+                      </div>
+                      <div class="col-6 col-md-3">
+                        <input type="number" step="0.5" min="0" class="form-control form-control-sm" id="prNovaResposta" placeholder="Horas p/ resposta">
+                      </div>
+                      <div class="col-6 col-md-3">
+                        <input type="number" step="0.5" min="0" class="form-control form-control-sm" id="prNovaConclusao" placeholder="Horas p/ conclusão">
+                      </div>
+                      <div class="col-6 col-md-3">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnAdicionarPrioridade">Adicionar</button>
+                      </div>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm table-striped align-middle">
+                        <thead class="table-light"><tr><th>Nome</th><th>Resposta (h)</th><th>Conclusão (h)</th><th></th><th></th></tr></thead>
+                        <tbody id="prTbody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ci-secao-colapsavel mb-2">
+                <button type="button" class="btn btn-light border w-100 d-flex justify-content-between align-items-center collapsed"
+                  data-bs-toggle="collapse" data-bs-target="#ciColStatus">
+                  <span><i class="ph ph-circle-half"></i> Status</span>
+                  <i class="ph ph-caret-down"></i>
+                </button>
+                <div class="collapse" id="ciColStatus">
+                  <div class="pt-3">
+                    <div id="alertStatusIntecs"></div>
+                    <div class="row g-2 mb-2">
+                      <div class="col-6 col-md-4">
+                        <input type="text" class="form-control form-control-sm" id="stNovoNome" placeholder="Nome (ex: AGUARDANDO_PECA)">
+                      </div>
+                      <div class="col-6 col-md-4">
+                        <select class="form-select form-select-sm" id="stNovoTipo">
+                          <option value="ABERTO">Aberto</option>
+                          <option value="ANDAMENTO" selected>Em andamento</option>
+                          <option value="RESOLVIDO">Resolvido</option>
+                          <option value="FECHADO">Fechado</option>
+                          <option value="CANCELADO">Cancelado</option>
+                        </select>
+                      </div>
+                      <div class="col-12 col-md-4">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnAdicionarStatus">Adicionar</button>
+                      </div>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm table-striped align-middle">
+                        <thead class="table-light"><tr><th>Nome</th><th>Tipo (comportamento)</th><th></th></tr></thead>
+                        <tbody id="stTbody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1295,25 +1428,12 @@
 
             <p class="text-muted">Cadastre novos acessos ao sistema.</p>
             <div id="alertUsuarios"></div>
-            <form id="formUsuario" class="row g-3 align-items-end" novalidate>
-              <div class="col-md-5">
-                <label class="form-label" for="novo_email">E-mail</label>
-                <input type="email" class="form-control" id="novo_email" required
-                  autocomplete="off" placeholder="usuario@email.com">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label" for="novo_senha">Senha</label>
-                <input type="text" class="form-control" id="novo_senha" required minlength="6"
-                  autocomplete="off" placeholder="Mínimo de 6 caracteres">
-              </div>
-              <div class="col-md-3 d-grid">
-                <button type="submit" class="btn btn-success" id="btnCriarUsuario">
-                  Criar usuário
-                </button>
-              </div>
-            </form>
 
-            <hr>
+            <div class="d-flex justify-content-end mb-3">
+              <button type="button" class="btn btn-success btn-sm" id="btnNovoUsuario">
+                <i class="ph ph-plus"></i> Novo
+              </button>
+            </div>
 
             <div class="d-flex justify-content-between align-items-center mb-2">
               <h6 class="mb-0">Usuários cadastrados</h6>
@@ -1472,12 +1592,191 @@
                 </div>
               </div>
 
-              <!-- SUB-ABA: INTECS (em desenvolvimento) -->
+              <!-- SUB-ABA: INTECS (chamado interno + Tactical RMM) -->
               <div class="tab-pane fade" id="sub-intecs" role="tabpanel">
-                <div class="text-center text-muted py-5">
-                  <i class="ph ph-wrench" style="font-size:2.5rem;"></i>
-                  <p class="mt-3 mb-0 fw-semibold">Em desenvolvimento</p>
-                  <p class="small">Os chamados internos da INTECS estarão disponíveis aqui em breve.</p>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Chamados internos da INTECS, com equipamento anexado automaticamente.</h5>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-dark btn-sm" id="btnDashboardIntecs" style="display:none">
+                      <i class="ph ph-chart-bar"></i> Dashboard
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnChamadosIntecsView" style="display:none">
+                      <i class="ph ph-headset"></i> Chamados
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Dashboard (visão padrão) -->
+                <div id="ciDashboardPainel">
+
+                  <!-- Stats row -->
+                  <div class="dash-stats-row">
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-tray"></i> Abertos</div>
+                      <div class="dash-stat-value" id="ciDashAbertos">—</div>
+                    </div>
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-hourglass-medium"></i> Em andamento</div>
+                      <div class="dash-stat-value" id="ciDashAndamento">—</div>
+                    </div>
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-check-circle"></i> Resolvidos hoje</div>
+                      <div class="dash-stat-value dash-stat-value--green" id="ciDashResolvidosHoje">—</div>
+                    </div>
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-archive"></i> Fechados</div>
+                      <div class="dash-stat-value" id="ciDashFechados">—</div>
+                    </div>
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-warning-circle"></i> Vencidos</div>
+                      <div class="dash-stat-value dash-stat-value--red" id="ciDashVencidos">—</div>
+                    </div>
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-clock-countdown"></i> SLA próx. venc.</div>
+                      <div class="dash-stat-value dash-stat-value--orange" id="ciDashProxVenc">—</div>
+                    </div>
+                  </div>
+
+                  <!-- Tempos médios -->
+                  <div class="dash-stats-row">
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-timer"></i> Tempo médio de atendimento</div>
+                      <div class="dash-stat-value" style="font-size:1.15rem" id="ciDashTempoAtend">—</div>
+                    </div>
+                    <div class="dash-stat">
+                      <div class="dash-stat-top"><i class="ph ph-flag-checkered"></i> Tempo médio de resolução</div>
+                      <div class="dash-stat-value" style="font-size:1.15rem" id="ciDashTempoResol">—</div>
+                    </div>
+                  </div>
+
+                  <!-- Charts -->
+                  <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                      <div class="dash-panel mb-0">
+                        <div class="dash-panel-head">
+                          <div class="dash-panel-title"><i class="ph ph-tag"></i> Por Categoria</div>
+                        </div>
+                        <div class="dash-chart-wrap"><canvas id="ciChartCategoria"></canvas></div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="dash-panel mb-0">
+                        <div class="dash-panel-head">
+                          <div class="dash-panel-title"><i class="ph ph-flag"></i> Por Prioridade</div>
+                        </div>
+                        <div class="dash-chart-wrap"><canvas id="ciChartPrioridade"></canvas></div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="dash-panel mb-0">
+                        <div class="dash-panel-head">
+                          <div class="dash-panel-title"><i class="ph ph-list-checks"></i> Por Status</div>
+                        </div>
+                        <div class="dash-chart-wrap"><canvas id="ciChartStatus"></canvas></div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="dash-panel mb-0">
+                        <div class="dash-panel-head">
+                          <div class="dash-panel-title"><i class="ph ph-calendar-blank"></i> Por Mês</div>
+                        </div>
+                        <div class="dash-chart-wrap"><canvas id="ciChartMes"></canvas></div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="dash-panel mb-0">
+                        <div class="dash-panel-head">
+                          <div class="dash-panel-title"><i class="ph ph-map-pin"></i> Por Unidade</div>
+                        </div>
+                        <div class="dash-chart-wrap"><canvas id="ciChartUnidade"></canvas></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Chamados (lista + criação) -->
+                <div id="ciChamadosView" style="display:none">
+                  <div class="d-flex justify-content-end mb-2">
+                    <button type="button" class="btn btn-primary btn-sm" id="btnNovoChamadoIntecs">
+                      <i class="ph ph-plus"></i> Novo Chamado
+                    </button>
+                  </div>
+
+                  <!-- Filtros -->
+                  <div class="row g-2 mb-2">
+                  <div class="col-12 col-sm-6 col-md-3">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                      <input type="text" class="form-control" id="ciBusca" placeholder="Buscar por título…">
+                    </div>
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <select class="form-select form-select-sm" id="ciFiltroCategoria"><option value="">Categoria (todas)</option></select>
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <select class="form-select form-select-sm" id="ciFiltroPrioridade">
+                      <option value="">Prioridade (todas)</option>
+                      <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
+                      <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
+                    </select>
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <select class="form-select form-select-sm" id="ciFiltroStatus">
+                      <option value="">Status (todos)</option>
+                      <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
+                      <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
+                      <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
+                      <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
+                    </select>
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <select class="form-select form-select-sm" id="ciFiltroResponsavel"><option value="">Responsável (todos)</option></select>
+                  </div>
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-6 col-md-3">
+                    <input type="text" class="form-control form-control-sm" id="ciFiltroUnidade" placeholder="Unidade">
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <input type="text" class="form-control form-control-sm" id="ciFiltroDepartamento" placeholder="Departamento">
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <input type="date" class="form-control form-control-sm" id="ciFiltroDataInicial" title="Data inicial">
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <input type="date" class="form-control form-control-sm" id="ciFiltroDataFinal" title="Data final">
+                  </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div id="ciStatus" class="text-muted small mb-0"></div>
+                  <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosIntecs" title="Limpar filtros">
+                      <i class="ph ph-funnel-x fs-5"></i>
+                    </button>
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshChamadosIntecs" title="Atualizar">
+                      <i class="ph ph-arrow-clockwise fs-5"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="table-responsive table-sticky">
+                  <table class="table table-sm table-striped table-hover align-middle" id="tabelaChamadosIntecs">
+                    <thead class="table-light">
+                      <tr>
+                        <th data-sort="id">Nº</th>
+                        <th data-sort="titulo">Título</th>
+                        <th data-sort="categoria_nome">Categoria</th>
+                        <th data-sort="prioridade">Prioridade</th>
+                        <th data-sort="status">Status</th>
+                        <th>SLA</th>
+                        <th data-sort="responsavel_email">Responsável</th>
+                        <th data-sort="criado_em">Aberto em</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="ciTbody"></tbody>
+                  </table>
+                </div>
                 </div>
               </div>
 
@@ -2281,6 +2580,284 @@
           <button type="button" class="btn btn-primary" id="btnAbrirChamado">
             <i class="ph ph-headset"></i> Abrir Chamado
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL NOVO CHAMADO INTECS ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalNovoChamadoIntecs" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-md modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-headset me-2"></i>Novo Chamado INTECS</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertNovoChamadoIntecs"></div>
+          <form id="formNovoChamadoIntecs" class="needs-validation row g-3" novalidate>
+            <div class="col-12">
+              <label class="form-label" for="ci_titulo">Título *</label>
+              <input type="text" class="form-control" id="ci_titulo" required autocomplete="off">
+              <div class="invalid-feedback">Informe um título.</div>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="ci_categoria">Categoria</label>
+              <select class="form-select" id="ci_categoria">
+                <option value="">Selecione...</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="ci_subcategoria">Subcategoria</label>
+              <select class="form-select" id="ci_subcategoria">
+                <option value="">Selecione a categoria antes...</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="ci_prioridade">Prioridade</label>
+              <select class="form-select" id="ci_prioridade">
+                <option value="BAIXA">Baixa</option>
+                <option value="MEDIA" selected>Média</option>
+                <option value="ALTA">Alta</option>
+                <option value="CRITICA">Crítica</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="ci_unidade">Unidade</label>
+              <select class="form-select" id="ci_unidade"><option value="">Selecione...</option></select>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="ci_departamento">Setor</label>
+              <select class="form-select" id="ci_departamento"><option value="">Selecione...</option></select>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="ci_localizacao">Localização</label>
+              <input type="text" class="form-control" id="ci_localizacao" autocomplete="off">
+            </div>
+            <div class="col-4">
+              <label class="form-label" for="ci_telefone">Telefone</label>
+              <input type="text" class="form-control" id="ci_telefone" autocomplete="off">
+            </div>
+            <div class="col-4">
+              <label class="form-label" for="ci_ramal">Ramal</label>
+              <input type="text" class="form-control" id="ci_ramal" autocomplete="off">
+            </div>
+            <div class="col-4">
+              <label class="form-label" for="ci_email_contato">E-mail</label>
+              <input type="email" class="form-control" id="ci_email_contato" autocomplete="off">
+            </div>
+            <div class="col-12">
+              <span id="ciMaquinaDetectada" class="small text-muted"><i class="ph ph-spinner"></i> Detectando máquina...</span>
+              <div id="ciMaquinaSelectWrap" class="mt-2" style="display:none">
+                <select class="form-select form-select-sm" id="ciMaquinaSelect"></select>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="ci_descricao">Descrição</label>
+              <textarea class="form-control" id="ci_descricao" rows="4"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                placeholder="Descreva o problema..."></textarea>
+            </div>
+            <div class="col-12">
+              <div class="text-muted" style="font-size:.8rem;">
+                <i class="ph ph-info"></i> O equipamento vinculado a você será anexado automaticamente ao chamado.
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btnAbrirChamadoIntecs">
+            <i class="ph ph-headset"></i> Abrir Chamado
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL DETALHE CHAMADO INTECS ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalChamadoIntecsDetalhe" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="ciDetalheTitle">Chamado</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-0">
+          <div class="row g-2 p-3 border-bottom align-items-end">
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1">Status</label>
+              <select class="form-select form-select-sm" id="ciDetStatus">
+                <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
+                <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
+                <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
+                <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1">Prioridade</label>
+              <select class="form-select form-select-sm" id="ciDetPrioridade">
+                <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
+                <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1">Responsável</label>
+              <div class="d-flex gap-1">
+                <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
+                  <i class="ph ph-user-plus"></i>
+                </button>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1">SLA</label>
+              <div id="ciDetSlaBadge" class="small"></div>
+            </div>
+          </div>
+          <div class="px-3 pt-3" id="ciDetDadosChamado"></div>
+          <ul class="nav nav-tabs px-3 pt-2" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#ci-eq-resumo" type="button" role="tab">Resumo</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-hardware" type="button" role="tab">Hardware</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-rede" type="button" role="tab">Rede</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-seguranca" type="button" role="tab">Segurança</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-comentarios" type="button" role="tab">Comentários</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-historico" type="button" role="tab">Histórico</button>
+            </li>
+          </ul>
+          <div class="tab-content p-3">
+            <div class="tab-pane fade show active" id="ci-eq-resumo" role="tabpanel"></div>
+            <div class="tab-pane fade" id="ci-eq-hardware" role="tabpanel"></div>
+            <div class="tab-pane fade" id="ci-eq-rede" role="tabpanel"></div>
+            <div class="tab-pane fade" id="ci-eq-seguranca" role="tabpanel"></div>
+            <div class="tab-pane fade" id="ci-comentarios" role="tabpanel">
+              <div id="ciComentariosLista" class="mb-3"></div>
+              <div class="d-flex gap-2">
+                <textarea class="form-control" id="ciNovoComentario" rows="2" placeholder="Escreva um comentário..."></textarea>
+                <button type="button" class="btn btn-primary" id="btnEnviarComentarioIntecs"><i class="ph ph-paper-plane-tilt"></i></button>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="ci-historico" role="tabpanel">
+              <div id="ciHistoricoLista"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarEquipamentoIntecs">
+            <i class="ph ph-arrow-clockwise"></i> Atualizar Equipamento
+          </button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL NOVO USUÁRIO ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalNovoUsuario" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">Novo usuário</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertNovoUsuario"></div>
+          <form id="formNovoUsuario" class="row g-3" novalidate>
+            <div class="col-12">
+              <label class="form-label" for="novo_email">E-mail</label>
+              <input type="email" class="form-control" id="novo_email" required
+                autocomplete="off" placeholder="usuario@email.com">
+              <div class="invalid-feedback">Informe um e-mail válido.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="novo_senha">Senha</label>
+              <input type="text" class="form-control" id="novo_senha" required minlength="6"
+                autocomplete="off" placeholder="Mínimo de 6 caracteres">
+              <div class="invalid-feedback">Mínimo de 6 caracteres.</div>
+            </div>
+            <div class="col-6" id="novo_role_grupo">
+              <label class="form-label" for="novo_role">Papel (Chamados)</label>
+              <select class="form-select" id="novo_role">
+                <option value="BASICO">BASICO</option><option value="GESTOR">GESTOR</option>
+                <option value="TECNICO">TECNICO</option><option value="MASTER">MASTER</option>
+              </select>
+            </div>
+            <div class="col-6" id="novo_unidade_grupo">
+              <label class="form-label" for="novo_unidade">Unidade</label>
+              <select class="form-select" id="novo_unidade"><option value="">-</option></select>
+            </div>
+            <div class="col-6" id="novo_setor_grupo">
+              <label class="form-label" for="novo_setor">Setor</label>
+              <select class="form-select" id="novo_setor"><option value="">-</option></select>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-success" id="btnCriarUsuario">Criar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL EDITAR USUÁRIO ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEditarUsuario" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="euTitulo">Editar usuário</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertEditarUsuario"></div>
+          <form id="formEditarUsuario" class="row g-3">
+            <input type="hidden" id="eu_id">
+            <div class="col-12">
+              <label class="form-label" for="eu_email">E-mail</label>
+              <input type="email" class="form-control" id="eu_email" autocomplete="off">
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="eu_senha">Nova senha</label>
+              <input type="text" class="form-control" id="eu_senha" autocomplete="off" placeholder="Deixe em branco para não alterar">
+            </div>
+            <div class="col-6" id="eu_role_grupo">
+              <label class="form-label" for="eu_role">Papel (Chamados)</label>
+              <select class="form-select" id="eu_role">
+                <option value="BASICO">BASICO</option><option value="GESTOR">GESTOR</option>
+                <option value="TECNICO">TECNICO</option><option value="MASTER">MASTER</option>
+              </select>
+            </div>
+            <div class="col-6" id="eu_ativo_grupo">
+              <label class="form-label d-block">Status</label>
+              <div class="form-check form-switch mt-2">
+                <input class="form-check-input" type="checkbox" id="eu_ativo">
+                <label class="form-check-label" for="eu_ativo">Ativo</label>
+              </div>
+            </div>
+            <div class="col-6" id="eu_unidade_grupo">
+              <label class="form-label" for="eu_unidade">Unidade</label>
+              <select class="form-select" id="eu_unidade"><option value="">-</option></select>
+            </div>
+            <div class="col-6" id="eu_setor_grupo">
+              <label class="form-label" for="eu_setor">Setor</label>
+              <select class="form-select" id="eu_setor"><option value="">-</option></select>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btnSalvarEditarUsuario">Salvar</button>
         </div>
       </div>
     </div>
