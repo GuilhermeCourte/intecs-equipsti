@@ -12,6 +12,11 @@ import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 import { notificar, notificarTeste } from './notificacoes.js';
+import * as deviceService from './tacticalrmm/deviceService.js';
+import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
+import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
+import { calcularPrazosSla } from './chamadosIntecsSla.js';
+import { carregarPerfilChamados, exigirPapel, podeVerChamado } from './chamadosIntecsAuth.js';
 
 dotenv.config();
 
@@ -179,9 +184,11 @@ app.post('/api/users', exigirAuth, wrap(async (req, res) => {
   if (existe.recordset.length) return res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
 
   const hash = await bcrypt.hash(senha, 10);
-  await query('INSERT INTO dbo.EQUIPSTI_usuarios (email, senha_hash) VALUES (@email, @hash)',
-    { email: S(email), hash: S(hash) });
-  res.status(201).json({ ok: true });
+  const inserted = await query(
+    'INSERT INTO dbo.EQUIPSTI_usuarios (email, senha_hash) OUTPUT INSERTED.id VALUES (@email, @hash)',
+    { email: S(email), hash: S(hash) }
+  );
+  res.status(201).json({ ok: true, id: inserted.recordset[0].id });
 }));
 
 app.put('/api/users/:id', exigirAuth, wrap(async (req, res) => {
@@ -1486,8 +1493,329 @@ app.get('/api/dashboard', exigirAuth, wrap(async (req, res) => {
   });
 }));
 
+// ===================== CHAMADOS INTECS (RMM + papéis) =====================
+// Módulo interno, independente do MSA/Eurosa. Papéis (Básico/Gestor/Técnico/
+// Master) valem só aqui — o resto do app continua sem restrição por papel.
+
+app.get('/api/tactical-agents', exigirAuth, wrap(async (req, res) => {
+  const agentes = await deviceService.listarAgentesDisponiveis();
+  res.json(agentes);
+}));
+
+// Detecção da máquina do usuário no momento da abertura do chamado, por IP
+// da requisição (sem vínculo fixo usuário<->equipamento).
+app.post('/api/chamados-intecs/verificar-maquina', exigirAuth, wrap(async (req, res) => {
+  const ip = (req.headers['x-forwarded-for']?.split(',')[0]?.trim()) || req.socket.remoteAddress || '';
+  const ipLimpo = ip.replace('::ffff:', '');
+  const matches = await deviceService.detectarAgentesPorIp(ipLimpo);
+  res.json({ ip: ipLimpo, matches });
+}));
+
+app.get('/api/chamados-intecs/meu-perfil', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  res.json({ id: req.perfilCI.id, email: req.perfilCI.email, role: req.perfilCI.role, unidade: req.perfilCI.unidade, setor: req.perfilCI.setor });
+}));
+
+app.get('/api/chamados-intecs/categorias', exigirAuth, wrap(async (req, res) => {
+  const categorias = await chamadosIntecsRepo.listarCategorias();
+  res.json(categorias);
+}));
+
+// Usuários elegíveis para atender chamado (Técnico/Master) — usado no
+// dropdown "Responsável" e no filtro da lista.
+app.get('/api/chamados-intecs/atendentes', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const atendentes = await chamadosIntecsRepo.listarAtendentes();
+  res.json(atendentes);
+}));
+
+app.post('/api/chamados-intecs/categorias', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const nome = trim(req.body.nome || '');
+  if (!nome) return res.status(400).json({ error: 'Informe o nome da categoria.' });
+  const categoria = await chamadosIntecsRepo.criarCategoria(nome);
+  res.status(201).json(categoria);
+}));
+
+app.post('/api/chamados-intecs/subcategorias', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const nome = trim(req.body.nome || '');
+  const categoriaId = Number(req.body.categoria_id);
+  if (!nome || !categoriaId) return res.status(400).json({ error: 'Informe categoria e nome da subcategoria.' });
+  const subcategoria = await chamadosIntecsRepo.criarSubcategoria(categoriaId, nome);
+  res.status(201).json(subcategoria);
+}));
+
+app.delete('/api/chamados-intecs/categorias/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  await chamadosIntecsRepo.removerCategoria(req.params.id);
+  res.json({ ok: true });
+}));
+
+app.delete('/api/chamados-intecs/subcategorias/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  await chamadosIntecsRepo.removerSubcategoria(req.params.id);
+  res.json({ ok: true });
+}));
+
+// ---------- Prioridades (com SLA) ----------
+
+app.get('/api/chamados-intecs/prioridades', exigirAuth, wrap(async (req, res) => {
+  res.json(await chamadosIntecsRepo.listarPrioridades());
+}));
+
+app.post('/api/chamados-intecs/prioridades', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const nome = trim(req.body.nome || '').toUpperCase();
+  const slaResposta = Number(req.body.sla_resposta_horas);
+  const slaConclusao = Number(req.body.sla_conclusao_horas);
+  if (!nome || !slaResposta || !slaConclusao) {
+    return res.status(400).json({ error: 'Informe nome, horas de resposta e horas de conclusão.' });
+  }
+  const prioridade = await chamadosIntecsRepo.criarPrioridade({
+    nome, sla_resposta_horas: slaResposta, sla_conclusao_horas: slaConclusao,
+    cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
+  });
+  res.status(201).json(prioridade);
+}));
+
+app.put('/api/chamados-intecs/prioridades/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const slaResposta = Number(req.body.sla_resposta_horas);
+  const slaConclusao = Number(req.body.sla_conclusao_horas);
+  if (!slaResposta || !slaConclusao) return res.status(400).json({ error: 'Informe horas de resposta e conclusão.' });
+  await chamadosIntecsRepo.atualizarPrioridade(req.params.id, {
+    sla_resposta_horas: slaResposta, sla_conclusao_horas: slaConclusao,
+    cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
+  });
+  res.json({ ok: true });
+}));
+
+app.delete('/api/chamados-intecs/prioridades/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  await chamadosIntecsRepo.removerPrioridade(req.params.id);
+  res.json({ ok: true });
+}));
+
+// ---------- Status ----------
+
+app.get('/api/chamados-intecs/status-config', exigirAuth, wrap(async (req, res) => {
+  res.json(await chamadosIntecsRepo.listarStatusConfig());
+}));
+
+app.post('/api/chamados-intecs/status-config', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const nome = trim(req.body.nome || '').toUpperCase().replace(/\s+/g, '_');
+  const tipoSistema = trim(req.body.tipo_sistema || '');
+  const tiposValidos = ['ABERTO', 'ANDAMENTO', 'RESOLVIDO', 'FECHADO', 'CANCELADO'];
+  if (!nome || !tiposValidos.includes(tipoSistema)) {
+    return res.status(400).json({ error: 'Informe nome e um tipo de sistema válido.' });
+  }
+  const status = await chamadosIntecsRepo.criarStatus({
+    nome, tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
+  });
+  res.status(201).json(status);
+}));
+
+app.put('/api/chamados-intecs/status-config/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const tipoSistema = trim(req.body.tipo_sistema || '');
+  const tiposValidos = ['ABERTO', 'ANDAMENTO', 'RESOLVIDO', 'FECHADO', 'CANCELADO'];
+  if (!tiposValidos.includes(tipoSistema)) return res.status(400).json({ error: 'Tipo de sistema inválido.' });
+  await chamadosIntecsRepo.atualizarStatus(req.params.id, {
+    tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
+  });
+  res.json({ ok: true });
+}));
+
+app.delete('/api/chamados-intecs/status-config/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  await chamadosIntecsRepo.removerStatus(req.params.id);
+  res.json({ ok: true });
+}));
+
+// ---------- Administração (só Master) ----------
+
+app.get('/api/chamados-intecs/usuarios', exigirAuth, carregarPerfilChamados, exigirPapel('MASTER'), wrap(async (req, res) => {
+  const usuarios = await chamadosIntecsRepo.listarUsuariosComPapel();
+  res.json(usuarios);
+}));
+
+app.put('/api/chamados-intecs/usuarios/:id', exigirAuth, carregarPerfilChamados, exigirPapel('MASTER'), wrap(async (req, res) => {
+  const role = trim(req.body.role || 'BASICO');
+  const unidade = trim(req.body.unidade || '') || null;
+  const setor = trim(req.body.setor || '') || null;
+  await chamadosIntecsRepo.atualizarPapelUsuario(req.params.id, { role, unidade, setor });
+  res.json({ ok: true });
+}));
+
+// ---------- Chamados ----------
+
+app.get('/api/chamados-intecs', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const lista = await chamadosIntecsRepo.listarChamadosIntecs();
+  if (['TECNICO', 'MASTER'].includes(req.perfilCI.role)) return res.json(lista);
+  const visiveis = [];
+  for (const c of lista) {
+    if (await podeVerChamado(req.perfilCI, c)) visiveis.push(c);
+  }
+  res.json(visiveis);
+}));
+
+app.post('/api/chamados-intecs', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const titulo = trim(req.body.titulo || '');
+  const descricao = trim(req.body.descricao || '');
+  const prioridade = trim(req.body.prioridade || 'MEDIA');
+  if (!titulo) return res.status(400).json({ error: 'Informe um título para o chamado.' });
+
+  const tacticalAgentId = trim(req.body.tactical_agent_id || '');
+  let device = null;
+  let snapshotId = null;
+  if (tacticalAgentId) {
+    try {
+      device = await deviceIntecsRepo.getOrCreateDeviceByAgentId(tacticalAgentId);
+      snapshotId = await deviceService.takeSnapshot(device.id, tacticalAgentId, null, req.user.sub);
+    } catch (err) {
+      console.error('[chamados-intecs] falha ao coletar snapshot:', err.message);
+    }
+  }
+
+  const agora = new Date();
+  const { sla_resposta_prazo, sla_conclusao_prazo } = await calcularPrazosSla(prioridade, agora);
+
+  const chamado = await chamadosIntecsRepo.criarChamadoIntecs({
+    titulo, descricao,
+    categoria_id: req.body.categoria_id ? Number(req.body.categoria_id) : null,
+    subcategoria_id: req.body.subcategoria_id ? Number(req.body.subcategoria_id) : null,
+    prioridade, usuario_id: req.user.sub, device_id: device?.id ?? null, snapshot_id: snapshotId,
+    unidade: trim(req.body.unidade || '') || req.perfilCI.unidade,
+    departamento: trim(req.body.departamento || '') || req.perfilCI.setor,
+    localizacao: trim(req.body.localizacao || ''), telefone: trim(req.body.telefone || ''),
+    ramal: trim(req.body.ramal || ''), email_contato: trim(req.body.email_contato || ''),
+    sla_resposta_prazo, sla_conclusao_prazo, criado_por: req.user.email
+  });
+
+  await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, 'CRIADO', null, null, titulo);
+  await notificar({
+    tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', email: false,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: 'Novo chamado INTECS',
+    mensagem: `${req.user.email} abriu o chamado "${titulo}".`
+  });
+
+  res.status(201).json(chamado);
+}));
+
+app.get('/api/chamados-intecs/dashboard', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const { role, unidade, setor } = req.perfilCI;
+  if (role === 'BASICO') return res.status(403).json({ error: 'Sem acesso ao dashboard.' });
+  if (role === 'GESTOR') {
+    const equipes = (unidade && setor) ? [{ unidade, setor }] : [];
+    const usuarioIds = await chamadosIntecsRepo.getUsuarioIdsDaEquipe(equipes);
+    return res.json(await chamadosIntecsRepo.getDashboard(usuarioIds));
+  }
+  res.json(await chamadosIntecsRepo.getDashboard());
+}));
+
+app.get('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const chamado = await chamadosIntecsRepo.getChamadoIntecs(req.params.id);
+  if (!chamado) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!(await podeVerChamado(req.perfilCI, chamado))) return res.status(403).json({ error: 'Sem acesso a este chamado.' });
+  const [comentarios, historico] = await Promise.all([
+    chamadosIntecsRepo.listarComentarios(chamado.id),
+    chamadosIntecsRepo.listarHistorico(chamado.id)
+  ]);
+  res.json({ ...chamado, comentarios, historico });
+}));
+
+app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const chamado = await chamadosIntecsRepo.getChamadoIntecs(req.params.id);
+  if (!chamado) return res.status(404).json({ error: 'Chamado não encontrado.' });
+
+  const campos = {};
+  const historicoEntradas = [];
+  let respondidoAgora = false;
+
+  if (req.body.status !== undefined && req.body.status !== chamado.status) {
+    campos.status = trim(req.body.status);
+    historicoEntradas.push(['STATUS', 'status', chamado.status, campos.status]);
+    const tipoAnterior = await chamadosIntecsRepo.getTipoSistemaDoStatus(chamado.status);
+    const tipoNovo = await chamadosIntecsRepo.getTipoSistemaDoStatus(campos.status);
+    if (tipoAnterior === 'ABERTO' && !chamado.sla_respondido_em) respondidoAgora = true;
+    if (['RESOLVIDO', 'FECHADO'].includes(tipoNovo) && !chamado.fechado_em) {
+      campos.fechado_em = new Date();
+    }
+  }
+  if (req.body.prioridade !== undefined && req.body.prioridade !== chamado.prioridade) {
+    campos.prioridade = trim(req.body.prioridade);
+    historicoEntradas.push(['PRIORIDADE', 'prioridade', chamado.prioridade, campos.prioridade]);
+  }
+  if (req.body.responsavel_id !== undefined && Number(req.body.responsavel_id) !== chamado.responsavel_id) {
+    campos.responsavel_id = Number(req.body.responsavel_id) || null;
+    historicoEntradas.push(['RESPONSAVEL', 'responsavel_id', chamado.responsavel_id, campos.responsavel_id]);
+  }
+  if (req.body.categoria_id !== undefined && Number(req.body.categoria_id) !== chamado.categoria_id) {
+    campos.categoria_id = Number(req.body.categoria_id) || null;
+    historicoEntradas.push(['CATEGORIA', 'categoria_id', chamado.categoria_id, campos.categoria_id]);
+  }
+  if (respondidoAgora) campos.sla_respondido_em = new Date();
+  campos.atualizado_por = req.user.email;
+
+  if (Object.keys(campos).length) {
+    await chamadosIntecsRepo.atualizarCamposChamado(chamado.id, campos);
+    for (const [acao, campo, antes, depois] of historicoEntradas) {
+      await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, acao, campo, antes, depois);
+    }
+    if (historicoEntradas.length) {
+      await notificar({
+        tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', email: false,
+        ator: { id: req.user.sub, email: req.user.email },
+        titulo: 'Chamado INTECS atualizado',
+        mensagem: `${req.user.email} atualizou o chamado "${chamado.titulo}".`
+      });
+    }
+  }
+
+  const atualizado = await chamadosIntecsRepo.getChamadoIntecs(chamado.id);
+  res.json(atualizado);
+}));
+
+app.post('/api/chamados-intecs/:id/comentarios', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const chamado = await chamadosIntecsRepo.getChamadoIntecs(req.params.id);
+  if (!chamado) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  const podeComentar = ['TECNICO', 'MASTER'].includes(req.perfilCI.role) || chamado.usuario_id === req.perfilCI.id;
+  if (!podeComentar) return res.status(403).json({ error: 'Sem permissão para comentar neste chamado.' });
+  const texto = trim(req.body.texto || '');
+  if (!texto) return res.status(400).json({ error: 'Escreva um comentário.' });
+
+  const comentario = await chamadosIntecsRepo.criarComentario(chamado.id, req.user.sub, texto);
+  await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, 'COMENTARIO', null, null, texto.slice(0, 200));
+  if (!chamado.sla_respondido_em) {
+    await chamadosIntecsRepo.atualizarCamposChamado(chamado.id, { sla_respondido_em: new Date() });
+  }
+  await notificar({
+    tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', email: false,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: 'Novo comentário no chamado INTECS',
+    mensagem: `${req.user.email} comentou no chamado "${chamado.titulo}".`
+  });
+  res.status(201).json(comentario);
+}));
+
+app.get('/api/chamados-intecs/:id/equipamento', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const chamado = await chamadosIntecsRepo.getChamadoIntecs(req.params.id);
+  if (!chamado) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!(await podeVerChamado(req.perfilCI, chamado))) return res.status(403).json({ error: 'Sem acesso a este chamado.' });
+  if (!chamado.device_id) return res.json(null);
+  const resumo = await deviceService.getDeviceSummary(chamado.device_id);
+  res.json(resumo);
+}));
+
+app.post('/api/chamados-intecs/:id/equipamento/atualizar', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const chamado = await chamadosIntecsRepo.getChamadoIntecs(req.params.id);
+  if (!chamado) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!chamado.device_id) return res.status(400).json({ error: 'Chamado sem equipamento vinculado.' });
+
+  const device = await deviceIntecsRepo.getDeviceById(chamado.device_id);
+  const tacticalAgentId = device?.tactical_agent_id;
+  if (!tacticalAgentId) return res.status(400).json({ error: 'Equipamento sem agente Tactical RMM vinculado.' });
+
+  await deviceService.takeSnapshot(chamado.device_id, tacticalAgentId, chamado.id, req.user.sub);
+  const resumo = await deviceService.getDeviceSummary(chamado.device_id);
+  res.json(resumo);
+}));
+
 // ===================== ESTÁTICO (front-end vanilla) =====================
-// Usado no desenvolvimento local; na Vercel os estáticos são servidos pela CDN.
+// Usado no desenvolvimento local; na Vercel os estáticos são servidos pela CDN
+// (ver vercel.json para o roteamento de /chamados em produção).
+app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.html')));
 app.use(express.static(PUBLIC_DIR));
 
 export default app;

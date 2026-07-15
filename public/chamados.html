@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <script>try { if (localStorage.getItem('token')) document.documentElement.classList.add('sessao-ativa'); } catch (e) {}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b2b2b">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>Chamados — Gestão TI</title>
+  <link rel="icon" type="image/png" href="favicon_intecs.png?v=5">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+  <link href="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/styles/choices.min.css" rel="stylesheet" crossorigin="anonymous">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <style>
+    :root {
+      --ink: #2b2b2b;
+      --ink-2: #1c1c1c;
+      --muted: #9a9a9a;
+      --line: #e4e4e4;
+      --bg: #ffffff;
+      --bg-soft: #f4f4f5;
+      --radius: 16px;
+      --bs-primary: #2b2b2b;
+      --bs-primary-rgb: 43, 43, 43;
+    }
+    * { -webkit-tap-highlight-color: transparent; }
+    body {
+      background-color: var(--bg-soft);
+      font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+    }
+    html.sessao-ativa #loginBox { display: none !important; }
+    .text-muted { color: var(--muted) !important; }
+    .form-label { font-weight: 600; font-size: .85rem; letter-spacing: .3px; color: #555; }
+
+    .btn { border-radius: 10px; font-weight: 600; letter-spacing: .4px; }
+    .btn-primary, .btn-success {
+      background: var(--ink); border-color: var(--ink); color: #fff;
+    }
+    .btn-primary:hover, .btn-primary:focus, .btn-primary:active,
+    .btn-success:hover, .btn-success:focus, .btn-success:active {
+      background: var(--ink-2) !important; border-color: var(--ink-2) !important; color: #fff !important;
+    }
+    .btn-outline-primary, .btn-outline-secondary { color: var(--ink); border-color: #cfcfcf; }
+    .btn-outline-primary:hover, .btn-outline-secondary:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .btn-light { background: #fff; border-color: rgba(255,255,255,.6); color: var(--ink); }
+
+    /* Bootstrap usa azul no anel de foco/clique por padrão — troca pro tom do sistema. */
+    .btn:focus, .btn:focus-visible, .btn.focus,
+    .btn-check:focus + .btn, .btn:active:focus {
+      box-shadow: 0 0 0 .2rem rgba(43,43,43,.25) !important;
+    }
+    .btn-close:focus { box-shadow: 0 0 0 .2rem rgba(43,43,43,.25); }
+    .form-check-input:focus { border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12); }
+    .form-check-input:checked { background-color: var(--ink); border-color: var(--ink); }
+    a { color: var(--ink); }
+
+    .form-control, .form-select { border-radius: 10px; }
+    .form-control:focus, .form-select:focus {
+      border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12);
+    }
+
+    .app-card { margin: 22px auto; border: none; border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+    .app-card .card-header {
+      background: var(--ink) !important; color: #fff;
+      border-radius: var(--radius) var(--radius) 0 0 !important;
+      padding: 1rem 1.25rem;
+    }
+    .app-card .card-body { padding: 1.5rem; }
+
+    .badge-status {
+      display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .5px;
+      padding: .35em .7em; border-radius: 6px;
+    }
+    .ticket-row {
+      border: 1px solid var(--line); border-radius: 12px; cursor: pointer; transition: box-shadow .15s;
+    }
+    .ticket-row:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+
+    /* Dropdowns (Choices.js) — opção em destaque no hover fica escura, igual ao resto do sistema. */
+    .choices[data-type*="select-one"]::after { border-color: var(--ink) transparent transparent; }
+    .choices__list--dropdown, .choices__list[aria-expanded] {
+      border: 1px solid #ced4da; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden; z-index: 9999;
+    }
+    .choices__list--dropdown .choices__item, .choices__list[aria-expanded] .choices__item {
+      padding: 10px 14px; font-size: .95rem; border-bottom: 1px solid #f1f1f1;
+    }
+    .choices__list--dropdown .choices__item--selectable.is-highlighted,
+    .choices__list[aria-expanded] .choices__item--selectable.is-highlighted {
+      background: #000; color: #fff;
+    }
+    .choices__list--dropdown .choices__item--selectable.is-selected,
+    .choices__list[aria-expanded] .choices__item--selectable.is-selected {
+      font-weight: 600; background: var(--bg-soft);
+    }
+    .choices__list--dropdown .choices__item--selectable.is-selected.is-highlighted,
+    .choices__list[aria-expanded] .choices__item--selectable.is-selected.is-highlighted {
+      background: #000; color: #fff;
+    }
+    .choices__inner { border-radius: 10px !important; }
+  </style>
+</head>
+<body>
+
+  <div class="container py-4" id="loginBox" style="max-width:640px;">
+    <div class="card app-card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <img src="logo_intecs.png" alt="Intecs" style="height:28px;width:auto;">
+        <h5 class="mb-0">Chamados — Gestão TI</h5>
+      </div>
+      <div class="card-body">
+        <div id="alertLogin"></div>
+        <form id="formLogin" class="row g-3">
+          <div class="col-12">
+            <label class="form-label">E-mail</label>
+            <input type="email" class="form-control" id="loginEmail" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Senha</label>
+            <input type="password" class="form-control" id="loginSenha" required>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-primary w-100" id="btnLogin">Entrar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="container py-4" id="appBox" style="display:none;">
+    <div class="card app-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 d-flex align-items-center gap-2">
+          <img src="logo_intecs.png" alt="Intecs" style="height:28px;width:auto;">
+          Chamados
+        </h5>
+        <div class="d-flex align-items-center gap-2">
+          <small id="userEmailChamados" class="d-none d-sm-inline"></small>
+          <button type="button" class="btn btn-sm btn-light" id="btnSairChamados">Sair</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="mb-0">Meus Chamados</h6>
+          <button type="button" class="btn btn-primary btn-sm" id="btnNovo"><i class="ph ph-plus"></i> Abrir Chamado</button>
+        </div>
+        <div id="listaStatus" class="text-muted small mb-2"></div>
+        <div id="listaChamados" class="d-flex flex-column gap-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Novo Chamado -->
+  <div class="modal fade" data-bs-backdrop="static" id="modalNovo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header" style="background:var(--ink);color:#fff;">
+          <h5 class="modal-title">Novo Chamado</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertNovo"></div>
+          <form id="formNovo" class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Título *</label>
+              <input type="text" class="form-control" id="nc_titulo" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Categoria</label>
+              <select class="form-select" id="nc_categoria"><option value="">Selecione...</option></select>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Subcategoria</label>
+              <select class="form-select" id="nc_subcategoria"><option value="">Selecione a categoria antes...</option></select>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Prioridade</label>
+              <select class="form-select" id="nc_prioridade">
+                <option value="BAIXA">Baixa</option><option value="MEDIA" selected>Média</option>
+                <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Telefone</label>
+              <input type="text" class="form-control" id="nc_telefone">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Descrição</label>
+              <textarea class="form-control" id="nc_descricao" rows="4"></textarea>
+            </div>
+            <div class="col-12">
+              <span id="nc_maquina" class="small text-muted"><i class="ph ph-spinner"></i> Detectando máquina...</span>
+              <div id="nc_maquina_select_wrap" class="mt-2" style="display:none">
+                <select class="form-select form-select-sm" id="nc_maquina_select"></select>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btnAbrir"><i class="ph ph-headset"></i> Abrir Chamado</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detalhe -->
+  <div class="modal fade" data-bs-backdrop="static" id="modalDetalhe" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header" style="background:var(--ink);color:#fff;">
+          <h5 class="modal-title" id="detTitulo">Chamado</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="detResumo" class="mb-3"></div>
+          <h6>Equipamento</h6>
+          <div id="detEquipamento" class="mb-3 small"></div>
+          <h6>Comentários</h6>
+          <div id="detComentarios" class="mb-2"></div>
+          <div class="d-flex gap-2" id="detNovoComentarioBox">
+            <textarea class="form-control" id="detNovoComentario" rows="2" placeholder="Escreva um comentário..."></textarea>
+            <button type="button" class="btn btn-primary" id="btnComentar"><i class="ph ph-paper-plane-tilt"></i></button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/scripts/choices.min.js" crossorigin="anonymous"></script>
+  <script src="chamados.js"></script>
+</body>
+</html>
