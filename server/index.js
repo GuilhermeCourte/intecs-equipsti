@@ -601,6 +601,76 @@ app.delete('/api/internet/:id', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ===================== Calendário (vencimentos) =====================
+const CALENDARIO_SELECT = `SELECT id, titulo, tipo,
+  CONVERT(varchar(10), data, 120) AS data, recorrencia, valor, observacao,
+  criado_por AS criadoPor, atualizado_por AS atualizadoPor,
+  CONVERT(varchar(19), criado_em, 120) AS criadoEm,
+  CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
+  FROM dbo.EQUIPSTI_calendario_eventos`;
+
+function lerEventoCalendario(body) {
+  return {
+    titulo: trim(body.titulo),
+    tipo: trim(body.tipo),
+    data: trim(body.data),
+    recorrencia: ['MENSAL', 'ANUAL', 'NENHUMA'].includes(body.recorrencia) ? body.recorrencia : null,
+    valor: body.valor !== null && body.valor !== '' && body.valor !== undefined ? Number(body.valor) : null,
+    observacao: trim(body.observacao)
+  };
+}
+
+function paramsEventoCalendario(d) {
+  return {
+    titulo: S(d.titulo), tipo: S(d.tipo),
+    data: { type: sql.Date, value: d.data },
+    recorrencia: S(d.recorrencia),
+    valor: d.valor != null && !isNaN(d.valor) ? { type: sql.Decimal(15, 2), value: d.valor } : S(null),
+    observacao: S(d.observacao)
+  };
+}
+
+function validarEventoCalendario(d, res) {
+  if (!d.titulo) { res.status(400).json({ error: 'Informe o título.' }); return false; }
+  if (!d.tipo) { res.status(400).json({ error: 'Informe o tipo.' }); return false; }
+  if (!d.data) { res.status(400).json({ error: 'Informe a data.' }); return false; }
+  if (!d.recorrencia) { res.status(400).json({ error: 'Selecione a repetição (mensal, anual ou não repete).' }); return false; }
+  if (!d.observacao) { res.status(400).json({ error: 'Informe a observação.' }); return false; }
+  return true;
+}
+
+app.get('/api/calendario/eventos', exigirAuth, wrap(async (req, res) => {
+  const r = await query(`${CALENDARIO_SELECT} ORDER BY data`);
+  res.json(r.recordset);
+}));
+
+app.post('/api/calendario/eventos', exigirAuth, wrap(async (req, res) => {
+  const d = lerEventoCalendario(req.body);
+  if (!validarEventoCalendario(d, res)) return;
+  await query(`INSERT INTO dbo.EQUIPSTI_calendario_eventos
+    (titulo, tipo, data, recorrencia, valor, observacao, criado_por, atualizado_por)
+    VALUES (@titulo, @tipo, @data, @recorrencia, @valor, @observacao, @criadoPor, @criadoPor)`,
+    { ...paramsEventoCalendario(d), criadoPor: S(req.user.email) });
+  res.status(201).json({ ok: true });
+}));
+
+app.put('/api/calendario/eventos/:id', exigirAuth, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const d = lerEventoCalendario(req.body);
+  if (!validarEventoCalendario(d, res)) return;
+  await query(`UPDATE dbo.EQUIPSTI_calendario_eventos SET
+    titulo=@titulo, tipo=@tipo, data=@data, recorrencia=@recorrencia, valor=@valor, observacao=@observacao,
+    atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
+    WHERE id=@id`,
+    { ...paramsEventoCalendario(d), id, atualizadoPor: S(req.user.email) });
+  res.json({ ok: true });
+}));
+
+app.delete('/api/calendario/eventos/:id', exigirAuth, wrap(async (req, res) => {
+  await query('DELETE FROM dbo.EQUIPSTI_calendario_eventos WHERE id = @id', { id: Number(req.params.id) });
+  res.json({ ok: true });
+}));
+
 // ===================== PATs (origem dos empréstimos) =====================
 app.get('/api/pats', exigirAuth, wrap(async (req, res) => {
   const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_registros
