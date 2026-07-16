@@ -352,6 +352,17 @@
     /* animação de entrada dos modais */
     .modal.fade .modal-dialog { transition: none; }
     .modal.show .modal-dialog { animation: modalPop .3s cubic-bezier(.2, .9, .3, 1.25); }
+    /* Celular: modais em tela cheia deslizam de baixo (bottom-sheet) */
+    @media (max-width: 767.98px) {
+      .modal.show .modal-dialog { animation: none; }
+      .modal.show .modal-fullscreen-md-down {
+        animation: modalSlideUp .34s cubic-bezier(.16, 1, .3, 1);
+      }
+    }
+    @keyframes modalSlideUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
     #askOverlay { position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:none;align-items:center;justify-content:center; }
     #askOverlay.show { display:flex; }
     #askDialog { background:#fff;border-radius:var(--radius);padding:1.5rem;width:100%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,.35); }
@@ -475,6 +486,20 @@
     .fd-spin { display: inline-block; animation: fd-rot .9s linear infinite; }
     @keyframes fd-rot { to { transform: rotate(360deg); } }
 
+    /* ---------- Busca de tabela (lupa: filtra qualquer coluna) ---------- */
+    .busca-tabela { width: 160px; max-width: 100%; flex-wrap: nowrap; }
+    /* Sem o "x" nativo do input de busca — limpar é pelo funil ao lado */
+    .busca-tabela input[type="search"]::-webkit-search-cancel-button,
+    .busca-tabela input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+    /* Registros no celular: busca+botões descem para a linha abaixo do Simples/Detalhada */
+    @media (max-width: 575.98px) {
+      .busca-grupo-reg { flex-basis: 100%; justify-content: flex-end; }
+    }
+    /* "+ Novo" da Internet no celular: ícone em cima e texto embaixo, como o de Registros */
+    @media (max-width: 575.98px) {
+      #btnNovoInternet { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.3; }
+    }
+
     /* ---------- Abas (liquid slider) ---------- */
     .app-tabs {
       --gap: 5px;
@@ -537,6 +562,84 @@
     #appView.layout-topbar-sticky .app-tabs { top: 64px; }
     /* === FIM LAYOUT OFICIAL === */
 
+    /* =====================================================================
+       === MENU HAMBÚRGUER (MOBILE) ===
+       No celular a barra de abas fica oculta e a navegação passa para a
+       gaveta lateral, aberta pelo botão no canto superior esquerdo.
+       ===================================================================== */
+    .menu-hamb-btn {
+      display: none; flex-shrink: 0; padding: 0;
+      width: 38px; height: 38px; border: none; border-radius: 10px;
+      background: rgba(255,255,255,.12); color: #fff; font-size: 1.35rem;
+      align-items: center; justify-content: center;
+      transition: transform .15s ease, background .2s ease;
+    }
+    .menu-hamb-btn:active { transform: scale(.92); background: rgba(255,255,255,.22); }
+
+    #mobileMenuBackdrop {
+      position: fixed; inset: 0; z-index: 1060;
+      background: rgba(20,20,20,.45);
+      -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none; transition: opacity .25s ease;
+    }
+    #mobileMenuBackdrop.show { opacity: 1; pointer-events: auto; }
+    #mobileMenu {
+      position: fixed; z-index: 1061;
+      top: 0; bottom: 0; left: 0; width: min(80vw, 300px);
+      display: flex; flex-direction: column; background: #fff;
+      border-radius: 0 18px 18px 0;
+      box-shadow: 8px 0 40px rgba(0,0,0,.2);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      transform: translateX(-110%);
+      transition: transform .32s cubic-bezier(0.22, 0.9, 0.25, 1);
+    }
+    #mobileMenu.show { transform: none; }
+    body.mm-open { overflow: hidden; }
+
+    .mm-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 18px 8px;
+    }
+    .mm-brand {
+      display: inline-flex; align-items: center; gap: 10px;
+      font-weight: 800; font-size: 1.02rem; color: var(--ink);
+    }
+    .mm-brand img { width: 28px; height: 28px; object-fit: contain; }
+    .mm-close {
+      width: 34px; height: 34px; border: none; border-radius: 10px; padding: 0;
+      background: var(--bg-soft); color: var(--ink); font-size: 1.1rem;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .mm-close:active { transform: scale(.92); }
+    .mm-itens {
+      flex: 1; overflow-y: auto; padding: 6px 12px 12px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .mm-item {
+      display: flex; align-items: center; gap: 12px; width: 100%;
+      border: none; border-radius: 12px; background: transparent;
+      padding: 12px 14px; text-align: left;
+      color: var(--muted); font-weight: 600; font-size: .95rem;
+      transition: color .2s ease, background .2s ease, transform .15s ease;
+    }
+    .mm-item .ph { font-size: 1.25rem; }
+    .mm-item:active { transform: scale(.98); }
+    .mm-item.active { background: var(--ink); color: #fff; box-shadow: 0 6px 16px rgba(0,0,0,.18); }
+    /* Nome da seção no topo de cada aba — só no mobile, onde a barra
+       de abas fica oculta e o usuário perde a referência de onde está. */
+    .pane-titulo-mobile {
+      display: none;
+      font-size: 1.35rem; font-weight: 800; letter-spacing: -.5px;
+      line-height: 1.1; margin: 0 0 .6rem;
+    }
+    @media (max-width: 767.98px) {
+      /* No celular a gaveta assume a navegação; a barra de abas some */
+      #appView .app-tabs { display: none; }
+      .menu-hamb-btn { display: inline-flex; }
+      .pane-titulo-mobile { display: block; }
+    }
+    /* === FIM MENU HAMBÚRGUER === */
+
     /* ---------- Sub-abas (pílulas) dentro de Chamados ---------- */
     .sub-tabs {
       display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem;
@@ -555,6 +658,13 @@
     /* modal */
     .modal-content { border: none; border-radius: var(--radius); overflow: hidden; }
     .modal-header.bg-primary { background: var(--ink) !important; }
+    /* Celular: quando um modal em tela cheia tem um <form> embrulhando
+       header/body/footer (ex.: #modalEditar), a rolagem flex do Bootstrap
+       quebra e o rodapé (botão Salvar) fica cortado. display:contents dissolve
+       o form e devolve cabeçalho/rodapé fixos com o corpo rolável. */
+    @media (max-width: 767.98px) {
+      .modal-fullscreen-md-down .modal-content > form { display: contents; }
+    }
 
     /* ---------- Dropdown customizado (Choices.js) ---------- */
     .choices { margin-bottom: 0; }
@@ -1101,6 +1211,10 @@
     <div class="card shadow-sm app-card app-card-wide">
       <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0 d-flex align-items-center gap-2">
+          <button class="menu-hamb-btn" id="btnMenuMobile" type="button"
+            aria-label="Abrir menu" aria-controls="mobileMenu" aria-expanded="false">
+            <i class="ph ph-list"></i>
+          </button>
           <img src="logo_intecs.png" alt="Intecs" style="height:28px;width:auto;">
           Gestão TI
         </h5>
@@ -1125,6 +1239,27 @@
           <button class="btn btn-sm btn-light" id="btnSair">Sair</button>
         </div>
       </div>
+
+      <!-- Menu hambúrguer mobile (gaveta lateral) -->
+      <div id="mobileMenuBackdrop"></div>
+      <nav id="mobileMenu" aria-label="Menu de navegação">
+        <div class="mm-head">
+          <span class="mm-brand"><img src="favicon_intecs.png?v=5" alt=""> Gestão TI</span>
+          <button class="mm-close" id="btnFecharMenuMobile" type="button" aria-label="Fechar menu">
+            <i class="ph ph-x"></i>
+          </button>
+        </div>
+        <div class="mm-itens">
+          <button type="button" class="mm-item" data-tab="tab-dashboard"><i class="ph ph-squares-four"></i> Dashboard</button>
+          <button type="button" class="mm-item" data-tab="tab-registros"><i class="ph ph-table"></i> Registros</button>
+          <button type="button" class="mm-item" data-tab="tab-emprestimos"><i class="ph ph-hand-arrow-up"></i> Empréstimos</button>
+          <button type="button" class="mm-item" data-tab="tab-chamados"><i class="ph ph-headset"></i> Chamados</button>
+          <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
+          <button type="button" class="mm-item" data-tab="tab-gerenciar"><i class="ph ph-sliders-horizontal"></i> Opções</button>
+          <button type="button" class="mm-item" data-tab="tab-usuarios"><i class="ph ph-users"></i> Usuários</button>
+        </div>
+      </nav>
+
       <div class="card-body">
 
         <div class="app-tabs" role="tablist">
@@ -1260,12 +1395,13 @@
 
           <!-- ABA REGISTROS -->
           <div class="tab-pane fade" id="pane-registros" role="tabpanel">
+            <h2 class="pane-titulo-mobile">Registros</h2>
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Cadastre ou altere equipamentos.</p>
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-primary btn-sm" id="btnNovoRegistro"
                   data-bs-toggle="modal" data-bs-target="#modalRegistrar">
-                  <i class="ph ph-plus"></i> Novo Registro
+                  <i class="ph ph-plus"></i> Novo
                 </button>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAbrirPlanilha"
                   data-bs-toggle="modal" data-bs-target="#modalPlanilha">
@@ -1274,12 +1410,16 @@
               </div>
             </div>
             <div id="alertRegistros"></div>
-            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
-              <div class="btn-group btn-group-sm" role="group" aria-label="Visão da tabela">
+            <div class="d-flex align-items-center flex-wrap flex-sm-nowrap gap-2 mb-1">
+              <div class="btn-group btn-group-sm flex-shrink-0" role="group" aria-label="Visão da tabela">
                 <button type="button" class="btn btn-outline-secondary active" id="btnViewSimples">Simples</button>
                 <button type="button" class="btn btn-outline-secondary" id="btnViewDetalhada">Detalhada</button>
               </div>
-              <div class="d-flex gap-1">
+              <div class="d-flex align-items-center gap-1 ms-auto busca-grupo-reg" style="min-width:0">
+                <div class="input-group input-group-sm busca-tabela">
+                  <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                  <input type="search" class="form-control" id="regBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                </div>
                 <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltros" title="Limpar filtros">
                   <i class="ph ph-funnel-x fs-5"></i>
                 </button>
@@ -1317,52 +1457,29 @@
 
           <!-- ABA EMPRÉSTIMOS -->
           <div class="tab-pane fade" id="pane-emprestimos" role="tabpanel">
-            <p class="text-muted">Empreste um equipamento para uma unidade.</p>
-            <div id="alertEmprestimos"></div>
-            <form id="formEmprestimo" class="needs-validation row g-3" novalidate>
-              <div class="col-md-6">
-                <label class="form-label" for="emp_pat">PAT *</label>
-                <select class="form-select" id="emp_pat" required>
-                  <option value="">Selecione...</option>
-                </select>
-                <div class="invalid-feedback">Selecione o PAT.</div>
-                <div id="emp_pat_info" class="text-muted mt-1" style="font-size:.8rem"></div>
-              </div>
-              <div class="col-md-6" id="emp_ns_grupo" style="display:none">
-                <label class="form-label" for="emp_ns">N/S *</label>
-                <select class="form-select" id="emp_ns" required>
-                  <option value="">Selecione...</option>
-                </select>
-                <div class="invalid-feedback">Selecione o N/S.</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="emp_unidade">UNIDADE *</label>
-                <select class="form-select" id="emp_unidade" required>
-                  <option value="">Selecione...</option>
-                </select>
-                <div class="invalid-feedback">Selecione a unidade.</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="emp_data">DATA DO EMPRÉSTIMO</label>
-                <input type="text" class="form-control" id="emp_data" autocomplete="off" readonly>
-              </div>
-              <div class="col-12">
-                <label class="form-label" for="emp_obs">OBSERVAÇÕES</label>
-                <textarea class="form-control" id="emp_obs" rows="2"
-                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-              </div>
-              <div class="col-12 d-grid">
-                <button type="submit" class="btn btn-primary" id="btnEmprestar">Emprestar</button>
-              </div>
-            </form>
-
-            <hr>
-
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <h6 class="mb-0">Empréstimos</h6>
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarEmprestimos">
-                <i class="ph ph-arrow-clockwise"></i> Atualizar
+            <h2 class="pane-titulo-mobile">Empréstimos</h2>
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+              <p class="text-muted mb-0">Empreste um equipamento.</p>
+              <button type="button" class="btn btn-primary btn-sm" id="btnNovoEmprestimo">
+                <i class="ph ph-plus"></i> Novo
               </button>
+            </div>
+            <div id="alertEmprestimos"></div>
+
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <h6 class="mb-0 flex-shrink-0">Empréstimos</h6>
+              <div class="d-flex align-items-center gap-1 ms-auto" style="min-width:0">
+                <div class="input-group input-group-sm busca-tabela">
+                  <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                  <input type="search" class="form-control" id="empBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                </div>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosEmprestimos" title="Limpar filtros">
+                  <i class="ph ph-funnel-x fs-5"></i>
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarEmprestimos" title="Atualizar">
+                  <i class="ph ph-arrow-clockwise fs-5"></i>
+                </button>
+              </div>
             </div>
             <div id="listaEmprestimos">
               <span class="text-muted">Carregando...</span>
@@ -1371,6 +1488,7 @@
 
           <!-- ABA GERENCIAR OPÇÕES -->
           <div class="tab-pane fade" id="pane-gerenciar" role="tabpanel">
+            <h2 class="pane-titulo-mobile">Opções</h2>
             <p class="text-muted">
               Cadastre opções para os menus suspensos.
             </p>
@@ -1393,6 +1511,18 @@
 
             <div id="opcoesGenericoView">
               <h6 class="mb-2">Opções atuais de <span id="rotuloLista">UNIDADE</span></h6>
+              <div class="d-flex align-items-center gap-1 justify-content-end mb-2">
+                <div class="input-group input-group-sm busca-tabela">
+                  <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                  <input type="search" class="form-control" id="opcoesBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                </div>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosOpcoes" title="Limpar filtros">
+                  <i class="ph ph-funnel-x fs-5"></i>
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarOpcoes" title="Atualizar">
+                  <i class="ph ph-arrow-clockwise fs-5"></i>
+                </button>
+              </div>
               <div id="listaOpcoes">
                 <span class="text-muted">Carregando...</span>
               </div>
@@ -1414,6 +1544,12 @@
                       </div>
                       <div class="col-12 col-md-2">
                         <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnAdicionarCategoria">Adicionar</button>
+                      </div>
+                    </div>
+                    <div class="d-flex justify-content-end mb-2">
+                      <div class="input-group input-group-sm busca-tabela">
+                        <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                        <input type="search" class="form-control" id="catBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
                       </div>
                     </div>
                     <div class="table-responsive mb-4">
@@ -1460,6 +1596,12 @@
                         <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnAdicionarPrioridade">Adicionar</button>
                       </div>
                     </div>
+                    <div class="d-flex justify-content-end mb-2">
+                      <div class="input-group input-group-sm busca-tabela">
+                        <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                        <input type="search" class="form-control" id="prBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                      </div>
+                    </div>
                     <div class="table-responsive">
                       <table class="table table-sm table-striped align-middle">
                         <thead class="table-light"><tr><th>Nome</th><th>Resposta (h)</th><th>Conclusão (h)</th><th></th><th></th></tr></thead>
@@ -1496,6 +1638,12 @@
                         <button type="button" class="btn btn-outline-primary btn-sm w-100" id="btnAdicionarStatus">Adicionar</button>
                       </div>
                     </div>
+                    <div class="d-flex justify-content-end mb-2">
+                      <div class="input-group input-group-sm busca-tabela">
+                        <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                        <input type="search" class="form-control" id="stBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                      </div>
+                    </div>
                     <div class="table-responsive">
                       <table class="table table-sm table-striped align-middle">
                         <thead class="table-light"><tr><th>Nome</th><th>Tipo (comportamento)</th><th></th></tr></thead>
@@ -1511,6 +1659,7 @@
           <!-- ABA USUÁRIOS -->
           <div class="tab-pane fade" id="pane-usuarios" role="tabpanel">
 
+            <h2 class="pane-titulo-mobile">Usuários</h2>
             <p class="text-muted">Cadastre novos acessos ao sistema.</p>
             <div id="alertUsuarios"></div>
 
@@ -1520,10 +1669,17 @@
               </button>
             </div>
 
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <h6 class="mb-0">Usuários cadastrados</h6>
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarUsuarios">
-                <i class="ph ph-arrow-clockwise"></i> Atualizar
+            <h6 class="mb-2">Usuários cadastrados</h6>
+            <div class="d-flex align-items-center gap-1 mb-2">
+              <div class="input-group input-group-sm busca-tabela">
+                <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                <input type="search" class="form-control" id="usuariosBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosUsuarios" title="Limpar filtros">
+                <i class="ph ph-funnel-x fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarUsuarios" title="Atualizar">
+                <i class="ph ph-arrow-clockwise fs-5"></i>
               </button>
             </div>
             <div id="listaUsuarios">
@@ -1533,18 +1689,26 @@
 
           <!-- ABA INTERNET -->
           <div class="tab-pane fade" id="pane-internet" role="tabpanel">
-            <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-              <p class="text-muted mb-0">Contratos de internet por unidade.</p>
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-primary btn-sm" id="btnNovoInternet">
-                  <i class="ph ph-plus"></i> Novo
-                </button>
-                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarInternet" title="Atualizar">
-                  <i class="ph ph-arrow-clockwise fs-5"></i>
-                </button>
-              </div>
+            <h2 class="pane-titulo-mobile">Internet</h2>
+            <div class="d-flex align-items-center mb-3 gap-2">
+              <p class="text-muted mb-0 flex-shrink-1 text-truncate">Contratos de internet.</p>
+              <button type="button" class="btn btn-primary btn-sm flex-shrink-0 ms-auto" id="btnNovoInternet">
+                <i class="ph ph-plus"></i> Novo
+              </button>
             </div>
             <div id="alertInternet"></div>
+            <div class="d-flex align-items-center gap-1 justify-content-end mb-1">
+              <div class="input-group input-group-sm busca-tabela">
+                <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                <input type="search" class="form-control" id="internetBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosInternet" title="Limpar filtros">
+                <i class="ph ph-funnel-x fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarInternet" title="Atualizar">
+                <i class="ph ph-arrow-clockwise fs-5"></i>
+              </button>
+            </div>
             <div class="table-scroll-x table-sticky">
               <table class="table table-striped table-hover align-middle">
                 <thead class="table-light">
@@ -1566,6 +1730,7 @@
           <!-- ABA CHAMADOS -->
           <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
 
+            <h2 class="pane-titulo-mobile">Chamados</h2>
             <!-- Sub-abas: INTECS vs MSA / MSA / INTECS -->
             <ul class="nav sub-tabs" role="tablist">
               <li class="nav-item" role="presentation">
@@ -1593,28 +1758,21 @@
               <!-- SUB-ABA: INTECS vs MSA -->
               <div class="tab-pane fade show active" id="sub-intecsmsa" role="tabpanel">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Controle interno cruzando chamados da MSA com a INTECS.</h5>
+                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Controle interno cruzando MSA com a INTECS.</h5>
                 </div>
                 <!-- Filtros -->
-                <div class="row g-2 mb-1">
-                  <div class="col-12 col-sm-6">
-                    <div class="input-group input-group-sm">
+                <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                  <select class="form-select form-select-sm w-auto" id="imFiltroStatus">
+                    <option value="">Todos</option>
+                    <option value="aberto" selected>Em Aberto</option>
+                    <option value="Finalizado">Finalizado</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                  <div class="d-flex align-items-center gap-1 ms-sm-auto">
+                    <div class="input-group input-group-sm busca-tabela">
                       <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
-                      <input type="text" class="form-control" id="imBusca" placeholder="Buscar por nº MSA, unidade, patrimônio…">
+                      <input type="text" class="form-control" id="imBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
                     </div>
-                  </div>
-                  <div class="col-12 col-sm-6">
-                    <select class="form-select form-select-sm" id="imFiltroStatus">
-                      <option value="">Todos</option>
-                      <option value="aberto" selected>Em Aberto</option>
-                      <option value="Finalizado">Finalizado</option>
-                      <option value="custom">Personalizado</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div id="imStatus" class="text-muted small mb-0"></div>
-                  <div class="d-flex gap-1">
                     <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosIntecsMsa" title="Limpar filtros">
                       <i class="ph ph-funnel-x fs-5"></i>
                     </button>
@@ -1623,6 +1781,7 @@
                     </button>
                   </div>
                 </div>
+                <div id="imStatus" class="text-muted small mb-2"></div>
                 <div class="table-responsive table-sticky">
                   <table class="table table-sm table-striped table-hover align-middle" id="tabelaIntecsMsa">
                     <thead class="table-light"><tr id="imThead"></tr></thead>
@@ -1642,25 +1801,18 @@
                   </div>
                 </div>
                 <!-- Filtros -->
-                <div class="row g-2 mb-1">
-                  <div class="col-12 col-sm-6">
-                    <div class="input-group input-group-sm">
+                <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                  <select class="form-select form-select-sm w-auto" id="chamadosFiltroStatus">
+                    <option value="">Todos</option>
+                    <option value="aberto" selected>Em Aberto</option>
+                    <option value="Resolvido">Finalizado</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                  <div class="d-flex align-items-center gap-1 ms-sm-auto">
+                    <div class="input-group input-group-sm busca-tabela">
                       <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
-                      <input type="text" class="form-control" id="chamadosBusca" placeholder="Buscar por assunto, número…">
+                      <input type="text" class="form-control" id="chamadosBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
                     </div>
-                  </div>
-                  <div class="col-12 col-sm-6">
-                    <select class="form-select form-select-sm" id="chamadosFiltroStatus">
-                      <option value="">Todos</option>
-                      <option value="aberto" selected>Em Aberto</option>
-                      <option value="Resolvido">Finalizado</option>
-                      <option value="custom">Personalizado</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div id="chamadosStatus" class="text-muted small mb-0"></div>
-                  <div class="d-flex gap-1">
                     <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosChamados" title="Limpar filtros">
                       <i class="ph ph-funnel-x fs-5"></i>
                     </button>
@@ -1669,6 +1821,7 @@
                     </button>
                   </div>
                 </div>
+                <div id="chamadosStatus" class="text-muted small mb-2"></div>
                 <div class="table-responsive table-sticky">
                   <table class="table table-sm table-striped table-hover align-middle" id="tabelaChamados">
                     <thead class="table-light"><tr id="chamadosThead"></tr></thead>
@@ -1680,7 +1833,7 @@
               <!-- SUB-ABA: INTECS (chamado interno + Tactical RMM) -->
               <div class="tab-pane fade" id="sub-intecs" role="tabpanel">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Chamados internos da INTECS, com equipamento anexado automaticamente.</h5>
+                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Chamados internos da INTECS</h5>
                   <div class="d-flex gap-2">
                     <button type="button" class="btn btn-dark btn-sm" id="btnDashboardIntecs" style="display:none">
                       <i class="ph ph-chart-bar"></i> Dashboard
@@ -1789,10 +1942,18 @@
 
                   <!-- Filtros -->
                   <div class="row g-2 mb-2">
-                  <div class="col-12 col-sm-6 col-md-3">
-                    <div class="input-group input-group-sm">
-                      <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
-                      <input type="text" class="form-control" id="ciBusca" placeholder="Buscar por título…">
+                  <div class="col-12 col-md-3">
+                    <div class="d-flex align-items-center gap-1">
+                      <div class="input-group input-group-sm busca-tabela">
+                        <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                        <input type="text" class="form-control" id="ciBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                      </div>
+                      <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosIntecs" title="Limpar filtros">
+                        <i class="ph ph-funnel-x fs-5"></i>
+                      </button>
+                      <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshChamadosIntecs" title="Atualizar">
+                        <i class="ph ph-arrow-clockwise fs-5"></i>
+                      </button>
                     </div>
                   </div>
                   <div class="col-6 col-md-2">
@@ -1833,17 +1994,7 @@
                   </div>
                 </div>
 
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div id="ciStatus" class="text-muted small mb-0"></div>
-                  <div class="d-flex gap-1">
-                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosIntecs" title="Limpar filtros">
-                      <i class="ph ph-funnel-x fs-5"></i>
-                    </button>
-                    <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshChamadosIntecs" title="Atualizar">
-                      <i class="ph ph-arrow-clockwise fs-5"></i>
-                    </button>
-                  </div>
-                </div>
+                <div id="ciStatus" class="text-muted small mb-2"></div>
                 <div class="table-responsive table-sticky">
                   <table class="table table-sm table-striped table-hover align-middle" id="tabelaChamadosIntecs">
                     <thead class="table-light">
@@ -1875,7 +2026,7 @@
 
   <!-- ===================== MODAL REGISTRAR ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalRegistrar" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title"><i class="ph ph-clipboard-text me-2"></i>Novo Registro</h5>
@@ -2000,10 +2151,125 @@
                 </div>
               </div>
             </div>
-            <div class="col-12 d-grid">
-              <button type="submit" class="btn btn-primary btn-lg" id="btnEnviar">Registrar</button>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" form="formInventario" class="btn btn-primary btn-lg w-100" id="btnEnviar">Registrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL NOVO EMPRÉSTIMO ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEmprestimo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-hand-arrow-up me-2"></i>Novo Empréstimo</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertEmprestimoModal"></div>
+          <form id="formEmprestimo" class="needs-validation row g-3" novalidate>
+            <div class="col-md-6">
+              <label class="form-label" for="emp_pat">PAT *</label>
+              <select class="form-select" id="emp_pat" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o PAT.</div>
+              <div id="emp_pat_info" class="text-muted mt-1" style="font-size:.8rem"></div>
+            </div>
+            <div class="col-md-6" id="emp_ns_grupo" style="display:none">
+              <label class="form-label" for="emp_ns">N/S *</label>
+              <select class="form-select" id="emp_ns" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione o N/S.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="emp_unidade">UNIDADE *</label>
+              <select class="form-select" id="emp_unidade" required>
+                <option value="">Selecione...</option>
+              </select>
+              <div class="invalid-feedback">Selecione a unidade.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="emp_data">DATA DO EMPRÉSTIMO</label>
+              <input type="text" class="form-control" id="emp_data" autocomplete="off" readonly>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="emp_obs">OBSERVAÇÕES</label>
+              <textarea class="form-control" id="emp_obs" rows="2"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             </div>
           </form>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" form="formEmprestimo" class="btn btn-primary" id="btnEmprestar">Emprestar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL EDITAR OPÇÃO ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalOpcao" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-pencil-simple me-2"></i><span id="opcaoModalTitle">Editar opção</span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertOpcaoModal"></div>
+          <form id="formOpcao" class="needs-validation row g-3" novalidate>
+            <input type="hidden" id="opcao_original">
+            <div class="col-12">
+              <label class="form-label" for="opcao_nome">NOME *</label>
+              <input type="text" class="form-control" id="opcao_nome" required autocomplete="off">
+              <div class="invalid-feedback">Informe o nome.</div>
+            </div>
+            <div class="col-12" id="opcao_detalhe_grupo" style="display:none">
+              <label class="form-label" for="opcao_detalhe">EQUIPAMENTO DETALHE</label>
+              <input type="text" class="form-control" id="opcao_detalhe" autocomplete="off">
+            </div>
+            <div class="col-md-6" id="opcao_preco_grupo" style="display:none">
+              <label class="form-label" for="opcao_preco">VALOR PADRÃO (R$)</label>
+              <input type="text" class="form-control" id="opcao_preco" autocomplete="off" inputmode="decimal">
+            </div>
+            <div class="col-md-6" id="opcao_tipo_grupo" style="display:none">
+              <label class="form-label" for="opcao_tipo">COMPRADO/LOCADO</label>
+              <select class="form-select" id="opcao_tipo">
+                <option value="">-</option>
+                <option value="COMPRADO">COMPRADO</option>
+                <option value="LOCADO">LOCADO</option>
+              </select>
+            </div>
+            <div class="col-12" id="opcao_msa_grupo" style="display:none">
+              <label class="form-label" for="opcao_msa">UNIDADE NA MSA</label>
+              <select class="form-select" id="opcao_msa"><option value="">-</option></select>
+            </div>
+            <div class="col-md-6" id="opcao_cnpj_grupo" style="display:none">
+              <label class="form-label" for="opcao_cnpj">CNPJ</label>
+              <input type="text" class="form-control" id="opcao_cnpj" autocomplete="off" inputmode="numeric">
+            </div>
+            <div class="col-12" id="opcao_endereco_grupo" style="display:none">
+              <label class="form-label" for="opcao_endereco">ENDEREÇO</label>
+              <input type="text" class="form-control" id="opcao_endereco" autocomplete="off">
+            </div>
+            <div class="col-md-6" id="opcao_qtd_grupo" style="display:none">
+              <label class="form-label" for="opcao_qtd">QTD. EM ESTOQUE</label>
+              <input type="number" class="form-control" id="opcao_qtd" min="0" autocomplete="off">
+            </div>
+            <div class="col-12">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="opcao_ativo">
+                <label class="form-check-label" for="opcao_ativo">Ativa (aparece nos formulários)</label>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" form="formOpcao" class="btn btn-primary" id="btnSalvarOpcao"><i class="ph ph-check"></i> Salvar</button>
         </div>
       </div>
     </div>
@@ -2011,7 +2277,7 @@
 
   <!-- ===================== MODAL INTERNET ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalInternet" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title"><i class="ph ph-wifi-high me-2"></i><span id="internetModalTitle">Novo contrato de internet</span></h5>
@@ -2082,17 +2348,14 @@
               <label class="form-label" for="internet_observacao">OBSERVAÇÃO</label>
               <textarea class="form-control" id="internet_observacao" rows="3" autocomplete="off"></textarea>
             </div>
-            <div class="col-12 d-flex justify-content-between gap-2">
-              <button type="button" class="btn btn-outline-danger" id="btnExcluirInternet">
-                <i class="ph ph-trash"></i> Excluir
-              </button>
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
-                <button type="button" class="btn btn-primary" id="btnEditarInternet"><i class="ph ph-pencil-simple"></i> Editar</button>
-                <button type="submit" class="btn btn-primary" id="btnSalvarInternet">Salvar</button>
-              </div>
-            </div>
           </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-danger me-auto" id="btnExcluirInternet">
+            <i class="ph ph-trash"></i> Excluir
+          </button>
+          <button type="button" class="btn btn-primary" id="btnEditarInternet"><i class="ph ph-pencil-simple"></i> Editar</button>
+          <button type="submit" form="formInternet" class="btn btn-primary" id="btnSalvarInternet"><i class="ph ph-check"></i> Salvar</button>
         </div>
       </div>
     </div>
@@ -2100,7 +2363,7 @@
 
   <!-- ===================== MODAL INTECS vs MSA ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalIntecsMsa" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title" id="imModalTitle"><i class="ph ph-git-diff me-2"></i>Novo — INTECS vs MSA</h5>
@@ -2197,10 +2460,10 @@
               <textarea class="form-control" id="im_observacao" rows="3" autocomplete="off"></textarea>
             </div>
 
-            <div class="col-12 d-flex align-items-center gap-2">
-              <button type="submit" class="btn btn-primary ms-auto" id="btnSalvarIntecsMsa"><i class="ph ph-check"></i> Salvar</button>
-            </div>
           </form>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" form="formIntecsMsa" class="btn btn-primary" id="btnSalvarIntecsMsa"><i class="ph ph-check"></i> Salvar</button>
         </div>
       </div>
     </div>
@@ -2208,7 +2471,7 @@
 
   <!-- ===================== MODAL PLANILHA (IMPORTAR / EXPORTAR) ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalPlanilha" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-md">
+    <div class="modal-dialog modal-dialog-centered modal-md modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title"><i class="ph ph-file-xls me-2"></i>Planilha — Importar / Exportar</h5>
@@ -2260,7 +2523,7 @@
 
   <!-- ===================== MODAL LOG DE ALTERAÇÕES ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalLog" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <button type="button" class="btn btn-link text-white p-0 me-2 text-decoration-none" id="btnVoltarLog" title="Voltar">
@@ -2270,6 +2533,12 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-0">
+          <div class="px-3 pt-3 d-flex justify-content-end">
+            <div class="input-group input-group-sm busca-tabela">
+              <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+              <input type="search" class="form-control" id="logBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+            </div>
+          </div>
           <div id="logCorpo" class="p-3"><span class="text-muted">Carregando...</span></div>
         </div>
       </div>
@@ -2278,7 +2547,7 @@
 
   <!-- ===================== MODAL DE EDIÇÃO ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEditar" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-md-down">
       <div class="modal-content">
         <form id="formEditar" class="needs-validation" novalidate>
           <div class="modal-header bg-primary text-white">
@@ -2425,11 +2694,10 @@
               <i class="ph ph-clock-counter-clockwise"></i> Histórico
             </button>
             <div class="d-flex gap-2">
-              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
               <button type="button" class="btn btn-primary" id="btnEditarRegistro">
                 <i class="ph ph-pencil-simple"></i> Editar
               </button>
-              <button type="submit" class="btn btn-primary d-none" id="btnSalvarEdicao">Salvar</button>
+              <button type="submit" class="btn btn-primary d-none" id="btnSalvarEdicao"><i class="ph ph-check"></i> Salvar</button>
             </div>
           </div>
         </form>
@@ -2550,7 +2818,7 @@
 
   <!-- ===================== MODAL HISTÓRICO DO PAT ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalHistorico" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title">Histórico do PAT <span id="histPat"></span></h5>
@@ -2563,7 +2831,7 @@
 
   <!-- ===================== MODAL DETALHE / INTERAÇÃO DO CHAMADO ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalChamadoDetalhe" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title" id="detalheTitle">Chamado</h5>
@@ -2580,7 +2848,6 @@
             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
             placeholder="Escreva sua interação / resposta..."></textarea>
           <div class="d-flex justify-content-end gap-2">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
             <button type="button" class="btn btn-primary" id="btnEnviarInteracao">
               <i class="ph ph-paper-plane-tilt"></i> Enviar Interação
             </button>
@@ -2592,7 +2859,7 @@
 
   <!-- ===================== MODAL NOVO CHAMADO ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalNovoChamado" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-md modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-md modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title"><i class="ph ph-headset me-2"></i>Novo Chamado</h5>
@@ -2660,8 +2927,7 @@
 
           </form>
         </div>
-        <div class="modal-footer justify-content-between">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <div class="modal-footer">
           <button type="button" class="btn btn-primary" id="btnAbrirChamado">
             <i class="ph ph-headset"></i> Abrir Chamado
           </button>
@@ -2672,7 +2938,7 @@
 
   <!-- ===================== MODAL NOVO CHAMADO INTECS ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalNovoChamadoIntecs" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-md modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-md modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title"><i class="ph ph-headset me-2"></i>Novo Chamado INTECS</h5>
@@ -2750,8 +3016,7 @@
             </div>
           </form>
         </div>
-        <div class="modal-footer justify-content-between">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <div class="modal-footer">
           <button type="button" class="btn btn-primary" id="btnAbrirChamadoIntecs">
             <i class="ph ph-headset"></i> Abrir Chamado
           </button>
@@ -2762,7 +3027,7 @@
 
   <!-- ===================== MODAL DETALHE CHAMADO INTECS ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalChamadoIntecsDetalhe" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title" id="ciDetalheTitle">Chamado</h5>
@@ -2842,7 +3107,6 @@
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarEquipamentoIntecs">
             <i class="ph ph-arrow-clockwise"></i> Atualizar Equipamento
           </button>
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
         </div>
       </div>
     </div>
@@ -2850,7 +3114,7 @@
 
   <!-- ===================== MODAL NOVO USUÁRIO ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalNovoUsuario" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title">Novo usuário</h5>
@@ -2898,7 +3162,7 @@
 
   <!-- ===================== MODAL EDITAR USUÁRIO ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEditarUsuario" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title" id="euTitulo">Editar usuário</h5>

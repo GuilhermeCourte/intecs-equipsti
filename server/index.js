@@ -59,7 +59,8 @@ app.get('/api/auth/me', exigirAuth, (req, res) => {
 });
 
 // ===================== NOTIFICAÇÕES (sininho) =====================
-// Lista as 30 notificações mais recentes do usuário logado + total não lido.
+// Lista as notificações dos últimos 3 dias do usuário logado (máx. 30) + total
+// não lido no mesmo período, para o badge bater com o que aparece na lista.
 app.get('/api/notifications', exigirAuth, wrap(async (req, res) => {
   const uid = Number(req.user.sub);
   const itens = await query(
@@ -67,9 +68,12 @@ app.get('/api/notifications', exigirAuth, wrap(async (req, res) => {
             lido, CONVERT(varchar(19), criado_em, 120) AS criadoEm
        FROM dbo.EQUIPSTI_notificacoes
       WHERE usuario_id = @uid
+        AND criado_em >= DATEADD(day, -3, SYSUTCDATETIME())
       ORDER BY criado_em DESC, id DESC`, { uid });
   const nao = await query(
-    `SELECT COUNT(*) AS n FROM dbo.EQUIPSTI_notificacoes WHERE usuario_id = @uid AND lido = 0`, { uid });
+    `SELECT COUNT(*) AS n FROM dbo.EQUIPSTI_notificacoes
+      WHERE usuario_id = @uid AND lido = 0
+        AND criado_em >= DATEADD(day, -3, SYSUTCDATETIME())`, { uid });
   res.json({ itens: itens.recordset, naoLidas: nao.recordset[0].n });
 }));
 
