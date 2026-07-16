@@ -71,6 +71,8 @@ const fpMap = {};
 let modalHistorico = null;
 let modalRegistrar = null;
 let modalLog = null;
+let modalOpcao = null;
+let modalEmprestimo = null;
 let modalNovoChamado = null;
 let modalChamadoDetalhe = null;
 let _chamadoDetalheAtual = null;
@@ -814,7 +816,7 @@ function renderListaOpcoes() {
     container.innerHTML =
       '<div class="table-responsive"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
       '<thead><tr>' + opcoesThead(lista) + '</tr></thead>' +
-      '<tbody><tr><td colspan="4" class="text-muted text-center py-3">' +
+      '<tbody><tr><td colspan="3" class="text-muted text-center py-3">' +
       'Nenhuma opção corresponde ao filtro.</td></tr></tbody></table></div>';
     ctxAtualizarTh(opcoesFilterCtx);
     return;
@@ -838,26 +840,11 @@ function renderListaOpcoes() {
     const status = ativo
       ? '<span class="badge-status badge-ativo">ATIVO</span>'
       : '<span class="badge-status badge-inativo">INATIVO</span>';
-    const toggle = ativo
-      ? '<button type="button" class="acao-link acao-ocultar" data-toggle-opt data-val="' +
-        vEsc + '" data-hide="1"><i class="ph ph-eye-slash"></i> Ocultar</button>'
-      : '<button type="button" class="acao-link acao-exibir" data-toggle-opt data-val="' +
-        vEsc + '" data-hide="0"><i class="ph ph-eye"></i> Exibir</button>';
-    const precoAttr = isEquip && EQUIP_PRECO[v] != null ? ' data-preco="' + EQUIP_PRECO[v] + '"' : '';
-    const tipoAttr = isEquip && EQUIP_TIPO[v] ? ' data-tipo="' + escapeHtml(EQUIP_TIPO[v]) + '"' : '';
-    const cnpjAttr = isUnidade && UNIDADE_CNPJ[v] ? ' data-cnpj="' + escapeHtml(UNIDADE_CNPJ[v]) + '"' : '';
-    const enderecoAttr = isUnidade && UNIDADE_ENDERECO[v] ? ' data-endereco="' + escapeHtml(UNIDADE_ENDERECO[v]) + '"' : '';
-    const editar = '<button type="button" class="acao-link acao-editar ms-3" ' +
-      'data-edit-opt data-val="' + vEsc + '" data-detalhe="' + escapeHtml(detalhe) + '"' + precoAttr + tipoAttr + cnpjAttr + enderecoAttr + '>' +
-      '<i class="ph ph-pencil-simple"></i> Editar</button>';
 
     let qtdCell = '';
     if (isInsumo) {
       const qtd = INSUMO_QTD[v] ?? 0;
-      qtdCell = '<td><div class="d-flex align-items-center gap-1" style="width:110px">' +
-        '<input type="number" class="form-control form-control-sm text-center" min="0" ' +
-        'data-qtd-insumo data-val="' + vEsc + '" value="' + qtd + '" style="width:70px">' +
-        '<span class="text-muted small">un</span></div></td>';
+      qtdCell = '<td>' + qtd + ' <span class="text-muted small">un</span></td>';
     } else if (isEquip) {
       const cnt = EQUIP_QTD_REG[v] ?? 0;
       qtdCell = '<td><span class="badge bg-secondary bg-opacity-10 text-secondary fw-normal">' +
@@ -872,10 +859,12 @@ function renderListaOpcoes() {
       qtdCell = '<td></td>';
     }
 
-    return '<tr><td class="opt-nome">' + nomeCell + '</td>' +
+    // Linha clicável: as ações (renomear, ocultar/exibir, detalhes) ficam no
+    // modal de edição, aberto ao clicar em qualquer ponto da linha.
+    return '<tr class="row-clicavel" data-opt="' + vEsc + '">' +
+      '<td class="opt-nome">' + nomeCell + '</td>' +
       qtdCell +
-      '<td>' + status + '</td>' +
-      '<td class="text-end">' + toggle + editar + '</td></tr>';
+      '<td>' + status + '</td></tr>';
   }).join('');
 
   container.innerHTML =
@@ -893,7 +882,7 @@ function opcoesThead(lista) {
   const th = (col, label) => '<th class="th-filterable" data-col="' + col + '">' +
     escapeHtml(label) + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>';
   const qtdHeader = isInsumo ? th(1, 'Qtd. em estoque') : isEquip ? th(1, 'Registros') : isUnidade ? th(1, 'CNPJ / Endereço') : '<th></th>';
-  return th(0, 'Opção') + qtdHeader + th(2, 'Status') + '<th class="text-end">Ação</th>';
+  return th(0, 'Opção') + qtdHeader + th(2, 'Status');
 }
 
 // Valor de uma coluna da tabela de Opções (para o filtro de cabeçalho).
@@ -1004,7 +993,7 @@ function facetVals(col) {
 async function recarregarRegistros() {
   invalidarCacheTodos();
   await loadRecords(true);
-  if (Object.keys(colFilters).length > 0) {
+  if (Object.keys(colFilters).length > 0 || buscaRegistros() !== '') {
     await carregarTodosParaFiltro();
     renderTabela();
   }
@@ -1069,15 +1058,19 @@ function rowHtml(r) {
 
 function renderTabela() {
   const corpo = $('corpoTabela');
-  const temFiltro = Object.keys(colFilters).length > 0;
+  const busca = buscaRegistros();
+  const temFiltro = Object.keys(colFilters).length > 0 || busca !== '';
   const fonte = temFiltro && _todosCarregados ? _todosRegistros : REGISTROS;
-  const filtered = temFiltro ? fonte.filter(passaFiltros) : REGISTROS;
+  const filtered = temFiltro
+    ? fonte.filter((r) => passaFiltros(r) && (!busca || matchBuscaRegistro(r, busca)))
+    : REGISTROS;
   $('sentinelTabela').classList.toggle('d-none', _recAllLoaded || temFiltro);
   if (!filtered.length) {
     const msg = temFiltro
       ? 'Nenhum registro corresponde ao filtro ativo.'
       : 'Nenhum registro cadastrado.';
     corpo.innerHTML = '<tr><td colspan="11" class="text-muted">' + msg + '</td></tr>';
+    atualizarThFiltro();
     return;
   }
   corpo.innerHTML = filtered.map(rowHtml).join('');
@@ -1085,7 +1078,7 @@ function renderTabela() {
 }
 
 function appendTabela(registros) {
-  if (Object.keys(colFilters).length > 0) return;
+  if (Object.keys(colFilters).length > 0 || buscaRegistros() !== '') return;
   $('corpoTabela').insertAdjacentHTML('beforeend', registros.map(rowHtml).join(''));
 }
 
@@ -1196,13 +1189,22 @@ function passaFiltros(r) {
   return true;
 }
 
+// Busca da lupa: termo (já normalizado) contra QUALQUER coluna do registro.
+function buscaRegistros() { return buscaNorm(trim($('regBusca').value)); }
+function matchBuscaRegistro(r, termo) {
+  for (let i = 0; i < COL_FIELDS.length; i++) {
+    if (buscaNorm(colVal(r, i)).includes(termo)) return true;
+  }
+  return false;
+}
+
 function atualizarThFiltro() {
   document.querySelectorAll('#tabelaScroll thead th[data-col]').forEach(th => {
     const ativo = colFilters[th.getAttribute('data-col')] != null;
     th.classList.toggle('col-filter-ativo', ativo);
   });
   const btnLimpar = $('btnLimparFiltros');
-  if (btnLimpar) btnLimpar.classList.toggle('filtro-on', Object.keys(colFilters).length > 0);
+  if (btnLimpar) btnLimpar.classList.toggle('filtro-on', Object.keys(colFilters).length > 0 || buscaRegistros() !== '');
 }
 
 function criarFilterDropdown() {
@@ -1313,7 +1315,8 @@ function ctxAtualizarTh(ctx) {
   });
   if (ctx.clearBtnId) {
     const btn = $(ctx.clearBtnId);
-    if (btn) btn.classList.toggle('filtro-on', Object.keys(ctx.filters).length > 0);
+    const buscaAtiva = ctx.buscaId && trim($(ctx.buscaId).value) !== '';
+    if (btn) btn.classList.toggle('filtro-on', Object.keys(ctx.filters).length > 0 || !!buscaAtiva);
   }
 }
 
@@ -1437,6 +1440,65 @@ function wireCtxFiltro(ctx, theadEl) {
   });
 }
 
+// ============================================================
+//  Busca de tabela (lupa) — filtra as linhas por QUALQUER coluna
+// ============================================================
+// Normaliza texto para comparação: minúsculas e sem acentos.
+function buscaNorm(s) {
+  return String(s ?? '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+// Liga um input (lupa) a uma tabela: esconde as linhas do tbody cujo texto,
+// somando todas as colunas, não contém o termo. Um MutationObserver re-aplica
+// o termo quando a tabela é re-renderizada (innerHTML), então funciona tanto
+// com tbody fixo quanto com containers que recriam a tabela inteira.
+function wireBuscaTabela(inputId, alvoId, clearBtnId, extraOn) {
+  const input = $(inputId), alvo = $(alvoId);
+  if (!input || !alvo) return;
+  // Acende o funil (preto) quando há busca ativa — igual ao de Registros.
+  const atualizarBtn = () => {
+    const btn = clearBtnId && $(clearBtnId);
+    if (btn) btn.classList.toggle('filtro-on', trim(input.value) !== '' || !!(extraOn && extraOn()));
+  };
+  // Re-aplica o termo quando a tabela re-renderiza. Durante as escritas do
+  // próprio aplicar() o observer fica desligado, senão a linha-aviso
+  // realimentaria o observer em loop.
+  const obs = new MutationObserver(() => aplicar());
+  const observar = () => obs.observe(alvo, { childList: true, subtree: true });
+  function aplicar() {
+    const tbody = alvo.tagName === 'TBODY' ? alvo : alvo.querySelector('tbody');
+    if (!tbody) return;
+    obs.disconnect();
+    const termo = buscaNorm(trim(input.value));
+    let total = 0, visiveis = 0;
+    for (const tr of tbody.rows) {
+      if (tr.classList.contains('busca-sem-resultado')) continue;
+      // Linha-mensagem (célula única com colspan: "Carregando...", vazio) não conta.
+      const msg = tr.cells.length === 1 && tr.cells[0].hasAttribute('colspan');
+      const mostra = msg || !termo || buscaNorm(tr.textContent).includes(termo);
+      tr.classList.toggle('d-none', !mostra);
+      if (!msg) { total++; if (mostra) visiveis++; }
+    }
+    let aviso = tbody.querySelector('tr.busca-sem-resultado');
+    if (termo && total && !visiveis) {
+      if (!aviso) {
+        aviso = tbody.insertRow(-1);
+        aviso.className = 'busca-sem-resultado';
+        const td = aviso.insertCell(0);
+        td.className = 'text-muted';
+        td.colSpan = tbody.closest('table').querySelector('thead tr')?.cells.length || 1;
+      }
+      aviso.cells[0].textContent = 'Nenhuma linha corresponde a "' + trim(input.value) + '".';
+    } else if (aviso) {
+      aviso.remove();
+    }
+    atualizarBtn();
+    observar();
+  }
+  input.addEventListener('input', aplicar);
+  observar();
+}
+
 // Cabeçalho com colunas filtráveis (ícone de funil) a partir de um array de COLS.
 function thFiltravel(cols) {
   // \n no label vira quebra de linha no cabeçalho (escapa antes, então só os
@@ -1445,17 +1507,19 @@ function thFiltravel(cols) {
     escapeHtml(c.label).replace(/\n/g, '<br>') + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>').join('');
 }
 
-// Aplica o filtro da tabela de Registros. O dropdown abre com as facetas
-// (leves); o dump completo só é necessário aqui, para filtrar de verdade —
-// e, se falhar, o erro fica visível em vez de filtrar só a página atual.
+// Aplica o filtro da tabela de Registros (funil de coluna e/ou busca da lupa).
+// O dropdown abre com as facetas (leves); o dump completo só é necessário
+// aqui, para filtrar de verdade — e, se falhar, o erro fica visível em vez
+// de filtrar só a página atual.
 async function aplicarFiltroRegistros() {
-  if (Object.keys(colFilters).length && !_todosCarregados) {
+  if ((Object.keys(colFilters).length || buscaRegistros() !== '') && !_todosCarregados) {
     $('corpoTabela').innerHTML =
       '<tr><td colspan="11" class="text-muted"><i class="ph ph-circle-notch fd-spin me-1"></i>Aplicando filtro...</td></tr>';
     await carregarTodosParaFiltro();
     if (!_todosCarregados) {
       showAlert('alertRegistros', 'danger', 'Não foi possível carregar todos os registros para filtrar. Tente novamente.');
       Object.keys(colFilters).forEach((k) => delete colFilters[k]);
+      $('regBusca').value = '';
       renderTabela();
       atualizarThFiltro();
       return;
@@ -2000,7 +2064,7 @@ function configurarFormEmprestimo() {
               from: unidadeOriginal || '—', to: destino } });
       }
     } catch (err) {
-      showAlert('alertEmprestimos', 'danger', err.message);
+      showAlert('alertEmprestimoModal', 'danger', err.message);
       btn.disabled = false; btn.textContent = 'Emprestar';
       return;
     }
@@ -2012,11 +2076,12 @@ function configurarFormEmprestimo() {
       const res = await api('POST', '/api/loans', dados);
       form.reset();
       form.classList.remove('was-validated');
+      modalEmprestimo.hide();
       await loadEmprestimoForm();
       showAlert('alertEmprestimos', 'success', res.devolvido ? 'Equipamento devolvido à unidade original.' : 'Empréstimo registrado.');
       await loadEmprestimos();
     } catch (err) {
-      showAlert('alertEmprestimos', 'danger', err.message);
+      showAlert('alertEmprestimoModal', 'danger', err.message);
     } finally {
       btn.disabled = false; btn.textContent = 'Emprestar';
     }
@@ -2535,110 +2600,122 @@ function configurarFormOpcao() {
     }
   });
 
-  $('listaOpcoes').addEventListener('change', async (ev) => {
-    const input = ev.target.closest('[data-qtd-insumo]');
-    if (!input) return;
-    const val = input.getAttribute('data-val');
-    const qtd = parseInt(input.value, 10);
-    if (isNaN(qtd) || qtd < 0) { input.value = INSUMO_QTD[val] ?? 0; return; }
-    try {
-      await api('PUT', '/api/options/quantidade', { valor: val, quantidade: qtd });
-      INSUMO_QTD[val] = qtd;
-    } catch (err) {
-      showAlert('alertGerenciar', 'danger', 'Erro ao salvar quantidade: ' + err.message);
-      input.value = INSUMO_QTD[val] ?? 0;
-    }
+  // Linha clicável → abre o modal de edição da opção.
+  $('listaOpcoes').addEventListener('click', (ev) => {
+    const row = ev.target.closest('tr[data-opt]');
+    if (row) abrirModalOpcao(row.getAttribute('data-opt'));
   });
 
-  $('listaOpcoes').addEventListener('click', async (ev) => {
-    const lista = $('listaAlvo').value;
+  // Máscara de CNPJ no campo do modal.
+  $('opcao_cnpj').addEventListener('input', (ev) => {
+    ev.target.value = maskCNPJ(cnpjDigits(ev.target.value));
+  });
 
-    const btnToggle = ev.target.closest('[data-toggle-opt]');
-    if (btnToggle) {
-      const val = btnToggle.getAttribute('data-val');
-      const hide = btnToggle.getAttribute('data-hide') === '1';
-      btnToggle.disabled = true;
-      try {
-        await api('PUT', '/api/options/hidden', { lista, valor: val, oculto: hide });
-        await loadOptions();
-      } catch (err) {
-        showAlert('alertGerenciar', 'danger', 'Erro: ' + err.message);
-        btnToggle.disabled = false;
-      }
+  $('formOpcao').addEventListener('submit', salvarModalOpcao);
+}
+
+// Abre o modal de edição de uma opção, com os campos da lista atual
+// (EQUIPAMENTO: detalhe/valor/tipo; UNIDADE: MSA/CNPJ/endereço; INSUMOS: qtd).
+function abrirModalOpcao(val) {
+  const lista = $('listaAlvo').value;
+  const isEquip = lista === 'EQUIPAMENTO';
+  const isUnidade = lista === 'UNIDADE';
+  const isInsumo = lista === 'INSUMOS';
+
+  $('opcaoModalTitle').textContent = 'Editar ' + lista.toLowerCase();
+  $('alertOpcaoModal').innerHTML = '';
+  $('formOpcao').classList.remove('was-validated');
+  $('opcao_original').value = val;
+  $('opcao_nome').value = val;
+
+  $('opcao_detalhe_grupo').style.display = isEquip ? '' : 'none';
+  $('opcao_preco_grupo').style.display = isEquip ? '' : 'none';
+  $('opcao_tipo_grupo').style.display = isEquip ? '' : 'none';
+  $('opcao_msa_grupo').style.display = isUnidade ? '' : 'none';
+  $('opcao_cnpj_grupo').style.display = isUnidade ? '' : 'none';
+  $('opcao_endereco_grupo').style.display = isUnidade ? '' : 'none';
+  $('opcao_qtd_grupo').style.display = isInsumo ? '' : 'none';
+
+  if (isEquip) {
+    $('opcao_detalhe').value = EQUIP_DETALHE[val] || '';
+    $('opcao_preco').value = EQUIP_PRECO[val] != null ? String(EQUIP_PRECO[val]).replace('.', ',') : '';
+    $('opcao_tipo').value = EQUIP_TIPO[val] || '';
+  }
+  if (isUnidade) {
+    $('opcao_msa').innerHTML = '<option value="">-</option>' +
+      (MSA_UNIDADES || []).map((u) => '<option value="' + escapeHtml(u) + '"' +
+        (UNIDADE_MSA[val] === u ? ' selected' : '') + '>' + escapeHtml(u) + '</option>').join('');
+    $('opcao_cnpj').value = UNIDADE_CNPJ[val] || '';
+    $('opcao_endereco').value = UNIDADE_ENDERECO[val] || '';
+  }
+  if (isInsumo) $('opcao_qtd').value = INSUMO_QTD[val] ?? 0;
+
+  $('opcao_ativo').checked = (HIDDEN[lista] || []).indexOf(val) === -1;
+  modalOpcao.show();
+}
+
+async function salvarModalOpcao(ev) {
+  ev.preventDefault();
+  const lista = $('listaAlvo').value;
+  const original = $('opcao_original').value;
+  const limpo = trim($('opcao_nome').value).toUpperCase();
+  if (!limpo) {
+    $('formOpcao').classList.add('was-validated');
+    return;
+  }
+  let cnpj = null;
+  if (lista === 'UNIDADE') {
+    const dig = cnpjDigits($('opcao_cnpj').value);
+    if (dig && dig.length !== 14) {
+      $('alertOpcaoModal').innerHTML = '<div class="alert alert-warning py-2 mb-0">CNPJ inválido — informe 14 dígitos.</div>';
       return;
     }
+    cnpj = dig ? maskCNPJ(dig) : null;
+  }
 
-    const btnEdit = ev.target.closest('[data-edit-opt]');
-    if (btnEdit) {
-      const val = btnEdit.getAttribute('data-val');
-      const detalheAtual = btnEdit.getAttribute('data-detalhe') || '';
-      const precoAtual = btnEdit.getAttribute('data-preco');
-      const cnpjAtual = btnEdit.getAttribute('data-cnpj') || '';
-      const enderecoAtual = btnEdit.getAttribute('data-endereco') || '';
-
-      let limpo, novoDetalhe, novoPreco, novoTipo, novoCnpj = null, novoEndereco = null;
-      if (lista === 'EQUIPAMENTO') {
-        const tipoAtual = btnEdit.getAttribute('data-tipo') || '';
-        const res = await uiAsk({
-          title: 'Editar opção', message: 'Nome do equipamento:',
-          input: true, value: val,
-          input2Label: 'Equipamento detalhe (opcional)', value2: detalheAtual,
-          input3Label: 'Valor padrão (R$, opcional)', value3: precoAtual != null ? precoAtual : '',
-          input4Label: 'Comprado/Locado', value4: tipoAtual,
-          okText: 'Salvar'
-        });
-        if (res === null) return;
-        limpo = trim(res.valor).toUpperCase();
-        novoDetalhe = trim(res.detalhe) || null;
-        const precoRaw = res.preco !== null && res.preco !== '' && res.preco !== undefined
-          ? Number(String(res.preco).replace(',', '.')) : null;
-        novoPreco = precoRaw != null && !isNaN(precoRaw) ? precoRaw : null;
-        novoTipo = res.tipo || null;
-      } else if (lista === 'UNIDADE') {
-        const res = await uiAsk({
-          title: 'Editar unidade', message: 'Nome da unidade:',
-          input: true, value: val,
-          input2Label: 'Unidade na MSA (opcional)', value2: detalheAtual, input2Select: MSA_UNIDADES,
-          input3Label: 'CNPJ (opcional)', value3: cnpjAtual, input3Mask: 'cnpj',
-          input5Label: 'Endereço (opcional)', value5: enderecoAtual,
-          okText: 'Salvar'
-        });
-        if (res === null) return;
-        limpo = trim(res.valor).toUpperCase();
-        novoDetalhe = trim(res.detalhe) || null;
-        const cnpjLimpo = cnpjDigits(res.input3);
-        if (cnpjLimpo && cnpjLimpo.length !== 14) {
-          showAlert('alertGerenciar', 'warning', 'CNPJ inválido — informe 14 dígitos.');
-          return;
-        }
-        novoCnpj = cnpjLimpo ? maskCNPJ(cnpjLimpo) : null;
-        novoEndereco = trim(res.input5) || null;
-      } else {
-        const novo = await uiPrompt('Editar opção:', { title: 'Editar opção', value: val });
-        if (novo === null) return;
-        limpo = trim(novo).toUpperCase();
-      }
-
-      if (!limpo) { showAlert('alertGerenciar', 'warning', 'O valor não pode ser vazio.'); return; }
-      btnEdit.disabled = true;
-      try {
-        if (limpo !== val) {
-          await api('PUT', '/api/options/rename', { lista, valor: val, novoValor: limpo });
-        }
-        if (lista === 'EQUIPAMENTO') {
-          await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: novoPreco, tipo_aquisicao: novoTipo });
-        } else if (lista === 'UNIDADE') {
-          await api('PUT', '/api/options/detalhe', { lista, valor: limpo, detalhe: novoDetalhe, preco: null, tipo_aquisicao: null, cnpj: novoCnpj, endereco: novoEndereco });
-        }
-        await loadOptions();
-        showAlert('alertGerenciar', 'success', 'Opção atualizada.');
-      } catch (err) {
-        showAlert('alertGerenciar', 'danger', 'Erro: ' + err.message);
-        btnEdit.disabled = false;
+  const btn = $('btnSalvarOpcao');
+  btn.disabled = true; btn.innerHTML = '<i class="ph ph-circle-notch fd-spin"></i> Salvando...';
+  try {
+    if (limpo !== original) {
+      await api('PUT', '/api/options/rename', { lista, valor: original, novoValor: limpo });
+    }
+    if (lista === 'EQUIPAMENTO') {
+      const precoRaw = trim($('opcao_preco').value);
+      // "1.234,56" e "1234,56" → 1234.56; "1234.56" (decimal com ponto) fica como está.
+      const precoNorm = precoRaw.includes(',') ? precoRaw.replace(/\./g, '').replace(',', '.') : precoRaw;
+      const preco = precoRaw !== '' ? Number(precoNorm) : null;
+      await api('PUT', '/api/options/detalhe', {
+        lista, valor: limpo,
+        detalhe: trim($('opcao_detalhe').value) || null,
+        preco: preco != null && !isNaN(preco) ? preco : null,
+        tipo_aquisicao: $('opcao_tipo').value || null
+      });
+    } else if (lista === 'UNIDADE') {
+      await api('PUT', '/api/options/detalhe', {
+        lista, valor: limpo,
+        detalhe: $('opcao_msa').value || null,
+        preco: null, tipo_aquisicao: null,
+        cnpj, endereco: trim($('opcao_endereco').value) || null
+      });
+    } else if (lista === 'INSUMOS') {
+      const qtd = parseInt($('opcao_qtd').value, 10);
+      if (!isNaN(qtd) && qtd >= 0 && qtd !== (INSUMO_QTD[original] ?? 0)) {
+        await api('PUT', '/api/options/quantidade', { valor: limpo, quantidade: qtd });
       }
     }
-  });
-
+    const ativo = $('opcao_ativo').checked;
+    const eraAtivo = (HIDDEN[lista] || []).indexOf(original) === -1;
+    if (ativo !== eraAtivo) {
+      await api('PUT', '/api/options/hidden', { lista, valor: limpo, oculto: !ativo });
+    }
+    await loadOptions();
+    modalOpcao.hide();
+    showAlert('alertGerenciar', 'success', 'Opção atualizada.');
+  } catch (err) {
+    $('alertOpcaoModal').innerHTML = '<div class="alert alert-danger py-2 mb-0">Erro: ' + escapeHtml(err.message) + '</div>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<i class="ph ph-check"></i> Salvar';
+  }
 }
 
 let modalNovoUsuario = null;
@@ -2716,7 +2793,7 @@ function configurarFormEditar() {
     const id = $('edit_id').value;
     const justificativa = trim($('edit_justificativa').value);
     const btn = $('btnSalvarEdicao');
-    btn.disabled = true; btn.textContent = 'Salvando...';
+    btn.disabled = true; btn.innerHTML = '<i class="ph ph-circle-notch fd-spin"></i> Salvando...';
     try {
       await api('PUT', '/api/records/' + id, { ...dadosFormulario('edit_'), justificativa });
       const jEl = $('edit_justificativa');
@@ -2731,7 +2808,7 @@ function configurarFormEditar() {
     } catch (err) {
       showAlert('alertRegistros', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
-      btn.disabled = false; btn.textContent = 'Salvar';
+      btn.disabled = false; btn.innerHTML = '<i class="ph ph-check"></i> Salvar';
     }
   });
 
@@ -2754,6 +2831,7 @@ function configurarFormEditar() {
 }
 
 async function abrirLog(registroId) {
+  $('logBusca').value = ''; // busca da lupa não persiste entre registros
   $('logCorpo').innerHTML = '<span class="text-muted">Carregando...</span>';
   modalEditar.hide();
   modalLog.show();
@@ -3272,7 +3350,18 @@ function renderChamadosIntecs() {
   const fDataFim = $('ciFiltroDataFinal').value;
 
   let rows = _chamadosIntecs.filter((c) => {
-    if (busca && !c.titulo.toLowerCase().includes(busca)) return false;
+    if (busca) {
+      // Lupa: procura em qualquer coluna exibida na tabela (nº, título,
+      // categoria, prioridade, status, responsável, data) sem acento/caixa.
+      const hay = buscaNorm([
+        c.id, c.titulo, c.categoria_nome,
+        CI_PRIORIDADE_LABEL[c.prioridade] || c.prioridade,
+        CI_STATUS_LABEL[c.status] || c.status,
+        c.responsavel_email, fmtDataHora(c.criado_em),
+        c.unidade, c.departamento
+      ].join(' '));
+      if (!hay.includes(buscaNorm(busca))) return false;
+    }
     if (fCategoria && String(c.categoria_id) !== fCategoria) return false;
     if (fPrioridade && c.prioridade !== fPrioridade) return false;
     if (fStatus && c.status !== fStatus) return false;
@@ -3316,6 +3405,9 @@ function renderChamadosIntecs() {
     }).join('');
   }
   $('ciStatus').textContent = `${rows.length} de ${_chamadosIntecs.length} chamado(s).`;
+  // Funil aceso quando qualquer filtro (busca, selects, unidade/depto, datas) está ativo.
+  $('btnLimparFiltrosIntecs').classList.toggle('filtro-on',
+    !!(busca || fCategoria || fPrioridade || fStatus || fResponsavel || fUnidade || fDepartamento || fDataIni || fDataFim));
 }
 
 function configurarFiltrosChamadosIntecs() {
@@ -4277,6 +4369,7 @@ const chamadosFilterCtx = {
   filters: {},
   maxItems: 4,
   clearBtnId: 'btnLimparFiltrosChamados',
+  buscaId: 'chamadosBusca',
   onApply: () => {
     // Ao usar o filtro de coluna, troca o status de cima para "Personalizado"
     // para não conflitar com o filtro da tabela.
@@ -4294,7 +4387,8 @@ function renderChamados() {
       if (status === 'aberto') { if (r.St === 'Resolvido' || r.St === 'Cancelado') return false; }
       else if (r.St !== status) return false;
     }
-    if (busca && !`${r.Codigo} ${r.Assunto} ${r.Solicitante}`.toLowerCase().includes(busca)) return false;
+    // Lupa: procura em qualquer coluna da tabela (valores como exibidos).
+    if (busca && !buscaNorm(CHAMADOS_COLS.map((c, i) => chamadosColVal(r, i)).join(' ')).includes(buscaNorm(busca))) return false;
     if (!ctxPassa(chamadosFilterCtx, r)) return false;
     return true;
   });
@@ -4392,6 +4486,7 @@ const intecsMsaFilterCtx = {
   filters: {},
   maxItems: 4,
   clearBtnId: 'btnLimparFiltrosIntecsMsa',
+  buscaId: 'imBusca',
   onApply: () => {
     if (Object.keys(intecsMsaFilterCtx.filters).length) setSelectVal('imFiltroStatus', 'custom');
     renderIntecsMsa();
@@ -4411,8 +4506,10 @@ function renderIntecsMsa() {
       else if (stMsa !== fstatus) return false;
     }
     if (busca) {
-      const hay = `${r.numero_chamado_msa || ''} ${r.unidade || ''} ${r.patrimonio_msa || ''} ${r.ns || ''} ${r.descricao_equip || ''}`.toLowerCase();
-      if (!hay.includes(busca)) return false;
+      // Lupa: procura em qualquer coluna da tabela (valores como exibidos,
+      // incluindo datas dd/mm/aaaa e os status derivados).
+      const hay = buscaNorm(INTECSMSA_COLS.map((c, i) => intecsMsaColVal(r, i)).join(' '));
+      if (!hay.includes(buscaNorm(busca))) return false;
     }
     if (!ctxPassa(intecsMsaFilterCtx, r)) return false;
     return true;
@@ -4600,8 +4697,66 @@ function configurarIntecsMsa() {
   wireCtxFiltro(intecsMsaFilterCtx, $('imThead'));
   $('btnLimparFiltrosIntecsMsa').addEventListener('click', () => {
     Object.keys(intecsMsaFilterCtx.filters).forEach((k) => delete intecsMsaFilterCtx.filters[k]);
+    $('imBusca').value = '';
     if ($('imFiltroStatus').value === 'custom') setSelectVal('imFiltroStatus', 'aberto');
     renderIntecsMsa();
+  });
+}
+
+/* =====================================================================
+   Menu hambúrguer mobile — botão no canto superior esquerdo do
+   cabeçalho abre a gaveta lateral com as abas (a barra de abas fica
+   oculta no celular).
+   ===================================================================== */
+function configurarMenuMobile() {
+  const painel = $('mobileMenu');
+  if (!painel) return;
+  const backdrop = $('mobileMenuBackdrop');
+  const gatilho = $('btnMenuMobile');
+
+  const sincronizarAtivo = () => {
+    const ativo = document.querySelector('.app-tabs .nav-link.active');
+    painel.querySelectorAll('.mm-item').forEach((b) => {
+      b.classList.toggle('active', !!ativo && b.dataset.tab === ativo.id);
+    });
+  };
+  const abrir = () => {
+    sincronizarAtivo();
+    painel.classList.add('show');
+    backdrop.classList.add('show');
+    document.body.classList.add('mm-open');
+    gatilho.setAttribute('aria-expanded', 'true');
+  };
+  const fechar = () => {
+    painel.classList.remove('show');
+    backdrop.classList.remove('show');
+    document.body.classList.remove('mm-open');
+    gatilho.setAttribute('aria-expanded', 'false');
+  };
+
+  gatilho.addEventListener('click', abrir);
+  $('btnFecharMenuMobile').addEventListener('click', fechar);
+  backdrop.addEventListener('click', fechar);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && painel.classList.contains('show')) fechar();
+  });
+
+  painel.querySelectorAll('.mm-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      fechar();
+      const alvo = $(btn.dataset.tab);
+      if (alvo) bootstrap.Tab.getOrCreateInstance(alvo).show();
+    });
+  });
+  document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
+    btn.addEventListener('shown.bs.tab', sincronizarAtivo);
+  });
+  // Voltando ao desktop, fecha a gaveta e reposiciona o slider da barra
+  // de abas, que reaparece.
+  window.matchMedia('(min-width: 768px)').addEventListener('change', (ev) => {
+    if (!ev.matches) return;
+    fechar();
+    requestAnimationFrame(() => posicionarSlider(false));
   });
 }
 
@@ -4633,6 +4788,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalHistorico = new bootstrap.Modal($('modalHistorico'));
   modalLog = new bootstrap.Modal($('modalLog'));
   modalRegistrar = new bootstrap.Modal($('modalRegistrar'));
+  modalOpcao = new bootstrap.Modal($('modalOpcao'));
+  modalEmprestimo = new bootstrap.Modal($('modalEmprestimo'));
   modalInternet = new bootstrap.Modal($('modalInternet'));
   modalNovoChamado = new bootstrap.Modal($('modalNovoChamado'));
   modalChamadoDetalhe = new bootstrap.Modal($('modalChamadoDetalhe'));
@@ -4709,6 +4866,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarDashboardIntecs();
   configurarCategoriasIntecs();
   configurarVerificarMaquina();
+  configurarMenuMobile();
 
   document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
     btn.addEventListener('shown.bs.tab', () => {
@@ -4734,8 +4892,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnViewSimples').addEventListener('click', () => setRegistrosView('simples'));
   $('btnViewDetalhada').addEventListener('click', () => setRegistrosView('detalhada'));
   setRegistrosView(localStorage.getItem('registrosView') || 'simples');
+  $('regBusca').addEventListener('input', aplicarFiltroRegistros);
   $('btnLimparFiltros').addEventListener('click', () => {
     Object.keys(colFilters).forEach((k) => delete colFilters[k]);
+    $('regBusca').value = '';
     renderTabela();
   });
   new IntersectionObserver((entries) => {
@@ -4746,6 +4906,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnImportar').addEventListener('click', importarXlsx);
   $('tab-emprestimos').addEventListener('shown.bs.tab', () => { loadEmprestimoForm(); loadEmprestimos(); });
   $('btnAtualizarEmprestimos').addEventListener('click', loadEmprestimos);
+  $('btnNovoEmprestimo').addEventListener('click', () => {
+    $('alertEmprestimoModal').innerHTML = '';
+    $('formEmprestimo').classList.remove('was-validated');
+    loadEmprestimoForm().catch(() => {});
+    modalEmprestimo.show();
+  });
   $('tab-usuarios').addEventListener('shown.bs.tab', loadUsuarios);
   $('btnAtualizarUsuarios').addEventListener('click', loadUsuarios);
   $('tab-internet').addEventListener('shown.bs.tab', carregarInternet);
@@ -4787,9 +4953,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     delete chamadosFilterCtx.filters[String(i)];
     renderChamados();
   });
+  // Lupa: busca em qualquer coluna, nas tabelas montadas no DOM. Registros e
+  // as 3 tabelas de chamados filtram nos dados (renderTabela/render*).
+  wireBuscaTabela('empBusca', 'listaEmprestimos', 'btnLimparFiltrosEmprestimos');
+  wireBuscaTabela('opcoesBusca', 'listaOpcoes', 'btnLimparFiltrosOpcoes',
+    () => Object.keys(opcoesFilterCtx.filters).length > 0);
+  wireBuscaTabela('catBusca', 'catTbody');
+  wireBuscaTabela('prBusca', 'prTbody');
+  wireBuscaTabela('stBusca', 'stTbody');
+  wireBuscaTabela('usuariosBusca', 'listaUsuarios', 'btnLimparFiltrosUsuarios');
+  wireBuscaTabela('internetBusca', 'corpoTabelaInternet', 'btnLimparFiltrosInternet');
+  wireBuscaTabela('logBusca', 'logCorpo');
+
+  // Botões de limpar filtro (funil-x) ao lado de cada lupa.
+  const limparBusca = (id) => {
+    const el = $(id);
+    if (!el.value) return;
+    el.value = '';
+    el.dispatchEvent(new Event('input'));
+  };
+  $('btnLimparFiltrosEmprestimos').addEventListener('click', () => limparBusca('empBusca'));
+  $('btnLimparFiltrosUsuarios').addEventListener('click', () => limparBusca('usuariosBusca'));
+  $('btnLimparFiltrosInternet').addEventListener('click', () => limparBusca('internetBusca'));
+  $('btnLimparFiltrosOpcoes').addEventListener('click', () => {
+    Object.keys(opcoesFilterCtx.filters).forEach((k) => delete opcoesFilterCtx.filters[k]);
+    limparBusca('opcoesBusca');
+    renderListaOpcoes();
+  });
+  $('btnAtualizarOpcoes').addEventListener('click', () => {
+    loadOptions().catch((err) => showAlert('alertGerenciar', 'danger', 'Erro ao atualizar: ' + err.message));
+  });
+
   wireCtxFiltro(chamadosFilterCtx, $('chamadosThead'));
   $('btnLimparFiltrosChamados').addEventListener('click', () => {
     Object.keys(chamadosFilterCtx.filters).forEach((k) => delete chamadosFilterCtx.filters[k]);
+    $('chamadosBusca').value = '';
     if ($('chamadosFiltroStatus').value === 'custom') setSelectVal('chamadosFiltroStatus', 'aberto');
     renderChamados();
   });
