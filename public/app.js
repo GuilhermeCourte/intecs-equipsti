@@ -4963,7 +4963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireBuscaTabela('stBusca', 'stTbody');
   wireBuscaTabela('usuariosBusca', 'listaUsuarios', 'btnLimparFiltrosUsuarios');
   wireBuscaTabela('internetBusca', 'corpoTabelaInternet', 'btnLimparFiltrosInternet');
-  wireBuscaTabela('logBusca', 'logCorpo');
+  wireBuscaTabela('logBusca', 'logCorpo', 'btnLimparFiltrosLog');
 
   // Botões de limpar filtro (funil-x) ao lado de cada lupa.
   const limparBusca = (id) => {
@@ -4975,6 +4975,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnLimparFiltrosEmprestimos').addEventListener('click', () => limparBusca('empBusca'));
   $('btnLimparFiltrosUsuarios').addEventListener('click', () => limparBusca('usuariosBusca'));
   $('btnLimparFiltrosInternet').addEventListener('click', () => limparBusca('internetBusca'));
+  $('btnLimparFiltrosLog').addEventListener('click', () => limparBusca('logBusca'));
   $('btnLimparFiltrosOpcoes').addEventListener('click', () => {
     Object.keys(opcoesFilterCtx.filters).forEach((k) => delete opcoesFilterCtx.filters[k]);
     limparBusca('opcoesBusca');
