@@ -658,13 +658,23 @@
     /* modal */
     .modal-content { border: none; border-radius: var(--radius); overflow: hidden; }
     .modal-header.bg-primary { background: var(--ink) !important; }
-    /* Celular: quando um modal em tela cheia tem um <form> embrulhando
-       header/body/footer (ex.: #modalEditar), a rolagem flex do Bootstrap
-       quebra e o rodapé (botão Salvar) fica cortado. display:contents dissolve
-       o form e devolve cabeçalho/rodapé fixos com o corpo rolável. */
+    /* Quando um modal tem um <form> embrulhando header/body/footer
+       (ex.: #modalEditar), a rolagem flex do Bootstrap (modal-dialog-scrollable
+       no desktop / tela cheia no celular) quebra e o rodapé (botão Salvar)
+       fica cortado. display:contents dissolve o form e devolve
+       cabeçalho/rodapé fixos com o corpo rolável. */
+    .modal-dialog-scrollable .modal-content > form { display: contents; }
     @media (max-width: 767.98px) {
       .modal-fullscreen-md-down .modal-content > form { display: contents; }
     }
+    /* Nesses mesmos modais o row g-3 fica no próprio .modal-body; o
+       margin-top negativo do .row puxa o corpo por baixo do cabeçalho e,
+       ao rolar, os campos invadem o header. Zera o deslocamento mantendo
+       o mesmo respiro (padding some, margin dos cols assume). */
+    .modal-body.row { margin-top: 0; padding-top: 0; }
+    /* Busca do "Histórico de alterações": fixa no topo à esquerda enquanto
+       a lista rola por baixo (o modal-body é o contêiner de rolagem). */
+    .log-busca-bar { position: sticky; top: 0; z-index: 2; background: #fff; }
 
     /* ---------- Dropdown customizado (Choices.js) ---------- */
     .choices { margin-bottom: 0; }
@@ -1460,7 +1470,7 @@
             <h2 class="pane-titulo-mobile">Empréstimos</h2>
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Empreste um equipamento.</p>
-              <button type="button" class="btn btn-primary btn-sm" id="btnNovoEmprestimo">
+              <button type="button" class="btn btn-primary btn-sm d-inline-flex d-md-inline-block flex-column align-items-center" id="btnNovoEmprestimo">
                 <i class="ph ph-plus"></i> Novo
               </button>
             </div>
@@ -1490,7 +1500,7 @@
           <div class="tab-pane fade" id="pane-gerenciar" role="tabpanel">
             <h2 class="pane-titulo-mobile">Opções</h2>
             <p class="text-muted">
-              Cadastre opções para os menus suspensos.
+              opções para os menus suspensos.
             </p>
             <div id="alertGerenciar"></div>
             <div class="d-flex align-items-center gap-3 mb-3">
@@ -1660,14 +1670,13 @@
           <div class="tab-pane fade" id="pane-usuarios" role="tabpanel">
 
             <h2 class="pane-titulo-mobile">Usuários</h2>
-            <p class="text-muted">Cadastre novos acessos ao sistema.</p>
-            <div id="alertUsuarios"></div>
-
-            <div class="d-flex justify-content-end mb-3">
-              <button type="button" class="btn btn-success btn-sm" id="btnNovoUsuario">
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+              <p class="text-muted mb-0">Cadastre novos acessos.</p>
+              <button type="button" class="btn btn-primary btn-sm d-inline-flex d-md-inline-block flex-column align-items-center" id="btnNovoUsuario">
                 <i class="ph ph-plus"></i> Novo
               </button>
             </div>
+            <div id="alertUsuarios"></div>
 
             <h6 class="mb-2">Usuários cadastrados</h6>
             <div class="d-flex align-items-center gap-1 mb-2">
@@ -2533,11 +2542,14 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-0">
-          <div class="px-3 pt-3 d-flex justify-content-end">
+          <div class="log-busca-bar px-3 pt-3 pb-2 d-flex align-items-center gap-1">
             <div class="input-group input-group-sm busca-tabela">
               <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
               <input type="search" class="form-control" id="logBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
             </div>
+            <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosLog" title="Limpar filtros">
+              <i class="ph ph-funnel-x fs-5"></i>
+            </button>
           </div>
           <div id="logCorpo" class="p-3"><span class="text-muted">Carregando...</span></div>
         </div>
@@ -2547,7 +2559,7 @@
 
   <!-- ===================== MODAL DE EDIÇÃO ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEditar" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-md-down">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
         <form id="formEditar" class="needs-validation" novalidate>
           <div class="modal-header bg-primary text-white">
