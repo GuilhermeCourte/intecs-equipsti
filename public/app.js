@@ -947,6 +947,7 @@ async function carregarTodosParaFiltro() {
     _todosRegistros = r;
     _todosCarregados = true;
     _todosCarregando = null;
+    atualizarContadorRegistros();
   }).catch(() => { _todosCarregando = null; });
   return _todosCarregando;
 }
@@ -1024,6 +1025,7 @@ async function loadRecords(reset = true) {
     _recOffset += novos.length;
     _recAllLoaded = novos.length < PAGE_SIZE;
     $('sentinelTabela').classList.toggle('d-none', _recAllLoaded);
+    atualizarContadorRegistros();
   } catch (err) {
     showAlert('alertRegistros', 'danger', 'Erro ao carregar registros: ' + err.message);
     if (reset) $('corpoTabela').innerHTML = '<tr><td colspan="14" class="text-danger">Falha ao carregar.</td></tr>';
@@ -1065,6 +1067,7 @@ function renderTabela() {
     ? fonte.filter((r) => passaFiltros(r) && (!busca || matchBuscaRegistro(r, busca)))
     : REGISTROS;
   $('sentinelTabela').classList.toggle('d-none', _recAllLoaded || temFiltro);
+  setContadorRegistros(filtered.length, temFiltro);
   if (!filtered.length) {
     const msg = temFiltro
       ? 'Nenhum registro corresponde ao filtro ativo.'
@@ -1077,9 +1080,44 @@ function renderTabela() {
   atualizarThFiltro();
 }
 
+// Total conhecido de registros: o dump completo (filtro) ou a página final da
+// rolagem infinita. Antes disso (só a 1ª página carregada) fica indeterminado.
+function totalRegistros() {
+  if (_todosCarregados) return _todosRegistros.length;
+  if (_recAllLoaded) return REGISTROS.length;
+  return null;
+}
+
+// Contador "X de Y registros." no padrão de imStatus/chamadosStatus.
+function setContadorRegistros(mostrados, temFiltro) {
+  const el = $('regContador');
+  if (!el) return;
+  const total = totalRegistros();
+  if (temFiltro) {
+    el.textContent = total != null
+      ? `${mostrados} de ${total} registros.`
+      : `${mostrados} registros.`;
+  } else {
+    el.textContent = `${total != null ? total : REGISTROS.length} registros.`;
+  }
+}
+
+// Reavalia o contador sem re-renderizar a tabela (rolagem infinita, dump pronto).
+function atualizarContadorRegistros() {
+  const busca = buscaRegistros();
+  const temFiltro = Object.keys(colFilters).length > 0 || busca !== '';
+  let mostrados = REGISTROS.length;
+  if (temFiltro) {
+    const fonte = _todosCarregados ? _todosRegistros : REGISTROS;
+    mostrados = fonte.filter((r) => passaFiltros(r) && (!busca || matchBuscaRegistro(r, busca))).length;
+  }
+  setContadorRegistros(mostrados, temFiltro);
+}
+
 function appendTabela(registros) {
   if (Object.keys(colFilters).length > 0 || buscaRegistros() !== '') return;
   $('corpoTabela').insertAdjacentHTML('beforeend', registros.map(rowHtml).join(''));
+  atualizarContadorRegistros();
 }
 
 function carregarFotosEdicao(id) {
