@@ -3,6 +3,7 @@
 // ============================================================
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import path from 'node:path';
@@ -25,6 +26,7 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const app = express();
 app.use(cors());
+app.use(compression()); // JSON de inventário comprime ~85-90% — decisivo em rede lenta
 app.use(express.json());
 
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
@@ -57,7 +59,8 @@ app.get('/api/auth/me', exigirAuth, (req, res) => {
 });
 
 // ===================== NOTIFICAÇÕES (sininho) =====================
-// Lista as 30 notificações mais recentes do usuário logado + total não lido.
+// Lista as notificações dos últimos 3 dias do usuário logado (máx. 30) + total
+// não lido no mesmo período, para o badge bater com o que aparece na lista.
 app.get('/api/notifications', exigirAuth, wrap(async (req, res) => {
   const uid = Number(req.user.sub);
   const itens = await query(
@@ -65,9 +68,12 @@ app.get('/api/notifications', exigirAuth, wrap(async (req, res) => {
             lido, CONVERT(varchar(19), criado_em, 120) AS criadoEm
        FROM dbo.EQUIPSTI_notificacoes
       WHERE usuario_id = @uid
+        AND criado_em >= DATEADD(day, -3, SYSUTCDATETIME())
       ORDER BY criado_em DESC, id DESC`, { uid });
   const nao = await query(
-    `SELECT COUNT(*) AS n FROM dbo.EQUIPSTI_notificacoes WHERE usuario_id = @uid AND lido = 0`, { uid });
+    `SELECT COUNT(*) AS n FROM dbo.EQUIPSTI_notificacoes
+      WHERE usuario_id = @uid AND lido = 0
+        AND criado_em >= DATEADD(day, -3, SYSUTCDATETIME())`, { uid });
   res.json({ itens: itens.recordset, naoLidas: nao.recordset[0].n });
 }));
 
@@ -381,6 +387,32 @@ app.get('/api/records', exigirAuth, wrap(async (req, res) => {
   const r = await query(`${selectFields} OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
     { offset: { type: sql.Int, value: offset }, limit: { type: sql.Int, value: limit } });
   res.json(r.recordset);
+}));
+
+// Facetas: valores únicos por coluna para os filtros de cabeçalho — poucos KB
+// no lugar do dump completo. Valores CRUS (sem trim/normalização): o cliente
+// formata com a mesma regra das linhas, senão a contagem de "todos
+// selecionados" divergiria. Sem WHERE de filtros ativos de propósito: hoje as
+// opções derivam da tabela inteira e o comportamento deve ser preservado.
+const FACET_COLS = {
+  unidade: 'unidade', status: 'status', setor: 'setor', usuario: 'usuario',
+  ns: 'ns', pat: 'pat', equipamento: 'equipamento', protocolo: 'protocolo',
+  dataRecebimento: 'CONVERT(varchar(10), data_recebimento, 23)',
+  temFoto: 'CASE WHEN imagem_base64 IS NOT NULL THEN 1 ELSE 0 END',
+  obs: 'obs',
+};
+const FACET_PADRAO = Object.keys(FACET_COLS).filter((k) => k !== 'obs'); // obs: quase única por linha, só sob demanda
+
+app.get('/api/records/facets', exigirAuth, wrap(async (req, res) => {
+  const pedidos = req.query.campo
+    ? String(req.query.campo).split(',').filter((c) => FACET_COLS[c]) // whitelist
+    : FACET_PADRAO;
+  const out = {};
+  await Promise.all(pedidos.map(async (campo) => {
+    const r = await query(`SELECT DISTINCT ${FACET_COLS[campo]} AS v FROM dbo.EQUIPSTI_registros`, {});
+    out[campo] = r.recordset.map((row) => row.v);
+  }));
+  res.json(out);
 }));
 
 app.get('/api/records/:id/imagem', exigirAuth, wrap(async (req, res) => {

@@ -1,6 +1,6 @@
 // Service Worker — estratégia network-first para conteúdo da própria origem
 // (mantém o app sempre atualizado) com fallback para cache quando offline.
-const CACHE = 'inv-cache-v11';
+const CACHE = 'inv-cache-v12';
 const SHELL = [
   './',
   './index.html',
@@ -29,6 +29,9 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   // Deixa requisições externas (CDNs de Bootstrap, Choices, Phosphor) irem direto à rede.
   if (url.origin !== self.location.origin) return;
+  // Nunca cachear /api/*: resposta autenticada não deve persistir no disco —
+  // e, sendo network-first, esse cache nunca acelerava o caminho online.
+  if (url.pathname.startsWith('/api/')) return;
 
   event.respondWith(
     fetch(req)
