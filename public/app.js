@@ -39,7 +39,8 @@ const CHOICES_IDS = [
   'internet_unidade', 'internet_contrato',
   'ci_categoria', 'ci_subcategoria', 'ci_prioridade',
   'ci_unidade', 'ci_departamento', 'ciMaquinaSelect',
-  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel'
+  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
+  'cal_recorrencia'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
 const FILTRO_STATUS_IDS = new Set([
@@ -687,6 +688,237 @@ async function excluirInternet() {
   } catch (err) {
     showAlert('alertInternetModal', 'danger', 'Erro: ' + err.message);
   }
+}
+
+// ============================================================
+//  Calendário (vencimentos de licenças, contratos e afins)
+// ============================================================
+let modalCalendario = null;
+let CALENDARIO = [];
+let calAno = null;
+let calMes = null;
+const MESES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+function ymd(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// MENSAL casa com qualquer mês/ano nesse dia; ANUAL casa com qualquer ano nesse mês/dia; NENHUMA só na data exata.
+function eventosNoDia(date) {
+  return CALENDARIO.filter((e) => {
+    const [ano, mes, dia] = e.data.split('-').map(Number);
+    if (e.recorrencia === 'MENSAL') return date.getDate() === dia;
+    if (e.recorrencia === 'ANUAL') return (date.getMonth() + 1) === mes && date.getDate() === dia;
+    return date.getFullYear() === ano && (date.getMonth() + 1) === mes && date.getDate() === dia;
+  });
+}
+
+// Próxima ocorrência (>= hoje) de um evento — eventos recorrentes já vencidos no ciclo atual projetam pro próximo.
+function proximaOcorrenciaCalendario(evt) {
+  const [ano, mes, dia] = evt.data.split('-').map(Number);
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  if (evt.recorrencia === 'NENHUMA') return new Date(ano, mes - 1, dia);
+  if (evt.recorrencia === 'ANUAL') {
+    let d = new Date(hoje.getFullYear(), mes - 1, dia);
+    if (d < hoje) d = new Date(hoje.getFullYear() + 1, mes - 1, dia);
+    return d;
+  }
+  let d = new Date(hoje.getFullYear(), hoje.getMonth(), dia);
+  if (d < hoje) d = new Date(hoje.getFullYear(), hoje.getMonth() + 1, dia);
+  return d;
+}
+
+async function carregarCalendario() {
+  const grid = $('calGrid');
+  try {
+    CALENDARIO = await api('GET', '/api/calendario/eventos');
+    if (calAno == null) { const h = new Date(); calAno = h.getFullYear(); calMes = h.getMonth(); }
+    renderCalendarioGrid();
+    renderProximosVencimentosCal();
+    renderListaCalendario();
+  } catch (err) {
+    grid.innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+  }
+}
+
+function renderCalendarioGrid() {
+  $('calMesLabel').textContent = MESES_PT[calMes] + ' ' + calAno;
+  const primeiroDia = new Date(calAno, calMes, 1);
+  const inicioGrid = new Date(primeiroDia);
+  inicioGrid.setDate(inicioGrid.getDate() - primeiroDia.getDay());
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+
+  let html = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(inicioGrid);
+    d.setDate(inicioGrid.getDate() + i);
+    const outroMes = d.getMonth() !== calMes;
+    const isHoje = d.getTime() === hoje.getTime();
+    const pills = eventosNoDia(d).map((e) =>
+      '<div class="cal-evento cal-evento--' + e.recorrencia + '" data-id="' + e.id + '" title="' + escapeHtml(e.titulo) + '">' + escapeHtml(e.titulo) + '</div>'
+    ).join('');
+    html += '<div class="cal-day' + (outroMes ? ' is-outro-mes' : '') + (isHoje ? ' is-hoje' : '') + '" data-date="' + ymd(d) + '">' +
+      '<div class="cal-day-num">' + d.getDate() + '</div>' + pills + '</div>';
+  }
+  $('calGrid').innerHTML = html;
+}
+
+function renderProximosVencimentosCal() {
+  const cont = $('calProximos');
+  if (!CALENDARIO.length) {
+    cont.innerHTML = '<span class="text-muted p-3 d-block">Nenhum evento cadastrado.</span>';
+    return;
+  }
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const itens = CALENDARIO
+    .map((e) => ({ evt: e, data: proximaOcorrenciaCalendario(e) }))
+    .sort((a, b) => a.data - b.data);
+  cont.innerHTML = itens.map(({ evt, data }) => {
+    const vencido = evt.recorrencia === 'NENHUMA' && data < hoje;
+    const dataFmt = data.toLocaleDateString('pt-BR');
+    const valorTxt = evt.valor != null ? ' · R$ ' + Number(evt.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
+    const recorrenciaTxt = evt.recorrencia !== 'NENHUMA' ? ' <span class="text-muted small">(' + (CAL_RECORRENCIA_LABEL[evt.recorrencia] || evt.recorrencia).toLowerCase() + ')</span>' : '';
+    const vencidoTxt = vencido ? ' <span class="text-danger small fw-bold">VENCIDO</span>' : '';
+    return '<div class="cal-proximo-item" data-id="' + evt.id + '">' +
+      '<span class="cal-dot cal-evento--' + evt.recorrencia + '"></span>' +
+      '<div class="cal-proximo-data">' + dataFmt + '</div>' +
+      '<div class="flex-grow-1">' + escapeHtml(evt.titulo) + ' <span class="text-muted small">· ' + escapeHtml(evt.tipo) + '</span>' + recorrenciaTxt + valorTxt + vencidoTxt + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+const CAL_RECORRENCIA_LABEL = { MENSAL: 'Mensal', ANUAL: 'Anual', NENHUMA: 'Não repete' };
+
+function renderListaCalendario() {
+  const cont = $('calListaTbody');
+  if (!CALENDARIO.length) {
+    cont.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Nenhum evento cadastrado.</td></tr>';
+    return;
+  }
+  const itens = [...CALENDARIO].sort((a, b) => a.data.localeCompare(b.data));
+  cont.innerHTML = itens.map((e) => {
+    const [ano, mes, dia] = e.data.split('-');
+    const dataFmt = dia + '/' + mes + '/' + ano;
+    const valorTxt = e.valor != null ? 'R$ ' + Number(e.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '—';
+    return '<tr class="row-clicavel" data-id="' + e.id + '">' +
+      '<td>' + dataFmt + '</td>' +
+      '<td>' + escapeHtml(e.titulo) + '</td>' +
+      '<td>' + escapeHtml(e.tipo) + '</td>' +
+      '<td>' + valorTxt + '</td>' +
+      '<td><span class="cal-dot cal-evento--' + e.recorrencia + '" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span>' + (CAL_RECORRENCIA_LABEL[e.recorrencia] || e.recorrencia) + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function mostrarCalGradeView() {
+  $('calGradeView').style.display = '';
+  $('calListaView').style.display = 'none';
+  $('btnCalendarioViewGrade').classList.replace('btn-outline-secondary', 'btn-dark');
+  $('btnCalendarioViewLista').classList.replace('btn-dark', 'btn-outline-secondary');
+}
+
+function mostrarCalListaView() {
+  $('calGradeView').style.display = 'none';
+  $('calListaView').style.display = '';
+  $('btnCalendarioViewLista').classList.replace('btn-outline-secondary', 'btn-dark');
+  $('btnCalendarioViewGrade').classList.replace('btn-dark', 'btn-outline-secondary');
+  renderListaCalendario();
+}
+
+function abrirCalendario(id, dataPreenchida) {
+  const e = id != null ? CALENDARIO.find((x) => String(x.id) === String(id)) : null;
+  $('alertCalendarioModal').innerHTML = '';
+  $('formCalendario').classList.remove('was-validated');
+  $('cal_id').value = e ? e.id : '';
+  $('calModalTitle').textContent = e ? 'Editar evento' : 'Novo evento';
+  $('cal_titulo').value = e ? e.titulo : '';
+  $('cal_tipo').value = e ? e.tipo : '';
+  $('cal_data').value = e ? e.data : (dataPreenchida || '');
+  $('cal_valor').value = e && e.valor != null ? formatarMoeda(e.valor) : '';
+  setSelectVal('cal_recorrencia', e ? e.recorrencia : '');
+  $('cal_observacao').value = e ? (e.observacao || '') : '';
+  $('btnExcluirCalendario').classList.toggle('d-none', !e);
+  modalCalendario.show();
+}
+
+function dadosCalendario() {
+  return {
+    titulo: trim($('cal_titulo').value),
+    tipo: trim($('cal_tipo').value),
+    data: $('cal_data').value,
+    recorrencia: $('cal_recorrencia').value,
+    valor: parseMoeda($('cal_valor').value),
+    observacao: trim($('cal_observacao').value)
+  };
+}
+
+async function salvarCalendario(ev) {
+  ev.preventDefault();
+  const form = $('formCalendario');
+  if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+  const id = $('cal_id').value;
+  const btn = $('btnSalvarCalendario');
+  btn.disabled = true;
+  try {
+    if (id) await api('PUT', '/api/calendario/eventos/' + id, dadosCalendario());
+    else await api('POST', '/api/calendario/eventos', dadosCalendario());
+    modalCalendario.hide();
+    await carregarCalendario();
+    showAlert('alertCalendario', 'success', 'Evento salvo.');
+  } catch (err) {
+    showAlert('alertCalendarioModal', 'danger', 'Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function excluirCalendario() {
+  const id = $('cal_id').value;
+  if (!id) return;
+  const ok = await uiConfirm('Excluir este evento?', { title: 'Excluir', okText: 'Excluir' });
+  if (!ok) return;
+  try {
+    await api('DELETE', '/api/calendario/eventos/' + id);
+    modalCalendario.hide();
+    await carregarCalendario();
+    showAlert('alertCalendario', 'success', 'Evento excluído.');
+  } catch (err) {
+    showAlert('alertCalendarioModal', 'danger', 'Erro: ' + err.message);
+  }
+}
+
+function configurarCalendario() {
+  $('btnNovoEventoCal').addEventListener('click', () => abrirCalendario(null, ymd(new Date())));
+  $('formCalendario').addEventListener('submit', salvarCalendario);
+  $('btnExcluirCalendario').addEventListener('click', excluirCalendario);
+  $('calMesAnterior').addEventListener('click', () => {
+    calMes--; if (calMes < 0) { calMes = 11; calAno--; }
+    renderCalendarioGrid();
+  });
+  $('calMesProximo').addEventListener('click', () => {
+    calMes++; if (calMes > 11) { calMes = 0; calAno++; }
+    renderCalendarioGrid();
+  });
+  $('calHoje').addEventListener('click', () => {
+    const h = new Date(); calAno = h.getFullYear(); calMes = h.getMonth();
+    renderCalendarioGrid();
+  });
+  $('calGrid').addEventListener('click', (ev) => {
+    const pill = ev.target.closest('.cal-evento');
+    if (pill) { abrirCalendario(pill.getAttribute('data-id')); return; }
+    const dia = ev.target.closest('.cal-day');
+    if (dia) abrirCalendario(null, dia.getAttribute('data-date'));
+  });
+  $('calProximos').addEventListener('click', (ev) => {
+    const item = ev.target.closest('.cal-proximo-item');
+    if (item) abrirCalendario(item.getAttribute('data-id'));
+  });
+  $('btnCalendarioViewGrade').addEventListener('click', mostrarCalGradeView);
+  $('btnCalendarioViewLista').addEventListener('click', mostrarCalListaView);
+  $('calListaTbody').addEventListener('click', (ev) => {
+    const row = ev.target.closest('tr[data-id]');
+    if (row) abrirCalendario(row.getAttribute('data-id'));
+  });
 }
 
 function clearFormSelects() {
@@ -4829,6 +5061,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalOpcao = new bootstrap.Modal($('modalOpcao'));
   modalEmprestimo = new bootstrap.Modal($('modalEmprestimo'));
   modalInternet = new bootstrap.Modal($('modalInternet'));
+  modalCalendario = new bootstrap.Modal($('modalCalendario'));
   modalNovoChamado = new bootstrap.Modal($('modalNovoChamado'));
   modalChamadoDetalhe = new bootstrap.Modal($('modalChamadoDetalhe'));
   modalIntecsMsa = new bootstrap.Modal($('modalIntecsMsa'));
@@ -4905,6 +5138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarCategoriasIntecs();
   configurarVerificarMaquina();
   configurarMenuMobile();
+  configurarCalendario();
 
   document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
     btn.addEventListener('shown.bs.tab', () => {
@@ -4953,6 +5187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('tab-usuarios').addEventListener('shown.bs.tab', loadUsuarios);
   $('btnAtualizarUsuarios').addEventListener('click', loadUsuarios);
   $('tab-internet').addEventListener('shown.bs.tab', carregarInternet);
+  $('tab-calendario').addEventListener('shown.bs.tab', carregarCalendario);
   $('btnAtualizarInternet').addEventListener('click', carregarInternet);
   $('btnNovoInternet').addEventListener('click', () => abrirInternet(null));
   $('btnExcluirInternet').addEventListener('click', excluirInternet);

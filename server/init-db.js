@@ -495,6 +495,37 @@ SELECT v.nome, v.tipo, v.cor, v.ordem FROM (VALUES
   ('CANCELADO', 'CANCELADO', 'danger', 8)
 ) AS v(nome, tipo, cor, ordem)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.EQUIPSTI_chamados_intecs_status s WHERE s.nome = v.nome);
+
+-- ============================================================
+-- Calendário: vencimentos de licenças, contratos e afins.
+-- 'anual' = evento se repete todo ano no mesmo dia/mês de 'data'.
+-- ============================================================
+IF OBJECT_ID('dbo.EQUIPSTI_calendario_eventos', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_calendario_eventos (
+  id             INT IDENTITY(1,1) PRIMARY KEY,
+  titulo         NVARCHAR(255) NOT NULL,
+  tipo           NVARCHAR(100) NOT NULL,
+  data           DATE NOT NULL,
+  recorrencia    NVARCHAR(20) NOT NULL DEFAULT 'NENHUMA',
+  valor          DECIMAL(15,2) NULL,
+  observacao     NVARCHAR(MAX) NOT NULL,
+  criado_em      DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  criado_por     NVARCHAR(255) NULL,
+  atualizado_por NVARCHAR(255) NULL
+);
+
+-- Migração (tabela criada antes desta mudança): tipo vira texto livre,
+-- observação passa a ser obrigatória. A troca da coluna 'anual' BIT por
+-- 'recorrencia' (MENSAL|ANUAL|NENHUMA) é feita à parte, em main() — o SQL
+-- Server valida o batch inteiro no parse, e a coluna nova ainda não existe
+-- na tabela já criada em execuções anteriores deste script.
+IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'anual') IS NOT NULL
+  AND COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'recorrencia') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD recorrencia NVARCHAR(20) NOT NULL DEFAULT 'NENHUMA';
+ALTER TABLE dbo.EQUIPSTI_calendario_eventos ALTER COLUMN tipo NVARCHAR(100) NOT NULL;
+UPDATE dbo.EQUIPSTI_calendario_eventos SET observacao = '' WHERE observacao IS NULL;
+ALTER TABLE dbo.EQUIPSTI_calendario_eventos ALTER COLUMN observacao NVARCHAR(MAX) NOT NULL;
 `;
 
 async function main() {
@@ -502,6 +533,23 @@ async function main() {
   await getPool();
   console.log('Criando tabelas (se necessário)...');
   await query(DDL);
+
+  const temColunaAnual = await query(
+    "SELECT COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'anual') AS existe"
+  );
+  if (temColunaAnual.recordset[0].existe != null) {
+    await query("UPDATE dbo.EQUIPSTI_calendario_eventos SET recorrencia = 'ANUAL' WHERE anual = 1");
+    await query(`
+      DECLARE @cname NVARCHAR(200);
+      SELECT @cname = dc.name FROM sys.default_constraints dc
+        JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+        WHERE dc.parent_object_id = OBJECT_ID('dbo.EQUIPSTI_calendario_eventos') AND c.name = 'anual';
+      IF @cname IS NOT NULL
+        EXEC('ALTER TABLE dbo.EQUIPSTI_calendario_eventos DROP CONSTRAINT [' + @cname + ']');
+      ALTER TABLE dbo.EQUIPSTI_calendario_eventos DROP COLUMN anual;
+    `);
+    console.log('Migração: coluna "anual" convertida para "recorrencia" e removida.');
+  }
 
   const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   const senha = process.env.ADMIN_PASSWORD || '';

@@ -718,7 +718,8 @@
     .choices:has(#ciFiltroCategoria) .choices__inner,
     .choices:has(#ciFiltroPrioridade) .choices__inner,
     .choices:has(#ciFiltroStatus) .choices__inner,
-    .choices:has(#ciFiltroResponsavel) .choices__inner {
+    .choices:has(#ciFiltroResponsavel) .choices__inner,
+    .choices:has(#cal_recorrencia) .choices__inner {
       min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px;
     }
     .choices:has(#imFiltroStatus) .choices__list--single .choices__item,
@@ -726,7 +727,8 @@
     .choices:has(#ciFiltroCategoria) .choices__list--single .choices__item,
     .choices:has(#ciFiltroPrioridade) .choices__list--single .choices__item,
     .choices:has(#ciFiltroStatus) .choices__list--single .choices__item,
-    .choices:has(#ciFiltroResponsavel) .choices__list--single .choices__item { font-size: .875rem; }
+    .choices:has(#ciFiltroResponsavel) .choices__list--single .choices__item,
+    .choices:has(#cal_recorrencia) .choices__list--single .choices__item { font-size: .875rem; }
     .choices:has(#imFiltroStatus) .choices__list--dropdown .choices__item,
     .choices:has(#imFiltroStatus) .choices__list[aria-expanded] .choices__item,
     .choices:has(#chamadosFiltroStatus) .choices__list--dropdown .choices__item,
@@ -734,7 +736,9 @@
     .choices:has(#ciFiltroCategoria) .choices__list--dropdown .choices__item,
     .choices:has(#ciFiltroPrioridade) .choices__list--dropdown .choices__item,
     .choices:has(#ciFiltroStatus) .choices__list--dropdown .choices__item,
-    .choices:has(#ciFiltroResponsavel) .choices__list--dropdown .choices__item {
+    .choices:has(#ciFiltroResponsavel) .choices__list--dropdown .choices__item,
+    .choices:has(#cal_recorrencia) .choices__list--dropdown .choices__item,
+    .choices:has(#cal_recorrencia) .choices__list[aria-expanded] .choices__item {
       padding: 7px 10px; font-size: .875rem;
     }
 
@@ -880,6 +884,49 @@
 
     .ci-secao-colapsavel .ph-caret-down { transition: transform .2s; }
     .ci-secao-colapsavel button[data-bs-toggle="collapse"]:not(.collapsed) .ph-caret-down { transform: rotate(180deg); }
+
+    /* Calendário */
+    .cal-grid-wrap { padding: .9rem 1.1rem 1.1rem; }
+    .cal-weekdays {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px;
+    }
+    .cal-weekdays div {
+      text-align: center; font-size: .68rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .5px;
+    }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .cal-day {
+      min-height: 88px; border: 1px solid var(--line); border-radius: 10px; padding: 6px;
+      cursor: pointer; background: #fff; display: flex; flex-direction: column; gap: 3px;
+      transition: background .15s, border-color .15s;
+    }
+    .cal-day:hover { background: var(--bg-soft); }
+    .cal-day.is-outro-mes { opacity: .4; }
+    .cal-day.is-hoje { border-color: var(--dash-blue); border-width: 2px; }
+    .cal-day-num { font-size: .78rem; font-weight: 600; }
+    .cal-evento {
+      font-size: .66rem; padding: 2px 5px; border-radius: 6px; color: #fff; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cal-evento--MENSAL { background: var(--dash-blue); }
+    .cal-evento--ANUAL { background: var(--dash-orange); }
+    .cal-evento--NENHUMA { background: #6b7280; }
+    .cal-proximos-list { max-height: 280px; overflow-y: auto; }
+    .cal-proximo-item {
+      display: flex; align-items: center; gap: .6rem; padding: .6rem 1.1rem;
+      border-bottom: 1px solid var(--line); cursor: pointer;
+    }
+    .cal-proximo-item:last-child { border-bottom: none; }
+    .cal-proximo-item:hover { background: var(--bg-soft); }
+    .cal-proximo-data {
+      font-size: .72rem; font-weight: 700; color: var(--muted); min-width: 78px; flex-shrink: 0;
+    }
+    .cal-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    @media (max-width: 576px) {
+      .cal-day { min-height: 54px; padding: 4px; }
+      .cal-day-num { font-size: .68rem; }
+      .cal-evento { font-size: 0; padding: 0; width: 8px; height: 8px; border-radius: 50%; }
+    }
 
     /* Header */
     .dash-header {
@@ -1265,6 +1312,7 @@
           <button type="button" class="mm-item" data-tab="tab-emprestimos"><i class="ph ph-hand-arrow-up"></i> Empréstimos</button>
           <button type="button" class="mm-item" data-tab="tab-chamados"><i class="ph ph-headset"></i> Chamados</button>
           <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
+          <button type="button" class="mm-item" data-tab="tab-calendario"><i class="ph ph-calendar-blank"></i> Calendário</button>
           <button type="button" class="mm-item" data-tab="tab-gerenciar"><i class="ph ph-sliders-horizontal"></i> Opções</button>
           <button type="button" class="mm-item" data-tab="tab-usuarios"><i class="ph ph-users"></i> Usuários</button>
         </div>
@@ -1292,6 +1340,10 @@
           <button class="nav-link" id="tab-internet" data-bs-toggle="tab"
             data-bs-target="#pane-internet" type="button" role="tab">
             <i class="ph ph-wifi-high"></i> Internet
+          </button>
+          <button class="nav-link" id="tab-calendario" data-bs-toggle="tab"
+            data-bs-target="#pane-calendario" type="button" role="tab">
+            <i class="ph ph-calendar-blank"></i> Calendário
           </button>
           <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
             data-bs-target="#pane-gerenciar" type="button" role="tab">
@@ -1734,6 +1786,74 @@
                   <tr><td colspan="5" class="text-muted">Carregando...</td></tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- ABA CALENDÁRIO -->
+          <div class="tab-pane fade" id="pane-calendario" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+              <p class="text-muted mb-0">Vencimentos de licenças, contratos e pagamentos recorrentes.</p>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-dark btn-sm" id="btnCalendarioViewGrade">
+                  <i class="ph ph-calendar-blank"></i> Calendário
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCalendarioViewLista">
+                  <i class="ph ph-list-bullets"></i> Lista
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnNovoEventoCal">
+                  <i class="ph ph-plus"></i> Novo
+                </button>
+              </div>
+            </div>
+            <div id="alertCalendario"></div>
+
+            <div id="calGradeView">
+              <div class="dash-panel mb-3">
+                <div class="dash-panel-head">
+                  <div class="dash-panel-title"><i class="ph ph-calendar-blank"></i> <span id="calMesLabel">—</span></div>
+                  <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-light" id="calMesAnterior"><i class="ph ph-caret-left"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="calHoje">Hoje</button>
+                    <button type="button" class="btn btn-sm btn-light" id="calMesProximo"><i class="ph ph-caret-right"></i></button>
+                  </div>
+                </div>
+                <div class="cal-grid-wrap">
+                  <div class="cal-weekdays">
+                    <div>Dom</div><div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+                  </div>
+                  <div class="cal-grid" id="calGrid">
+                    <span class="text-muted">Carregando...</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="dash-panel mb-0">
+                <div class="dash-panel-head">
+                  <div class="dash-panel-title"><i class="ph ph-bell-ringing"></i> Próximos vencimentos</div>
+                </div>
+                <div id="calProximos" class="cal-proximos-list">
+                  <span class="text-muted p-3 d-block">Carregando...</span>
+                </div>
+              </div>
+            </div>
+
+            <div id="calListaView" style="display:none">
+              <div class="table-scroll-x table-sticky">
+                <table class="table table-striped table-hover align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th>DATA</th>
+                      <th>TÍTULO</th>
+                      <th>TIPO</th>
+                      <th>VALOR</th>
+                      <th>REPETIÇÃO</th>
+                    </tr>
+                  </thead>
+                  <tbody id="calListaTbody">
+                    <tr><td colspan="5" class="text-muted">Carregando...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -2366,6 +2486,67 @@
           </button>
           <button type="button" class="btn btn-primary" id="btnEditarInternet"><i class="ph ph-pencil-simple"></i> Editar</button>
           <button type="submit" form="formInternet" class="btn btn-primary" id="btnSalvarInternet"><i class="ph ph-check"></i> Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL CALENDÁRIO ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalCalendario" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-calendar-blank me-2"></i><span id="calModalTitle">Novo evento</span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertCalendarioModal"></div>
+          <form id="formCalendario" class="needs-validation row g-3" novalidate>
+            <input type="hidden" id="cal_id">
+            <div class="col-12">
+              <label class="form-label" for="cal_titulo">TÍTULO *</label>
+              <input type="text" class="form-control" id="cal_titulo" required placeholder="ex.: Licença Office 365" autocomplete="off">
+              <div class="invalid-feedback">Informe o título.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="cal_tipo">TIPO *</label>
+              <input type="text" class="form-control" id="cal_tipo" required placeholder="ex.: Licença, Contrato, Assinatura..." autocomplete="off">
+              <div class="invalid-feedback">Informe o tipo.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="cal_data">DATA *</label>
+              <input type="date" class="form-control" id="cal_data" required>
+              <div class="invalid-feedback">Informe a data.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="cal_valor">VALOR (R$)</label>
+              <input type="text" class="form-control" id="cal_valor" autocomplete="off" inputmode="decimal">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="cal_recorrencia">REPETIÇÃO *</label>
+              <select class="form-select" id="cal_recorrencia" required>
+                <option value="" disabled selected>Selecione...</option>
+                <option value="NENHUMA">Não repete</option>
+                <option value="MENSAL">Mensal</option>
+                <option value="ANUAL">Anual</option>
+              </select>
+              <div class="invalid-feedback">Selecione a repetição.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="cal_observacao">OBSERVAÇÃO *</label>
+              <textarea class="form-control" id="cal_observacao" rows="3" required autocomplete="off"></textarea>
+              <div class="invalid-feedback">Informe a observação.</div>
+            </div>
+            <div class="col-12 d-flex justify-content-between gap-2">
+              <button type="button" class="btn btn-outline-danger d-none" id="btnExcluirCalendario">
+                <i class="ph ph-trash"></i> Excluir
+              </button>
+              <div class="d-flex gap-2 ms-auto">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+                <button type="submit" class="btn btn-primary" id="btnSalvarCalendario">Salvar</button>
+              </div>
+            </div>
+          </form>
         </div>
       </div>
     </div>
