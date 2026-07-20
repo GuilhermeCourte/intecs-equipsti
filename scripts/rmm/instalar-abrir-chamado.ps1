@@ -31,7 +31,7 @@
 $ErrorActionPreference = 'Stop'
 
 # ---------- Configuracao ----------
-$VERSAO   = '1.0.2'
+$VERSAO   = '1.0.3'
 $URL_BASE = 'https://gestaoti.intecsbr.org/chamados'
 $NOME_APP = 'AbrirChamado'
 # ----------------------------------
@@ -159,6 +159,7 @@ static class Program
     const string CAMINHO_CFG = @"SOFTWARE\Intecs\Chamados";
 
     static NotifyIcon icone;
+    static DateTime ultimoClique = DateTime.MinValue;
 
     [STAThread]
     static void Main()
@@ -173,23 +174,21 @@ static class Program
 
             Application.EnableVisualStyles();
 
-            var menu = new ContextMenuStrip();
-            menu.Items.Add("Abrir chamado", null, delegate { Abrir(); });
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Sair", null, delegate
-            {
-                icone.Visible = false;
-                Application.Exit();
-            });
-
             icone = new NotifyIcon();
             icone.Icon = CarregarIcone();
             icone.Text = "Abrir chamado - TI Intecs";
-            icone.ContextMenuStrip = menu;
             icone.Visible = true;
-            icone.MouseClick += delegate (object s, MouseEventArgs e)
+            // Sem menu de contexto de proposito: o icone serve para uma coisa
+            // so, entao qualquer clique - esquerdo, direito ou do meio - abre o
+            // chamado. Nao ha "Sair" para o usuario nao desligar sem querer;
+            // quem remove e o desinstalador, pelo RMM.
+            icone.MouseClick += delegate
             {
-                if (e.Button == MouseButtons.Left) Abrir();
+                // Clicar duas vezes e habito comum na bandeja; sem esta guarda
+                // abririam duas abas.
+                if ((DateTime.Now - ultimoClique).TotalMilliseconds < 800) return;
+                ultimoClique = DateTime.Now;
+                Abrir();
             };
 
             Application.Run();
