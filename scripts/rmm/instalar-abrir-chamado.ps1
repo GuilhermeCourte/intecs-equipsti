@@ -42,42 +42,198 @@ $ehAdmin = ([Security.Principal.WindowsPrincipal] `
   [Security.Principal.WindowsIdentity]::GetCurrent()
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
+# Em processo de 32 bits $env:ProgramFiles apontaria para "Program Files (x86)".
+$programFiles  = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+$pastaMaquina  = Join-Path $programFiles 'Intecs\AbrirChamado'
+$pastaUsuario  = Join-Path $env:LOCALAPPDATA 'Intecs\AbrirChamado'
+
+$HKLM = [Microsoft.Win32.RegistryHive]::LocalMachine
+$HKCU = [Microsoft.Win32.RegistryHive]::CurrentUser
+
 if ($ehAdmin) {
-  # Em processo de 32 bits $env:ProgramFiles apontaria para "Program Files (x86)".
-  $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
-  $destino = Join-Path $programFiles 'Intecs\AbrirChamado'
-  $hive    = [Microsoft.Win32.RegistryHive]::LocalMachine
-  $escopo  = 'MAQUINA (todos os usuarios)'
+  $destino = $pastaMaquina; $hive = $HKLM; $escopo = 'MAQUINA (todos os usuarios)'
 } else {
-  $destino = Join-Path $env:LOCALAPPDATA 'Intecs\AbrirChamado'
-  $hive    = [Microsoft.Win32.RegistryHive]::CurrentUser
-  $escopo  = 'USUARIO ATUAL (sem privilegio de administrador)'
+  $destino = $pastaUsuario; $hive = $HKCU; $escopo = 'USUARIO ATUAL (sem privilegio de administrador)'
 }
 
 $exe = Join-Path $destino "$NOME_APP.exe"
 
 function Get-Raiz {
+  param($h = $hive)
   # Registry64 evita cair em Wow6432Node se o PowerShell for de 32 bits.
-  [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, [Microsoft.Win32.RegistryView]::Registry64)
+  [Microsoft.Win32.RegistryKey]::OpenBaseKey($h, [Microsoft.Win32.RegistryView]::Registry64)
 }
 
-Write-Output "Escopo: $escopo"
+# Le o que existe num escopo, sem alterar nada.
+function Get-Instalacao {
+  param($h, $pasta, $rotulo)
+  $versao = $null
+  try {
+    $k = (Get-Raiz $h).OpenSubKey('SOFTWARE\Intecs\Chamados')
+    if ($k) { $versao = $k.GetValue('Versao'); $k.Close() }
+  } catch { }
+  $arquivo = Join-Path $pasta "$NOME_APP.exe"
+  $temExe = Test-Path $arquivo
+  [PSCustomObject]@{
+    Rotulo   = $rotulo
+    Hive     = $h
+    Pasta    = $pasta
+    Presente = ($temExe -or $versao)
+    Versao   = $versao
+    TemExe   = $temExe
+  }
+}
 
-# ---------- Ja esta instalado nesta versao? ----------
-try {
-  $raiz = Get-Raiz
-  $k = $raiz.OpenSubKey('SOFTWARE\Intecs\Chamados')
-  if ($k) {
-    $instalada = $k.GetValue('Versao')
-    $k.Close()
-    if ($instalada -eq $VERSAO -and (Test-Path $exe)) {
-      Write-Output "Ja instalado na versao $VERSAO. Nada a fazer."
-      # Recompilar a toa geraria um binario com hash novo a cada execucao da
-      # policy, zerando a reputacao dele no antivirus toda vez.
-      exit 0
+# Remove um escopo por completo (registro + pasta). Usado tanto para atualizar
+# quanto para limpar instalacao no escopo errado.
+function Remove-Instalacao {
+  param($inst)
+  $raiz = Get-Raiz $inst.Hive
+  $run = $raiz.OpenSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion\Run', $true)
+  if ($run) {
+    if ($run.GetValue('IntecsAbrirChamado')) { $run.DeleteValue('IntecsAbrirChamado') }
+    $run.Close()
+  }
+  $intecs = $raiz.OpenSubKey('SOFTWARE\Intecs', $true)
+  if ($intecs) {
+    if ($intecs.OpenSubKey('Chamados')) { $intecs.DeleteSubKeyTree('Chamados') }
+    $intecs.Close()
+  }
+  if (Test-Path $inst.Pasta) { Remove-Item -LiteralPath $inst.Pasta -Recurse -Force }
+  Write-Output ("  removido: " + $inst.Rotulo + " (versao " + $(if ($inst.Versao) { $inst.Versao } else { 'desconhecida' }) + ")")
+}
+
+# Quem esta usando a maquina agora (vazio se ninguem logado).
+function Get-UsuarioLogado {
+  $u = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).UserName
+  if ($u) { return $u }
+  # Fallback: dono do explorer.exe da sessao interativa.
+  try {
+    $exp = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction Stop | Select-Object -First 1
+    if ($exp) {
+      $dono = Invoke-CimMethod -InputObject $exp -MethodName GetOwner -ErrorAction Stop
+      if ($dono.User) { return ($dono.Domain + '\' + $dono.User) }
+    }
+  } catch { }
+  return $null
+}
+
+# Sobe o app JA, sem esperar o proximo logon.
+#
+# Rodando como SYSTEM (o caso do RMM) um Start-Process comum nasceria na
+# sessao 0, invisivel para quem esta na frente do PC. O jeito de cruzar para a
+# sessao da pessoa e uma tarefa agendada marcada como interativa (/IT): o
+# Windows a executa dentro da sessao dela. Criamos, disparamos e apagamos.
+function Start-AppAgora {
+  param($caminhoExe)
+
+  if (-not $ehAdmin) {
+    # Sem privilegio ja estamos na sessao do usuario - direto mesmo.
+    Start-Process $caminhoExe
+  } else {
+    $usuario = Get-UsuarioLogado
+    if (-not $usuario) {
+      Write-Output "Ninguem logado agora - o icone aparece no proximo logon."
+      return $false
+    }
+    $tarefa = 'IntecsAbrirChamadoPrimeiraExecucao'
+    # Cmdlets em vez do schtasks.exe de proposito: o executavel nativo emite um
+    # aviso em stderr quando /ST fica no passado e, com ErrorActionPreference
+    # 'Stop', esse aviso virava erro terminante e abortava a instalacao.
+    # Aqui tambem nao existe horario - a tarefa nasce sem gatilho e e disparada
+    # na mao, entao nao ha o que ficar no passado.
+    try {
+      # Sobra de execucao anterior interrompida.
+      Unregister-ScheduledTask -TaskName $tarefa -Confirm:$false -ErrorAction SilentlyContinue
+
+      $acao = New-ScheduledTaskAction -Execute $caminhoExe
+      # LogonType Interactive: roda com o token da sessao da pessoa (e so
+      # quando ela esta logada), que e justamente o que faz o icone aparecer.
+      $principal = New-ScheduledTaskPrincipal -UserId $usuario -LogonType Interactive
+      Register-ScheduledTask -TaskName $tarefa -Action $acao -Principal $principal -Force -ErrorAction Stop | Out-Null
+      Start-ScheduledTask -TaskName $tarefa -ErrorAction Stop
+      Start-Sleep -Seconds 3
+      Unregister-ScheduledTask -TaskName $tarefa -Confirm:$false -ErrorAction SilentlyContinue
+      Write-Output "Disparado na sessao de $usuario."
+    } catch {
+      # Instalacao ja esta completa; nao subir agora nao invalida nada.
+      Write-Output ("Nao foi possivel disparar na sessao do usuario: " + $_.Exception.Message)
+      try { Unregister-ScheduledTask -TaskName $tarefa -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+      return $false
     }
   }
-} catch { }
+
+  Start-Sleep -Seconds 2
+  return [bool](Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue)
+}
+
+Write-Output "Escopo desta execucao: $escopo"
+
+# ---------- O que ja existe nesta maquina ----------
+$noMaquina = Get-Instalacao $HKLM $pastaMaquina 'escopo MAQUINA'
+$noUsuario = Get-Instalacao $HKCU $pastaUsuario 'escopo USUARIO'
+
+foreach ($i in @($noMaquina, $noUsuario)) {
+  if ($i.Presente) {
+    Write-Output ("Encontrado: {0} - versao {1}{2}" -f $i.Rotulo,
+      $(if ($i.Versao) { $i.Versao } else { 'desconhecida' }),
+      $(if (-not $i.TemExe) { ' (registro sem executavel - instalacao quebrada)' } else { '' }))
+  }
+}
+if (-not $noMaquina.Presente -and -not $noUsuario.Presente) {
+  Write-Output "Nenhuma instalacao encontrada."
+}
+
+$alvo = if ($ehAdmin) { $noMaquina } else { $noUsuario }
+$outro = if ($ehAdmin) { $noUsuario } else { $noMaquina }
+
+# Ja esta certo e nao ha sobra no outro escopo? Entao nao ha o que fazer.
+# Recompilar a toa geraria um binario com hash novo a cada execucao da policy,
+# zerando a reputacao dele no antivirus toda vez.
+if ($alvo.Versao -eq $VERSAO -and $alvo.TemExe -and -not $outro.Presente) {
+  Write-Output "Ja esta na versao $VERSAO no escopo certo."
+  # Instalado e correto, mas fora do ar (usuario fechou pelo gerenciador de
+  # tarefas, ou logou antes da instalacao): sobe de novo em vez de esperar o
+  # proximo logon. E o que torna a policy autocorretiva.
+  if (Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue) {
+    Write-Output "App em execucao. Nada a fazer."
+  } else {
+    Write-Output "App fora do ar - iniciando."
+    if (Start-AppAgora (Join-Path $alvo.Pasta "$NOME_APP.exe")) {
+      Write-Output "OK, icone na bandeja."
+    }
+  }
+  exit 0
+}
+
+# ---------- Encerrar o app antes de mexer nos arquivos ----------
+Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
+  Write-Output "Encerrando instancia em execucao (pid $($_.Id))"
+  # WaitForExit(int) devolve bool; sem o [void] ele vaza um "True" no log.
+  try { $_.Kill(); [void]$_.WaitForExit(5000) } catch { }
+}
+
+# ---------- Desinstalar o que estiver sobrando ou desatualizado ----------
+# Instalacao no OUTRO escopo sempre sai: duas conviverem significa duas
+# entradas de autostart disputando o mesmo icone.
+if ($outro.Presente) {
+  if ($ehAdmin -or $outro.Hive -eq $HKCU) {
+    Write-Output "Removendo instalacao no escopo errado:"
+    Remove-Instalacao $outro
+  } else {
+    Write-Output "AVISO: existe instalacao no escopo MAQUINA e falta privilegio para remove-la."
+    Write-Output "       Rode pelo RMM (SYSTEM) para consolidar em um escopo so."
+  }
+}
+
+if ($alvo.Presente -and ($alvo.Versao -ne $VERSAO -or -not $alvo.TemExe)) {
+  Write-Output ("Versao {0} e diferente da desejada ({1}) - desinstalando antes de instalar:" -f `
+    $(if ($alvo.Versao) { $alvo.Versao } else { 'desconhecida' }), $VERSAO)
+  try { Remove-Instalacao $alvo } catch {
+    Write-Output "ERRO ao remover a versao anterior: $($_.Exception.Message)"
+    exit 1
+  }
+}
 
 Write-Output "Instalando $NOME_APP $VERSAO em $destino"
 
@@ -92,13 +248,6 @@ if (-not $csc) {
   exit 1
 }
 Write-Output "Compilador: $csc"
-
-# ---------- Encerrar instancia anterior (senao o .exe fica travado) ----------
-Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
-  Write-Output "Encerrando instancia anterior (pid $($_.Id))"
-  # WaitForExit(int) devolve bool; sem o [void] ele vaza um "True" no log.
-  try { $_.Kill(); [void]$_.WaitForExit(5000) } catch { }
-}
 
 # ---------- Preparar pastas ----------
 # Compila em pasta sem espaco no caminho e so depois move para o destino,
@@ -285,7 +434,12 @@ $argumentos = @(
   '/r:System.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
   $cs
 )
+# 2>&1 num executavel nativo embrulha cada linha de stderr num ErrorRecord e,
+# com preferencia 'Stop', um simples aviso do compilador abortaria a instalacao.
+# Baixamos a guarda so aqui, para capturar a saida sem esse risco.
+$ErrorActionPreference = 'Continue'
 $saida = & $csc $argumentos 2>&1
+$ErrorActionPreference = 'Stop'
 if (-not (Test-Path $exeTmp)) {
   Write-Output "ERRO na compilacao:"
   $saida | ForEach-Object { Write-Output "  $_" }
@@ -312,19 +466,12 @@ $run.Close()
 Write-Output "Autostart registrado."
 
 Write-Output ""
-if ($ehAdmin) {
-  Write-Output "OK. O icone aparece na bandeja no PROXIMO LOGON de cada usuario."
-  Write-Output "Para ver agora sem deslogar, execute na sessao do usuario:"
-  Write-Output "  $exe"
+Write-Output "Iniciando o app sem esperar o proximo logon..."
+if (Start-AppAgora $exe) {
+  Write-Output "OK. O icone ja esta na bandeja - clique nele para abrir o chamado."
 } else {
-  # Sem privilegio ja estamos na sessao do usuario, entao da para subir agora.
-  Write-Output "Iniciando agora nesta sessao..."
-  Start-Process $exe
-  Start-Sleep -Seconds 2
-  if (Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue) {
-    Write-Output "OK. O icone ja esta na bandeja (clique nele para abrir o chamado)."
-  } else {
-    Write-Output "AVISO: o app nao subiu. Tente executar manualmente: $exe"
-  }
+  # Nao subir agora nao e falha de instalacao: o autostart ja esta no lugar.
+  Write-Output "O app nao subiu agora, mas a instalacao esta completa -"
+  Write-Output "ele entra sozinho no proximo logon. Para forcar: $exe"
 }
 exit 0
