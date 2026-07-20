@@ -31,7 +31,7 @@
 $ErrorActionPreference = 'Stop'
 
 # ---------- Configuracao ----------
-$VERSAO   = '1.0.1'
+$VERSAO   = '1.0.3'
 $URL_BASE = 'https://gestaoti.intecsbr.org/chamados'
 $NOME_APP = 'AbrirChamado'
 # ----------------------------------
@@ -96,7 +96,8 @@ Write-Output "Compilador: $csc"
 # ---------- Encerrar instancia anterior (senao o .exe fica travado) ----------
 Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
   Write-Output "Encerrando instancia anterior (pid $($_.Id))"
-  try { $_.Kill(); $_.WaitForExit(5000) } catch { }
+  # WaitForExit(int) devolve bool; sem o [void] ele vaza um "True" no log.
+  try { $_.Kill(); [void]$_.WaitForExit(5000) } catch { }
 }
 
 # ---------- Preparar pastas ----------
@@ -158,6 +159,7 @@ static class Program
     const string CAMINHO_CFG = @"SOFTWARE\Intecs\Chamados";
 
     static NotifyIcon icone;
+    static DateTime ultimoClique = DateTime.MinValue;
 
     [STAThread]
     static void Main()
@@ -172,23 +174,21 @@ static class Program
 
             Application.EnableVisualStyles();
 
-            var menu = new ContextMenuStrip();
-            menu.Items.Add("Abrir chamado", null, delegate { Abrir(); });
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Sair", null, delegate
-            {
-                icone.Visible = false;
-                Application.Exit();
-            });
-
             icone = new NotifyIcon();
             icone.Icon = CarregarIcone();
             icone.Text = "Abrir chamado - TI Intecs";
-            icone.ContextMenuStrip = menu;
             icone.Visible = true;
-            icone.MouseClick += delegate (object s, MouseEventArgs e)
+            // Sem menu de contexto de proposito: o icone serve para uma coisa
+            // so, entao qualquer clique - esquerdo, direito ou do meio - abre o
+            // chamado. Nao ha "Sair" para o usuario nao desligar sem querer;
+            // quem remove e o desinstalador, pelo RMM.
+            icone.MouseClick += delegate
             {
-                if (e.Button == MouseButtons.Left) Abrir();
+                // Clicar duas vezes e habito comum na bandeja; sem esta guarda
+                // abririam duas abas.
+                if ((DateTime.Now - ultimoClique).TotalMilliseconds < 800) return;
+                ultimoClique = DateTime.Now;
+                Abrir();
             };
 
             Application.Run();
@@ -232,9 +232,13 @@ static class Program
     {
         var id = LerAgentId();
         var url = LerUrlBase();
+        // novo=1: quem clica no icone quer abrir chamado, entao a pagina ja
+        // sobe com o modal aberto em vez de parar na lista.
+        var query = "novo=1";
         // Sem AgentID (maquina sem agente): abre assim mesmo - a pagina cai no
         // fallback de escolha manual em vez de travar o usuario.
-        if (id != null) url += (url.Contains("?") ? "&" : "?") + "agent=" + Uri.EscapeDataString(id);
+        if (id != null) query += "&agent=" + Uri.EscapeDataString(id);
+        url += (url.Contains("?") ? "&" : "?") + query;
 
         try
         {

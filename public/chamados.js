@@ -172,6 +172,12 @@ async function entrar() {
   await carregarCategorias();
   await carregarPrioridadesEStatus();
   await carregarChamados();
+  // Só depois das categorias/prioridades carregarem, senão o modal abriria
+  // com os selects vazios. Vale uma vez: reabrir a página não repete.
+  if (_abrirNovoAoEntrar) {
+    _abrirNovoAoEntrar = false;
+    abrirModalNovo();
+  }
 }
 
 function configurarLogin() {
@@ -438,12 +444,19 @@ async function abrirDetalhe(id) {
 // NAT a rede inteira sai pelo mesmo endereço.
 const AGENT_KEY = 'ci_agent_id';
 
-function capturarAgentIdDaUrl() {
+// Quem chega pelo atalho da bandeja quer abrir chamado, não navegar até a
+// lista — por isso o app manda ?novo=1 junto com o ?agent=. Fica em variável,
+// e não no localStorage, porque é intenção de uma visita só.
+let _abrirNovoAoEntrar = false;
+
+function lerParametrosDaUrl() {
   const params = new URLSearchParams(location.search);
   const id = trim(params.get('agent'));
-  if (!id) return;
-  localStorage.setItem(AGENT_KEY, id);
+  if (id) localStorage.setItem(AGENT_KEY, id);
+  _abrirNovoAoEntrar = params.get('novo') === '1';
+  if (!id && !_abrirNovoAoEntrar) return;
   params.delete('agent');
+  params.delete('novo');
   const q = params.toString();
   history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
 }
@@ -508,21 +521,23 @@ async function verificarMaquina() {
   }
 }
 
+function abrirModalNovo() {
+  $('formNovo').reset();
+  $('alertNovo').innerHTML = '';
+  choicesMap['nc_categoria']?.setChoiceByValue('');
+  setChoicesOptions('nc_subcategoria', []);
+  choicesMap['nc_prioridade']?.setChoiceByValue('MEDIA');
+  modalNovo.show();
+  verificarMaquina();
+}
+
 function configurarChamados() {
   initChoicesSelect('nc_categoria');
   initChoicesSelect('nc_subcategoria');
   initChoicesSelect('nc_prioridade', { placeholder: false });
   initChoicesSelect('nc_maquina_select');
 
-  $('btnNovo').addEventListener('click', () => {
-    $('formNovo').reset();
-    $('alertNovo').innerHTML = '';
-    choicesMap['nc_categoria']?.setChoiceByValue('');
-    setChoicesOptions('nc_subcategoria', []);
-    choicesMap['nc_prioridade']?.setChoiceByValue('MEDIA');
-    modalNovo.show();
-    verificarMaquina();
-  });
+  $('btnNovo').addEventListener('click', abrirModalNovo);
 
   $('nc_categoria').addEventListener('change', () => popularSubcategorias($('nc_categoria').value));
   $('nc_maquina_select').addEventListener('change', () => {
@@ -618,9 +633,9 @@ function configurarChamados() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Antes do login: o atalho do RMM traz o ?agent= e ele precisa sobreviver
-  // mesmo que a pessoa ainda vá digitar usuário e senha.
-  capturarAgentIdDaUrl();
+  // Antes do login: o atalho do RMM traz ?agent= e ?novo=, e eles precisam
+  // sobreviver mesmo que a pessoa ainda vá digitar usuário e senha.
+  lerParametrosDaUrl();
   modalNovo = new bootstrap.Modal($('modalNovo'));
   modalDetalhe = new bootstrap.Modal($('modalDetalhe'));
   configurarLogin();
