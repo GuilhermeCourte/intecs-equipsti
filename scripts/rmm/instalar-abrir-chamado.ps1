@@ -137,15 +137,30 @@ function Start-AppAgora {
       return $false
     }
     $tarefa = 'IntecsAbrirChamadoPrimeiraExecucao'
-    & schtasks /create /F /TN $tarefa /TR "`"$caminhoExe`"" /SC ONCE /ST 00:00 /RU $usuario /IT 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Output "Nao foi possivel criar a tarefa interativa - o icone aparece no proximo logon."
+    # Cmdlets em vez do schtasks.exe de proposito: o executavel nativo emite um
+    # aviso em stderr quando /ST fica no passado e, com ErrorActionPreference
+    # 'Stop', esse aviso virava erro terminante e abortava a instalacao.
+    # Aqui tambem nao existe horario - a tarefa nasce sem gatilho e e disparada
+    # na mao, entao nao ha o que ficar no passado.
+    try {
+      # Sobra de execucao anterior interrompida.
+      Unregister-ScheduledTask -TaskName $tarefa -Confirm:$false -ErrorAction SilentlyContinue
+
+      $acao = New-ScheduledTaskAction -Execute $caminhoExe
+      # LogonType Interactive: roda com o token da sessao da pessoa (e so
+      # quando ela esta logada), que e justamente o que faz o icone aparecer.
+      $principal = New-ScheduledTaskPrincipal -UserId $usuario -LogonType Interactive
+      Register-ScheduledTask -TaskName $tarefa -Action $acao -Principal $principal -Force -ErrorAction Stop | Out-Null
+      Start-ScheduledTask -TaskName $tarefa -ErrorAction Stop
+      Start-Sleep -Seconds 3
+      Unregister-ScheduledTask -TaskName $tarefa -Confirm:$false -ErrorAction SilentlyContinue
+      Write-Output "Disparado na sessao de $usuario."
+    } catch {
+      # Instalacao ja esta completa; nao subir agora nao invalida nada.
+      Write-Output ("Nao foi possivel disparar na sessao do usuario: " + $_.Exception.Message)
+      try { Unregister-ScheduledTask -TaskName $tarefa -Confirm:$false -ErrorAction SilentlyContinue } catch { }
       return $false
     }
-    & schtasks /run /TN $tarefa 2>&1 | Out-Null
-    Start-Sleep -Seconds 3
-    & schtasks /delete /F /TN $tarefa 2>&1 | Out-Null
-    Write-Output "Disparado na sessao de $usuario."
   }
 
   Start-Sleep -Seconds 2
@@ -419,7 +434,12 @@ $argumentos = @(
   '/r:System.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
   $cs
 )
+# 2>&1 num executavel nativo embrulha cada linha de stderr num ErrorRecord e,
+# com preferencia 'Stop', um simples aviso do compilador abortaria a instalacao.
+# Baixamos a guarda so aqui, para capturar a saida sem esse risco.
+$ErrorActionPreference = 'Continue'
 $saida = & $csc $argumentos 2>&1
+$ErrorActionPreference = 'Stop'
 if (-not (Test-Path $exeTmp)) {
   Write-Output "ERRO na compilacao:"
   $saida | ForEach-Object { Write-Output "  $_" }
