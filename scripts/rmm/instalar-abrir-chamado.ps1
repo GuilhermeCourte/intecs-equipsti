@@ -42,42 +42,123 @@ $ehAdmin = ([Security.Principal.WindowsPrincipal] `
   [Security.Principal.WindowsIdentity]::GetCurrent()
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
+# Em processo de 32 bits $env:ProgramFiles apontaria para "Program Files (x86)".
+$programFiles  = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+$pastaMaquina  = Join-Path $programFiles 'Intecs\AbrirChamado'
+$pastaUsuario  = Join-Path $env:LOCALAPPDATA 'Intecs\AbrirChamado'
+
+$HKLM = [Microsoft.Win32.RegistryHive]::LocalMachine
+$HKCU = [Microsoft.Win32.RegistryHive]::CurrentUser
+
 if ($ehAdmin) {
-  # Em processo de 32 bits $env:ProgramFiles apontaria para "Program Files (x86)".
-  $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
-  $destino = Join-Path $programFiles 'Intecs\AbrirChamado'
-  $hive    = [Microsoft.Win32.RegistryHive]::LocalMachine
-  $escopo  = 'MAQUINA (todos os usuarios)'
+  $destino = $pastaMaquina; $hive = $HKLM; $escopo = 'MAQUINA (todos os usuarios)'
 } else {
-  $destino = Join-Path $env:LOCALAPPDATA 'Intecs\AbrirChamado'
-  $hive    = [Microsoft.Win32.RegistryHive]::CurrentUser
-  $escopo  = 'USUARIO ATUAL (sem privilegio de administrador)'
+  $destino = $pastaUsuario; $hive = $HKCU; $escopo = 'USUARIO ATUAL (sem privilegio de administrador)'
 }
 
 $exe = Join-Path $destino "$NOME_APP.exe"
 
 function Get-Raiz {
+  param($h = $hive)
   # Registry64 evita cair em Wow6432Node se o PowerShell for de 32 bits.
-  [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, [Microsoft.Win32.RegistryView]::Registry64)
+  [Microsoft.Win32.RegistryKey]::OpenBaseKey($h, [Microsoft.Win32.RegistryView]::Registry64)
 }
 
-Write-Output "Escopo: $escopo"
-
-# ---------- Ja esta instalado nesta versao? ----------
-try {
-  $raiz = Get-Raiz
-  $k = $raiz.OpenSubKey('SOFTWARE\Intecs\Chamados')
-  if ($k) {
-    $instalada = $k.GetValue('Versao')
-    $k.Close()
-    if ($instalada -eq $VERSAO -and (Test-Path $exe)) {
-      Write-Output "Ja instalado na versao $VERSAO. Nada a fazer."
-      # Recompilar a toa geraria um binario com hash novo a cada execucao da
-      # policy, zerando a reputacao dele no antivirus toda vez.
-      exit 0
-    }
+# Le o que existe num escopo, sem alterar nada.
+function Get-Instalacao {
+  param($h, $pasta, $rotulo)
+  $versao = $null
+  try {
+    $k = (Get-Raiz $h).OpenSubKey('SOFTWARE\Intecs\Chamados')
+    if ($k) { $versao = $k.GetValue('Versao'); $k.Close() }
+  } catch { }
+  $arquivo = Join-Path $pasta "$NOME_APP.exe"
+  $temExe = Test-Path $arquivo
+  [PSCustomObject]@{
+    Rotulo   = $rotulo
+    Hive     = $h
+    Pasta    = $pasta
+    Presente = ($temExe -or $versao)
+    Versao   = $versao
+    TemExe   = $temExe
   }
-} catch { }
+}
+
+# Remove um escopo por completo (registro + pasta). Usado tanto para atualizar
+# quanto para limpar instalacao no escopo errado.
+function Remove-Instalacao {
+  param($inst)
+  $raiz = Get-Raiz $inst.Hive
+  $run = $raiz.OpenSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion\Run', $true)
+  if ($run) {
+    if ($run.GetValue('IntecsAbrirChamado')) { $run.DeleteValue('IntecsAbrirChamado') }
+    $run.Close()
+  }
+  $intecs = $raiz.OpenSubKey('SOFTWARE\Intecs', $true)
+  if ($intecs) {
+    if ($intecs.OpenSubKey('Chamados')) { $intecs.DeleteSubKeyTree('Chamados') }
+    $intecs.Close()
+  }
+  if (Test-Path $inst.Pasta) { Remove-Item -LiteralPath $inst.Pasta -Recurse -Force }
+  Write-Output ("  removido: " + $inst.Rotulo + " (versao " + $(if ($inst.Versao) { $inst.Versao } else { 'desconhecida' }) + ")")
+}
+
+Write-Output "Escopo desta execucao: $escopo"
+
+# ---------- O que ja existe nesta maquina ----------
+$noMaquina = Get-Instalacao $HKLM $pastaMaquina 'escopo MAQUINA'
+$noUsuario = Get-Instalacao $HKCU $pastaUsuario 'escopo USUARIO'
+
+foreach ($i in @($noMaquina, $noUsuario)) {
+  if ($i.Presente) {
+    Write-Output ("Encontrado: {0} - versao {1}{2}" -f $i.Rotulo,
+      $(if ($i.Versao) { $i.Versao } else { 'desconhecida' }),
+      $(if (-not $i.TemExe) { ' (registro sem executavel - instalacao quebrada)' } else { '' }))
+  }
+}
+if (-not $noMaquina.Presente -and -not $noUsuario.Presente) {
+  Write-Output "Nenhuma instalacao encontrada."
+}
+
+$alvo = if ($ehAdmin) { $noMaquina } else { $noUsuario }
+$outro = if ($ehAdmin) { $noUsuario } else { $noMaquina }
+
+# Ja esta certo e nao ha sobra no outro escopo? Entao nao ha o que fazer.
+# Recompilar a toa geraria um binario com hash novo a cada execucao da policy,
+# zerando a reputacao dele no antivirus toda vez.
+if ($alvo.Versao -eq $VERSAO -and $alvo.TemExe -and -not $outro.Presente) {
+  Write-Output "Ja esta na versao $VERSAO no escopo certo. Nada a fazer."
+  exit 0
+}
+
+# ---------- Encerrar o app antes de mexer nos arquivos ----------
+Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
+  Write-Output "Encerrando instancia em execucao (pid $($_.Id))"
+  # WaitForExit(int) devolve bool; sem o [void] ele vaza um "True" no log.
+  try { $_.Kill(); [void]$_.WaitForExit(5000) } catch { }
+}
+
+# ---------- Desinstalar o que estiver sobrando ou desatualizado ----------
+# Instalacao no OUTRO escopo sempre sai: duas conviverem significa duas
+# entradas de autostart disputando o mesmo icone.
+if ($outro.Presente) {
+  if ($ehAdmin -or $outro.Hive -eq $HKCU) {
+    Write-Output "Removendo instalacao no escopo errado:"
+    Remove-Instalacao $outro
+  } else {
+    Write-Output "AVISO: existe instalacao no escopo MAQUINA e falta privilegio para remove-la."
+    Write-Output "       Rode pelo RMM (SYSTEM) para consolidar em um escopo so."
+  }
+}
+
+if ($alvo.Presente -and ($alvo.Versao -ne $VERSAO -or -not $alvo.TemExe)) {
+  Write-Output ("Versao {0} e diferente da desejada ({1}) - desinstalando antes de instalar:" -f `
+    $(if ($alvo.Versao) { $alvo.Versao } else { 'desconhecida' }), $VERSAO)
+  try { Remove-Instalacao $alvo } catch {
+    Write-Output "ERRO ao remover a versao anterior: $($_.Exception.Message)"
+    exit 1
+  }
+}
 
 Write-Output "Instalando $NOME_APP $VERSAO em $destino"
 
@@ -92,13 +173,6 @@ if (-not $csc) {
   exit 1
 }
 Write-Output "Compilador: $csc"
-
-# ---------- Encerrar instancia anterior (senao o .exe fica travado) ----------
-Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
-  Write-Output "Encerrando instancia anterior (pid $($_.Id))"
-  # WaitForExit(int) devolve bool; sem o [void] ele vaza um "True" no log.
-  try { $_.Kill(); [void]$_.WaitForExit(5000) } catch { }
-}
 
 # ---------- Preparar pastas ----------
 # Compila em pasta sem espaco no caminho e so depois move para o destino,
