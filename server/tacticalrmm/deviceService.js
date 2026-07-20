@@ -52,6 +52,48 @@ function mapeamentoAgentParaSnapshot(agent) {
   };
 }
 
+// wmi_detail vem embrulhado em arrays aninhados (Array[Array[Object]]) —
+// conferido em 4 agentes desta instância. Desembrulha até chegar no objeto.
+function wmi(agent, bloco) {
+  let no = agent?.wmi_detail?.[bloco];
+  while (Array.isArray(no)) no = no[0];
+  return no && typeof no === 'object' ? no : {};
+}
+
+// Identificação para o cadastro do equipamento. O detalhe do agente não expõe
+// série nem fabricante — só make_model/hostname —, então o resto vem do WMI.
+function dadosIdentificacao(agent) {
+  const bios = wmi(agent, 'bios');
+  const compSys = wmi(agent, 'comp_sys');
+  const prod = wmi(agent, 'comp_sys_prod');
+  return {
+    nome_amigavel: agent.hostname || null,
+    // bios.Manufacturer é quem fez a BIOS (ex.: "Insyde"), não quem fez a
+    // máquina — daí o fabricante sair do comp_sys.
+    fabricante: compSys.Manufacturer || prod.Vendor || null,
+    modelo: agent.make_model || null,
+    numero_serie: bios.SerialNumber || prod.IdentifyingNumber || null,
+    dominio: compSys.Domain || null
+  };
+}
+
+// Vincula a máquina ao chamado que está sendo aberto: cria (ou completa) o
+// cadastro do equipamento e guarda o snapshot — tudo com uma única leitura do
+// Tactical RMM. Falha no snapshot não impede o vínculo: o chamado continua
+// sabendo qual é a máquina.
+export async function vincularEquipamento(tacticalAgentId, usuarioId) {
+  const agent = await client.getAgentDetail(tacticalAgentId);
+  const device = await repo.getOrCreateDeviceByAgentId(tacticalAgentId, dadosIdentificacao(agent));
+  try {
+    const snapshotId = await repo.salvarSnapshot(device.id, null, mapeamentoAgentParaSnapshot(agent));
+    await repo.registrarLog(device.id, null, 'SNAPSHOT', 'Snapshot coletado na abertura do chamado', null, usuarioId);
+    return { device, snapshotId };
+  } catch (err) {
+    await repo.registrarLog(device.id, null, 'ERRO_SYNC', 'Falha ao guardar snapshot na abertura', err.message, usuarioId);
+    return { device, snapshotId: null };
+  }
+}
+
 export async function listarAgentesDisponiveis() {
   const agentesRemotos = await client.getAgents();
   const lista = Array.isArray(agentesRemotos) ? agentesRemotos : (agentesRemotos?.results || []);
@@ -70,9 +112,33 @@ export async function listarAgentesDisponiveis() {
   return repo.listTacticalAgents();
 }
 
+// Identificação exata da máquina: o próprio agente Tactical grava seu AgentID
+// em HKLM\SOFTWARE\TacticalRMM, e ele chega ao front pelo atalho ?agent=.
+// Devolve null (em vez de estourar) quando o ID não resolve, para o chamado
+// cair no fallback por IP em vez de travar.
+export async function getResumoAgente(tacticalAgentId) {
+  if (!tacticalAgentId) return null;
+  try {
+    const agent = await client.getAgentDetail(tacticalAgentId);
+    if (!agent || !agent.agent_id) return null;
+    return {
+      tactical_agent_id: agent.agent_id,
+      hostname: agent.hostname,
+      make_model: agent.make_model,
+      site_name: agent.site_name,
+      status_online: agent.status === 'online'
+    };
+  } catch (err) {
+    console.warn('[tacticalrmm] agente', tacticalAgentId, 'não resolvido:', err.message);
+    return null;
+  }
+}
+
 // Detecção da máquina do usuário no momento da abertura do chamado — pelo IP
-// de origem da requisição, cruzado com os agentes já sincronizados. Sem
-// vínculo fixo usuário<->equipamento (removido a pedido do usuário).
+// de origem da requisição, cruzado com os agentes já sincronizados. Fallback
+// para quem não tem AgentID (celular, navegador novo, máquina sem agente):
+// atrás de NAT um IP público aponta para a rede inteira, então o resultado é
+// uma lista de candidatos para o usuário confirmar, nunca uma certeza.
 export async function detectarAgentesPorIp(ip) {
   if (!ip) return [];
   return repo.buscarAgentesPorIp(ip);

@@ -44,19 +44,28 @@ export async function upsertTacticalAgent(agent) {
   return inserted.recordset[0].id;
 }
 
-// Detecção por IP: usada pelo botão "Verificar Máquina" na abertura do chamado.
+// Detecção por IP: fallback da abertura do chamado, para quem não tem AgentID.
+// Devolve CANDIDATOS, não uma certeza — quem confirma é o usuário.
 export async function buscarAgentesPorIp(ip) {
-  const porPublico = await query(
-    'SELECT * FROM dbo.EQUIPSTI_tactical_agents WHERE public_ip = @ip',
-    { ip: S(ip) }
-  );
-  if (porPublico.recordset.length) return porPublico.recordset;
-
+  // IP da LAN primeiro: é muito mais específico que o público, que atrás de NAT
+  // é o mesmo para a rede inteira. Casa por token exato porque local_ips vem
+  // como lista ("192.168.15.6, 192.168.56.1"); com LIKE '%ip%' solto o
+  // "192.168.1.4" casaria com o "192.168.1.45" de outra máquina.
   const porLocal = await query(
-    "SELECT * FROM dbo.EQUIPSTI_tactical_agents WHERE local_ips LIKE '%' + @ip + '%'",
+    `SELECT * FROM dbo.EQUIPSTI_tactical_agents
+      WHERE ',' + REPLACE(local_ips, ' ', '') + ',' LIKE '%,' + @ip + ',%'
+      ORDER BY status_online DESC, last_seen DESC`,
     { ip: S(ip) }
   );
-  return porLocal.recordset;
+  if (porLocal.recordset.length) return porLocal.recordset;
+
+  const porPublico = await query(
+    `SELECT * FROM dbo.EQUIPSTI_tactical_agents
+      WHERE public_ip = @ip
+      ORDER BY status_online DESC, last_seen DESC`,
+    { ip: S(ip) }
+  );
+  return porPublico.recordset;
 }
 
 export async function listTacticalAgents() {
@@ -69,7 +78,27 @@ export async function getOrCreateDeviceByAgentId(tacticalAgentId, dadosBase = {}
     'SELECT * FROM dbo.EQUIPSTI_devices WHERE tactical_agent_id = @id',
     { id: S(tacticalAgentId) }
   );
-  if (existe.recordset.length) return existe.recordset[0];
+  // Equipamento já cadastrado: completa só o que ainda está vazio. O COALESCE
+  // preserva qualquer enriquecimento manual (patrimônio, apelido) e não faz
+  // nada quando dadosBase vem vazio.
+  if (existe.recordset.length) {
+    const atualizado = await query(
+      `UPDATE dbo.EQUIPSTI_devices SET
+         nome_amigavel = COALESCE(nome_amigavel, @nome),
+         numero_serie  = COALESCE(numero_serie, @ns),
+         fabricante    = COALESCE(fabricante, @fab),
+         modelo        = COALESCE(modelo, @modelo),
+         dominio       = COALESCE(dominio, @dominio),
+         atualizado_em = SYSUTCDATETIME()
+       OUTPUT INSERTED.*
+       WHERE tactical_agent_id = @id`,
+      {
+        id: S(tacticalAgentId), nome: S(dadosBase.nome_amigavel), ns: S(dadosBase.numero_serie),
+        fab: S(dadosBase.fabricante), modelo: S(dadosBase.modelo), dominio: S(dadosBase.dominio)
+      }
+    );
+    return atualizado.recordset[0];
+  }
 
   const inserted = await query(
     `INSERT INTO dbo.EQUIPSTI_devices (tactical_agent_id, nome_amigavel, numero_serie, fabricante, modelo, dominio)
