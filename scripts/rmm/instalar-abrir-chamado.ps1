@@ -103,6 +103,55 @@ function Remove-Instalacao {
   Write-Output ("  removido: " + $inst.Rotulo + " (versao " + $(if ($inst.Versao) { $inst.Versao } else { 'desconhecida' }) + ")")
 }
 
+# Quem esta usando a maquina agora (vazio se ninguem logado).
+function Get-UsuarioLogado {
+  $u = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).UserName
+  if ($u) { return $u }
+  # Fallback: dono do explorer.exe da sessao interativa.
+  try {
+    $exp = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction Stop | Select-Object -First 1
+    if ($exp) {
+      $dono = Invoke-CimMethod -InputObject $exp -MethodName GetOwner -ErrorAction Stop
+      if ($dono.User) { return ($dono.Domain + '\' + $dono.User) }
+    }
+  } catch { }
+  return $null
+}
+
+# Sobe o app JA, sem esperar o proximo logon.
+#
+# Rodando como SYSTEM (o caso do RMM) um Start-Process comum nasceria na
+# sessao 0, invisivel para quem esta na frente do PC. O jeito de cruzar para a
+# sessao da pessoa e uma tarefa agendada marcada como interativa (/IT): o
+# Windows a executa dentro da sessao dela. Criamos, disparamos e apagamos.
+function Start-AppAgora {
+  param($caminhoExe)
+
+  if (-not $ehAdmin) {
+    # Sem privilegio ja estamos na sessao do usuario - direto mesmo.
+    Start-Process $caminhoExe
+  } else {
+    $usuario = Get-UsuarioLogado
+    if (-not $usuario) {
+      Write-Output "Ninguem logado agora - o icone aparece no proximo logon."
+      return $false
+    }
+    $tarefa = 'IntecsAbrirChamadoPrimeiraExecucao'
+    & schtasks /create /F /TN $tarefa /TR "`"$caminhoExe`"" /SC ONCE /ST 00:00 /RU $usuario /IT 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Output "Nao foi possivel criar a tarefa interativa - o icone aparece no proximo logon."
+      return $false
+    }
+    & schtasks /run /TN $tarefa 2>&1 | Out-Null
+    Start-Sleep -Seconds 3
+    & schtasks /delete /F /TN $tarefa 2>&1 | Out-Null
+    Write-Output "Disparado na sessao de $usuario."
+  }
+
+  Start-Sleep -Seconds 2
+  return [bool](Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue)
+}
+
 Write-Output "Escopo desta execucao: $escopo"
 
 # ---------- O que ja existe nesta maquina ----------
@@ -127,7 +176,18 @@ $outro = if ($ehAdmin) { $noUsuario } else { $noMaquina }
 # Recompilar a toa geraria um binario com hash novo a cada execucao da policy,
 # zerando a reputacao dele no antivirus toda vez.
 if ($alvo.Versao -eq $VERSAO -and $alvo.TemExe -and -not $outro.Presente) {
-  Write-Output "Ja esta na versao $VERSAO no escopo certo. Nada a fazer."
+  Write-Output "Ja esta na versao $VERSAO no escopo certo."
+  # Instalado e correto, mas fora do ar (usuario fechou pelo gerenciador de
+  # tarefas, ou logou antes da instalacao): sobe de novo em vez de esperar o
+  # proximo logon. E o que torna a policy autocorretiva.
+  if (Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue) {
+    Write-Output "App em execucao. Nada a fazer."
+  } else {
+    Write-Output "App fora do ar - iniciando."
+    if (Start-AppAgora (Join-Path $alvo.Pasta "$NOME_APP.exe")) {
+      Write-Output "OK, icone na bandeja."
+    }
+  }
   exit 0
 }
 
@@ -386,19 +446,12 @@ $run.Close()
 Write-Output "Autostart registrado."
 
 Write-Output ""
-if ($ehAdmin) {
-  Write-Output "OK. O icone aparece na bandeja no PROXIMO LOGON de cada usuario."
-  Write-Output "Para ver agora sem deslogar, execute na sessao do usuario:"
-  Write-Output "  $exe"
+Write-Output "Iniciando o app sem esperar o proximo logon..."
+if (Start-AppAgora $exe) {
+  Write-Output "OK. O icone ja esta na bandeja - clique nele para abrir o chamado."
 } else {
-  # Sem privilegio ja estamos na sessao do usuario, entao da para subir agora.
-  Write-Output "Iniciando agora nesta sessao..."
-  Start-Process $exe
-  Start-Sleep -Seconds 2
-  if (Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue) {
-    Write-Output "OK. O icone ja esta na bandeja (clique nele para abrir o chamado)."
-  } else {
-    Write-Output "AVISO: o app nao subiu. Tente executar manualmente: $exe"
-  }
+  # Nao subir agora nao e falha de instalacao: o autostart ja esta no lugar.
+  Write-Output "O app nao subiu agora, mas a instalacao esta completa -"
+  Write-Output "ele entra sozinho no proximo logon. Para forcar: $exe"
 }
 exit 0
