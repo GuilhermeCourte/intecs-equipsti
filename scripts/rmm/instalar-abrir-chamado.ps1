@@ -1,10 +1,10 @@
 # ============================================================
-#  Tactical RMM — instala o "Abrir chamado" na bandeja do sistema.
+#  Tactical RMM - instala o "Abrir chamado" na bandeja do sistema.
 #
 #  POR QUE ISSO EXISTE
 #  O navegador nao tem como descobrir em que maquina esta rodando: nao le
 #  hostname, nao le registro, e o agente do Tactical nao escuta em porta
-#  nenhuma. Detectar por IP nao serve — atras de NAT a rede inteira sai pelo
+#  nenhuma. Detectar por IP nao serve - atras de NAT a rede inteira sai pelo
 #  mesmo endereco (medimos: 6 maquinas num IP so). Entao a identidade precisa
 #  ser ENTREGUE a pagina, e quem sabe a identidade e o proprio agente, que
 #  grava o AgentID em HKLM\SOFTWARE\TacticalRMM.
@@ -14,36 +14,59 @@
 #  faz a maquina reinstalada se corrigir sozinha.
 #
 #  AUTOCONTIDO: compila na propria maquina com o csc.exe que ja vem no
-#  Windows. Nao precisa transferir binario, nao precisa instalar .NET.
+#  Windows. Nao precisa transferir binario nem instalar .NET.
 #
-#  Rodar como SYSTEM (padrao do Tactical RMM). Pode rodar quantas vezes
-#  quiser — so recompila quando a versao muda.
+#  DOIS MODOS, escolhidos automaticamente:
+#    - Com privilegio (SYSTEM pelo RMM, ou PowerShell como administrador):
+#      instala em Program Files e vale para TODOS os usuarios da maquina.
+#    - Sem privilegio (teste manual): instala no perfil do usuario atual.
+#      Nao precisa de admin, e serve so para quem rodou.
+#
+#  Pode rodar quantas vezes quiser - so recompila quando a versao muda.
+#
+#  ARQUIVO EM ASCII PURO de proposito: acento sem BOM vira mojibake no
+#  PowerShell 5.1 e no copiar/colar para o editor de scripts do RMM.
 # ============================================================
 
 $ErrorActionPreference = 'Stop'
 
 # ---------- Configuracao ----------
-$VERSAO   = '1.0.0'
+$VERSAO   = '1.0.1'
 $URL_BASE = 'https://gestaoti.intecsbr.org/chamados'
 $NOME_APP = 'AbrirChamado'
 # ----------------------------------
 
-# Em processo de 32 bits, $env:ProgramFiles apontaria para "Program Files (x86)"
-# e HKLM\SOFTWARE cairia em Wow6432Node. Forcamos a visao de 64 bits nos dois.
-$programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
-$destino = Join-Path $programFiles 'Intecs\AbrirChamado'
-$exe     = Join-Path $destino "$NOME_APP.exe"
+# SYSTEM (como o RMM roda) tambem carrega o grupo Administradores no token,
+# entao esta checagem cobre os dois casos de instalacao para a maquina toda.
+$ehAdmin = ([Security.Principal.WindowsPrincipal] `
+  [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-function Get-Hklm64 {
-  [Microsoft.Win32.RegistryKey]::OpenBaseKey(
-    [Microsoft.Win32.RegistryHive]::LocalMachine,
-    [Microsoft.Win32.RegistryView]::Registry64)
+if ($ehAdmin) {
+  # Em processo de 32 bits $env:ProgramFiles apontaria para "Program Files (x86)".
+  $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+  $destino = Join-Path $programFiles 'Intecs\AbrirChamado'
+  $hive    = [Microsoft.Win32.RegistryHive]::LocalMachine
+  $escopo  = 'MAQUINA (todos os usuarios)'
+} else {
+  $destino = Join-Path $env:LOCALAPPDATA 'Intecs\AbrirChamado'
+  $hive    = [Microsoft.Win32.RegistryHive]::CurrentUser
+  $escopo  = 'USUARIO ATUAL (sem privilegio de administrador)'
 }
+
+$exe = Join-Path $destino "$NOME_APP.exe"
+
+function Get-Raiz {
+  # Registry64 evita cair em Wow6432Node se o PowerShell for de 32 bits.
+  [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, [Microsoft.Win32.RegistryView]::Registry64)
+}
+
+Write-Output "Escopo: $escopo"
 
 # ---------- Ja esta instalado nesta versao? ----------
 try {
-  $hklm = Get-Hklm64
-  $k = $hklm.OpenSubKey('SOFTWARE\Intecs\Chamados')
+  $raiz = Get-Raiz
+  $k = $raiz.OpenSubKey('SOFTWARE\Intecs\Chamados')
   if ($k) {
     $instalada = $k.GetValue('Versao')
     $k.Close()
@@ -77,12 +100,20 @@ Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
 }
 
 # ---------- Preparar pastas ----------
-# Compila em pasta sem espaco no caminho e so depois move para Program Files,
+# Compila em pasta sem espaco no caminho e so depois move para o destino,
 # evitando dor de cabeca com aspas nos argumentos do csc.
 $tmp = Join-Path $env:TEMP 'intecs-abrirchamado-build'
-if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force }
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-if (-not (Test-Path $destino)) { New-Item -ItemType Directory -Path $destino -Force | Out-Null }
+
+try {
+  if (-not (Test-Path $destino)) { New-Item -ItemType Directory -Path $destino -Force | Out-Null }
+} catch {
+  Write-Output ""
+  Write-Output "ERRO: sem permissao para criar $destino"
+  Write-Output "Rode o PowerShell como administrador, ou deixe o RMM executar (ele roda como SYSTEM)."
+  exit 1
+}
 
 # ---------- Logo da bandeja (PNG 32x32 embutido) ----------
 $logoB64 = @(
@@ -124,6 +155,7 @@ using Microsoft.Win32;
 static class Program
 {
     const string URL_PADRAO = "https://gestaoti.intecsbr.org/chamados";
+    const string CAMINHO_CFG = @"SOFTWARE\Intecs\Chamados";
 
     static NotifyIcon icone;
 
@@ -132,6 +164,8 @@ static class Program
     {
         bool primeiro;
         // Sem isso, cada logon/duplo clique acumularia um icone na bandeja.
+        // Tambem impede dois icones quando existe instalacao por maquina e
+        // por usuario ao mesmo tempo.
         using (new Mutex(true, "Intecs.AbrirChamado.InstanciaUnica", out primeiro))
         {
             if (!primeiro) return;
@@ -161,45 +195,44 @@ static class Program
         }
     }
 
-    // AgentID gravado pelo agente Tactical. Leitura liberada a usuario comum
-    // (BUILTIN\Usuarios tem ReadKey), entao o app nao precisa de privilegio.
-    static string LerAgentId()
+    static string LerValor(RegistryHive hive, string caminho, string nome)
     {
         try
         {
-            using (var raiz = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
-            using (var chave = raiz.OpenSubKey(@"SOFTWARE\TacticalRMM"))
+            using (var raiz = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64))
+            using (var chave = raiz.OpenSubKey(caminho))
             {
                 if (chave == null) return null;
-                var valor = chave.GetValue("AgentID") as string;
+                var valor = chave.GetValue(nome) as string;
                 return string.IsNullOrEmpty(valor) ? null : valor.Trim();
             }
         }
         catch { return null; }
     }
 
-    // Permite trocar a URL sem recompilar — recompilar muda o hash do .exe e
-    // zera a reputacao dele no antivirus.
+    // AgentID gravado pelo agente Tactical. Sempre em HKLM, e a leitura e
+    // liberada a usuario comum (BUILTIN\Usuarios tem ReadKey), entao o app
+    // nao precisa de privilegio nenhum.
+    static string LerAgentId()
+    {
+        return LerValor(RegistryHive.LocalMachine, @"SOFTWARE\TacticalRMM", "AgentID");
+    }
+
+    // Permite trocar a URL sem recompilar - recompilar muda o hash do .exe e
+    // zera a reputacao dele no antivirus. HKCU primeiro, para que um teste por
+    // usuario possa apontar a outro ambiente sem mexer na config da maquina.
     static string LerUrlBase()
     {
-        try
-        {
-            using (var raiz = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
-            using (var chave = raiz.OpenSubKey(@"SOFTWARE\Intecs\Chamados"))
-            {
-                if (chave == null) return URL_PADRAO;
-                var valor = chave.GetValue("Url") as string;
-                return string.IsNullOrEmpty(valor) ? URL_PADRAO : valor.Trim();
-            }
-        }
-        catch { return URL_PADRAO; }
+        var url = LerValor(RegistryHive.CurrentUser, CAMINHO_CFG, "Url");
+        if (url == null) url = LerValor(RegistryHive.LocalMachine, CAMINHO_CFG, "Url");
+        return url == null ? URL_PADRAO : url;
     }
 
     static void Abrir()
     {
         var id = LerAgentId();
         var url = LerUrlBase();
-        // Sem AgentID (maquina sem agente): abre assim mesmo — a pagina cai no
+        // Sem AgentID (maquina sem agente): abre assim mesmo - a pagina cai no
         // fallback de escolha manual em vez de travar o usuario.
         if (id != null) url += (url.Contains("?") ? "&" : "?") + "agent=" + Uri.EscapeDataString(id);
 
@@ -256,25 +289,38 @@ if (-not (Test-Path $exeTmp)) {
 }
 
 Copy-Item $exeTmp $exe -Force
-Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Output "Compilado: $exe ($((Get-Item $exe).Length) bytes)"
 
 # ---------- Registro: URL, versao e autostart ----------
-$hklm = Get-Hklm64
-$cfg = $hklm.CreateSubKey('SOFTWARE\Intecs\Chamados')
+$raiz = Get-Raiz
+$cfg = $raiz.CreateSubKey('SOFTWARE\Intecs\Chamados')
 $cfg.SetValue('Url', $URL_BASE)
 $cfg.SetValue('Versao', $VERSAO)
 $cfg.Close()
 Write-Output "URL configurada: $URL_BASE"
 
-# HKLM\...\Run vale para todos os usuarios que logarem nesta maquina.
-$run = $hklm.CreateSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion\Run')
+# No escopo de maquina o Run fica em HKLM e vale para todo mundo que logar.
+# No escopo de usuario vai para HKCU e vale so para quem instalou.
+$run = $raiz.CreateSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion\Run')
 $run.SetValue('IntecsAbrirChamado', '"' + $exe + '"')
 $run.Close()
-Write-Output "Autostart registrado (HKLM\...\Run\IntecsAbrirChamado)"
+Write-Output "Autostart registrado."
 
 Write-Output ""
-Write-Output "OK. O icone aparece na bandeja no PROXIMO LOGON do usuario."
-Write-Output "Para ver agora sem deslogar, execute na sessao do usuario:"
-Write-Output "  $exe"
+if ($ehAdmin) {
+  Write-Output "OK. O icone aparece na bandeja no PROXIMO LOGON de cada usuario."
+  Write-Output "Para ver agora sem deslogar, execute na sessao do usuario:"
+  Write-Output "  $exe"
+} else {
+  # Sem privilegio ja estamos na sessao do usuario, entao da para subir agora.
+  Write-Output "Iniciando agora nesta sessao..."
+  Start-Process $exe
+  Start-Sleep -Seconds 2
+  if (Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue) {
+    Write-Output "OK. O icone ja esta na bandeja (clique nele para abrir o chamado)."
+  } else {
+    Write-Output "AVISO: o app nao subiu. Tente executar manualmente: $exe"
+  }
+}
 exit 0
