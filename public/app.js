@@ -4166,42 +4166,89 @@ function configurarCategoriasIntecs() {
 }
 
 // ============================================================
-//  Detecção de máquina por IP ("Verificar Máquina") — Fase 3
+//  Identificação da máquina do solicitante — Fase 3
+//  Preferência: o AgentID que o próprio agente Tactical grava em
+//  HKLM\SOFTWARE\TacticalRMM e que chega pelo atalho ?agent= distribuído por
+//  script do RMM. O IP é só fallback — atrás de NAT a rede inteira sai pelo
+//  mesmo endereço, então ele aponta candidatos, nunca uma máquina só.
 // ============================================================
 let _ciMaquinaDetectadaId = null;
+const CI_AGENT_KEY = 'ci_agent_id';
+
+function ciCapturarAgentIdDaUrl() {
+  const params = new URLSearchParams(location.search);
+  const id = trim(params.get('agent'));
+  if (!id) return;
+  localStorage.setItem(CI_AGENT_KEY, id);
+  params.delete('agent');
+  const q = params.toString();
+  history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+}
+
+function ciPreencherSelectMaquinas(agentes) {
+  const itens = [{ value: '', label: 'Selecione a máquina...', placeholder: true }].concat(
+    agentes.map((a) => ({ value: a.tactical_agent_id, label: a.hostname || a.tactical_agent_id }))
+  );
+  const inst = choicesMap['ciMaquinaSelect'];
+  if (inst) {
+    inst.clearChoices();
+    inst.setChoices(itens, 'value', 'label', true);
+  } else {
+    $('ciMaquinaSelect').innerHTML = itens
+      .map((i) => `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
+  }
+  $('ciMaquinaSelectWrap').style.display = '';
+}
 
 async function verificarMaquinaAutomatico() {
   _ciMaquinaDetectadaId = null;
   $('ciMaquinaSelectWrap').style.display = 'none';
   $('ciMaquinaDetectada').innerHTML = '<i class="ph ph-spinner"></i> Detectando máquina...';
+
+  // 1) Caminho preferencial: AgentID do agente instalado — exato.
+  const salvo = trim(localStorage.getItem(CI_AGENT_KEY));
+  if (salvo) {
+    try {
+      const agente = await api('GET', '/api/chamados-intecs/agente/' + encodeURIComponent(salvo));
+      _ciMaquinaDetectadaId = agente.tactical_agent_id;
+      $('ciMaquinaDetectada').innerHTML = 'Máquina identificada: <strong>'
+        + escapeHtml(agente.hostname || agente.tactical_agent_id)
+        + '</strong> <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="ciBtnTrocarMaquina">trocar</button>';
+      $('ciBtnTrocarMaquina').addEventListener('click', () => {
+        localStorage.removeItem(CI_AGENT_KEY);
+        verificarMaquinaAutomatico();
+      });
+      return;
+    } catch {
+      // Agente removido ou máquina reinstalada: esquece o ID e tenta por IP.
+      localStorage.removeItem(CI_AGENT_KEY);
+    }
+  }
+
+  // 2) Fallback por IP.
   try {
     const { matches } = await api('POST', '/api/chamados-intecs/verificar-maquina');
     if (matches.length === 1) {
       _ciMaquinaDetectadaId = matches[0].tactical_agent_id;
       $('ciMaquinaDetectada').textContent = 'Máquina detectada: ' + (matches[0].hostname || matches[0].tactical_agent_id);
-    } else if (matches.length > 1) {
-      $('ciMaquinaDetectada').textContent = 'Mais de uma máquina encontrada nessa rede — selecione a sua:';
-      const itens = matches.map((a) => ({ value: a.tactical_agent_id, label: a.hostname || a.tactical_agent_id }));
-      const inst = choicesMap['ciMaquinaSelect'];
-      if (inst) {
-        inst.clearChoices();
-        inst.setChoices(itens, 'value', 'label', true);
-      } else {
-        $('ciMaquinaSelect').innerHTML = itens.map((i) => `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
-      }
-      $('ciMaquinaSelectWrap').style.display = '';
-      _ciMaquinaDetectadaId = matches[0].tactical_agent_id;
-    } else {
-      $('ciMaquinaDetectada').textContent = 'Não foi possível detectar automaticamente — o chamado será aberto sem equipamento.';
+      return;
     }
+    // Com vários candidatos NÃO se assume o primeiro: um mesmo IP público
+    // pertence a várias máquinas e o chute vincularia a errada em silêncio.
+    $('ciMaquinaDetectada').textContent = matches.length
+      ? 'Mais de uma máquina nessa rede — selecione a sua:'
+      : 'Não identificamos a máquina automaticamente — selecione na lista:';
+    ciPreencherSelectMaquinas(matches.length ? matches : await api('GET', '/api/tactical-agents'));
   } catch (err) {
-    $('ciMaquinaDetectada').textContent = 'Erro ao verificar: ' + err.message;
+    $('ciMaquinaDetectada').textContent = 'Não identificamos a máquina — o chamado será aberto sem equipamento.';
   }
 }
 
 function configurarVerificarMaquina() {
   $('ciMaquinaSelect').addEventListener('change', () => {
     _ciMaquinaDetectadaId = $('ciMaquinaSelect').value;
+    // Lembra a escolha (é a máquina, não o usuário); o "trocar" desfaz.
+    if (_ciMaquinaDetectadaId) localStorage.setItem(CI_AGENT_KEY, _ciMaquinaDetectadaId);
   });
 }
 
@@ -5051,6 +5098,9 @@ function posicionarSlider(animar = true) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // O atalho do RMM pode cair aqui também; o ?agent= precisa ser guardado
+  // antes de qualquer navegação limpar a URL.
+  ciCapturarAgentIdDaUrl();
   if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
   modalEditar = new bootstrap.Modal($('modalEditar'));
   modalMsg = new bootstrap.Modal($('modalMsg'));

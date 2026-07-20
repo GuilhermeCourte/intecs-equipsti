@@ -1604,12 +1604,26 @@ app.get('/api/tactical-agents', exigirAuth, wrap(async (req, res) => {
   res.json(agentes);
 }));
 
+// Identificação da máquina pelo AgentID que o próprio agente Tactical grava em
+// HKLM\SOFTWARE\TacticalRMM. Chega ao front pelo atalho ?agent= distribuído por
+// script do RMM. É exato — ao contrário do IP, que atrás de NAT aponta para a
+// rede inteira. Caminho preferencial; o verificar-maquina abaixo é o fallback.
+app.get('/api/chamados-intecs/agente/:agentId', exigirAuth, wrap(async (req, res) => {
+  const agentId = trim(req.params.agentId || '');
+  if (!agentId) return res.status(400).json({ error: 'Informe o agente.' });
+  const resumo = await deviceService.getResumoAgente(agentId);
+  if (!resumo) return res.status(404).json({ error: 'Agente não encontrado no Tactical RMM.' });
+  res.json(resumo);
+}));
+
 // Detecção da máquina do usuário no momento da abertura do chamado, por IP
 // da requisição (sem vínculo fixo usuário<->equipamento).
 app.post('/api/chamados-intecs/verificar-maquina', exigirAuth, wrap(async (req, res) => {
   const ip = (req.headers['x-forwarded-for']?.split(',')[0]?.trim()) || req.socket.remoteAddress || '';
-  const ipLimpo = ip.replace('::ffff:', '');
-  const matches = await deviceService.detectarAgentesPorIp(ipLimpo);
+  // x-forwarded-for é enviado pelo cliente: sem esse filtro, um "%" viraria
+  // curinga no LIKE da busca e devolveria a lista inteira de agentes.
+  const ipLimpo = /^[0-9a-fA-F:.]+$/.test(ip) ? ip.replace('::ffff:', '') : '';
+  const matches = ipLimpo ? await deviceService.detectarAgentesPorIp(ipLimpo) : [];
   res.json({ ip: ipLimpo, matches });
 }));
 
@@ -1762,10 +1776,10 @@ app.post('/api/chamados-intecs', exigirAuth, carregarPerfilChamados, wrap(async 
   let snapshotId = null;
   if (tacticalAgentId) {
     try {
-      device = await deviceIntecsRepo.getOrCreateDeviceByAgentId(tacticalAgentId);
-      snapshotId = await deviceService.takeSnapshot(device.id, tacticalAgentId, null, req.user.sub);
+      ({ device, snapshotId } = await deviceService.vincularEquipamento(tacticalAgentId, req.user.sub));
     } catch (err) {
-      console.error('[chamados-intecs] falha ao coletar snapshot:', err.message);
+      // RMM fora do ar não pode impedir a abertura do chamado.
+      console.error('[chamados-intecs] falha ao vincular equipamento:', err.message);
     }
   }
 

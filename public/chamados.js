@@ -431,27 +431,80 @@ async function abrirDetalhe(id) {
   }
 }
 
+// ---- Identificação da máquina ----
+// O agente Tactical grava seu AgentID em HKLM\SOFTWARE\TacticalRMM, e um script
+// do RMM espalha o atalho .../chamados?agent=<AgentID>. Guardar esse ID é o que
+// permite identificar a máquina com exatidão: o IP não serve, porque atrás de
+// NAT a rede inteira sai pelo mesmo endereço.
+const AGENT_KEY = 'ci_agent_id';
+
+function capturarAgentIdDaUrl() {
+  const params = new URLSearchParams(location.search);
+  const id = trim(params.get('agent'));
+  if (!id) return;
+  localStorage.setItem(AGENT_KEY, id);
+  params.delete('agent');
+  const q = params.toString();
+  history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+}
+
+function preencherSelectMaquinas(agentes) {
+  setChoicesOptions('nc_maquina_select', agentes.map((a) => ({
+    value: a.tactical_agent_id, label: a.hostname || a.tactical_agent_id
+  })));
+  $('nc_maquina_select_wrap').style.display = '';
+}
+
+// Sem candidato por IP: lista os equipamentos para o usuário escolher, em vez
+// de deixá-lo sem saída como antes.
+async function listarMaquinasParaEscolha() {
+  const agentes = await api('GET', '/api/tactical-agents');
+  if (!agentes.length) throw new Error('sem agentes');
+  preencherSelectMaquinas(agentes);
+}
+
 async function verificarMaquina() {
   _maquinaId = null;
   $('nc_maquina_select_wrap').style.display = 'none';
   $('nc_maquina').innerHTML = '<span class="spin" aria-hidden="true"></span> Detectando máquina...';
+
+  // 1) Caminho preferencial: AgentID do agente instalado — exato, sem palpite.
+  const salvo = trim(localStorage.getItem(AGENT_KEY));
+  if (salvo) {
+    try {
+      const agente = await api('GET', '/api/chamados-intecs/agente/' + encodeURIComponent(salvo));
+      _maquinaId = agente.tactical_agent_id;
+      $('nc_maquina').innerHTML = 'Máquina identificada: <strong>'
+        + escapeHtml(agente.hostname || agente.tactical_agent_id)
+        + '</strong> <button type="button" class="callout-link" id="btnTrocarMaquina">trocar</button>';
+      $('btnTrocarMaquina').addEventListener('click', () => {
+        localStorage.removeItem(AGENT_KEY);
+        verificarMaquina();
+      });
+      return;
+    } catch {
+      // Agente removido ou máquina reinstalada: esquece o ID e tenta por IP.
+      localStorage.removeItem(AGENT_KEY);
+    }
+  }
+
+  // 2) Fallback por IP — devolve candidatos, nunca uma certeza.
   try {
     const { matches } = await api('POST', '/api/chamados-intecs/verificar-maquina');
     if (matches.length === 1) {
       _maquinaId = matches[0].tactical_agent_id;
       $('nc_maquina').textContent = 'Máquina detectada: ' + (matches[0].hostname || matches[0].tactical_agent_id);
-    } else if (matches.length > 1) {
-      $('nc_maquina').textContent = 'Mais de uma máquina encontrada — selecione a sua:';
-      const c = choicesMap['nc_maquina_select'];
-      c.clearChoices();
-      c.setChoices(matches.map((a) => ({ value: a.tactical_agent_id, label: a.hostname || a.tactical_agent_id })), 'value', 'label', true);
-      $('nc_maquina_select_wrap').style.display = '';
-      _maquinaId = matches[0].tactical_agent_id;
-    } else {
-      $('nc_maquina').textContent = 'Não foi possível detectar automaticamente — o chamado será aberto sem equipamento.';
+      return;
     }
+    // Com mais de um candidato NÃO se escolhe o primeiro: nesta rede um mesmo
+    // IP público pertence a várias máquinas, e chutar vincularia a errada.
+    $('nc_maquina').textContent = matches.length
+      ? 'Encontramos mais de uma máquina nesta rede — selecione a sua:'
+      : 'Não identificamos sua máquina automaticamente — selecione na lista:';
+    if (matches.length) preencherSelectMaquinas(matches);
+    else await listarMaquinasParaEscolha();
   } catch (err) {
-    $('nc_maquina').textContent = 'Erro ao verificar: ' + err.message;
+    $('nc_maquina').textContent = 'Não identificamos sua máquina — o chamado será aberto sem equipamento.';
   }
 }
 
@@ -459,7 +512,7 @@ function configurarChamados() {
   initChoicesSelect('nc_categoria');
   initChoicesSelect('nc_subcategoria');
   initChoicesSelect('nc_prioridade', { placeholder: false });
-  initChoicesSelect('nc_maquina_select', { placeholder: false });
+  initChoicesSelect('nc_maquina_select');
 
   $('btnNovo').addEventListener('click', () => {
     $('formNovo').reset();
@@ -472,7 +525,12 @@ function configurarChamados() {
   });
 
   $('nc_categoria').addEventListener('change', () => popularSubcategorias($('nc_categoria').value));
-  $('nc_maquina_select').addEventListener('change', () => { _maquinaId = $('nc_maquina_select').value; });
+  $('nc_maquina_select').addEventListener('change', () => {
+    _maquinaId = $('nc_maquina_select').value;
+    // Lembra a escolha (identifica a máquina, não o usuário) para o próximo
+    // chamado já nascer preenchido. O botão "trocar" desfaz.
+    if (_maquinaId) localStorage.setItem(AGENT_KEY, _maquinaId);
+  });
 
   $('btnAbrir').addEventListener('click', async () => {
     const titulo = trim($('nc_titulo').value);
@@ -560,6 +618,9 @@ function configurarChamados() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Antes do login: o atalho do RMM traz o ?agent= e ele precisa sobreviver
+  // mesmo que a pessoa ainda vá digitar usuário e senha.
+  capturarAgentIdDaUrl();
   modalNovo = new bootstrap.Modal($('modalNovo'));
   modalDetalhe = new bootstrap.Modal($('modalDetalhe'));
   configurarLogin();

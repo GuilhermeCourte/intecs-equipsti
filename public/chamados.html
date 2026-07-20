@@ -560,6 +560,12 @@
     .callout > i { font-size: 20px; color: var(--primary); margin-top: 1px; }
     .callout-body { flex: 1; min-width: 0; }
     .callout-text { font-size: .84rem; color: var(--ink-2); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .callout-link {
+      border: 0; background: none; padding: 0; font: inherit; cursor: pointer;
+      color: var(--primary); text-decoration: underline; text-underline-offset: 2px;
+    }
+    .callout-link:hover { color: var(--ink); }
+    .callout-link:focus-visible { outline: 0; border-radius: 4px; box-shadow: 0 0 0 4px var(--ring); }
 
     .det-badges { display: flex; gap: 6px; flex-wrap: wrap; }
     .det-meta { font-size: .78rem; color: var(--muted); margin-top: 8px; }
