@@ -31,7 +31,7 @@
 $ErrorActionPreference = 'Stop'
 
 # ---------- Configuracao ----------
-$VERSAO   = '1.0.1'
+$VERSAO   = '1.0.2'
 $URL_BASE = 'https://gestaoti.intecsbr.org/chamados'
 $NOME_APP = 'AbrirChamado'
 # ----------------------------------
@@ -96,7 +96,8 @@ Write-Output "Compilador: $csc"
 # ---------- Encerrar instancia anterior (senao o .exe fica travado) ----------
 Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
   Write-Output "Encerrando instancia anterior (pid $($_.Id))"
-  try { $_.Kill(); $_.WaitForExit(5000) } catch { }
+  # WaitForExit(int) devolve bool; sem o [void] ele vaza um "True" no log.
+  try { $_.Kill(); [void]$_.WaitForExit(5000) } catch { }
 }
 
 # ---------- Preparar pastas ----------
@@ -232,9 +233,13 @@ static class Program
     {
         var id = LerAgentId();
         var url = LerUrlBase();
+        // novo=1: quem clica no icone quer abrir chamado, entao a pagina ja
+        // sobe com o modal aberto em vez de parar na lista.
+        var query = "novo=1";
         // Sem AgentID (maquina sem agente): abre assim mesmo - a pagina cai no
         // fallback de escolha manual em vez de travar o usuario.
-        if (id != null) url += (url.Contains("?") ? "&" : "?") + "agent=" + Uri.EscapeDataString(id);
+        if (id != null) query += "&agent=" + Uri.EscapeDataString(id);
+        url += (url.Contains("?") ? "&" : "?") + query;
 
         try
         {

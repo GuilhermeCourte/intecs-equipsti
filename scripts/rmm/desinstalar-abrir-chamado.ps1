@@ -19,7 +19,7 @@ $ehAdmin = ([Security.Principal.WindowsPrincipal] `
 
 Get-Process -Name $NOME_APP -ErrorAction SilentlyContinue | ForEach-Object {
   Write-Output "Encerrando pid $($_.Id)"
-  try { $_.Kill(); $_.WaitForExit(5000) } catch { }
+  try { $_.Kill(); [void]$_.WaitForExit(5000) } catch { }
 }
 
 function Remove-Escopo {
