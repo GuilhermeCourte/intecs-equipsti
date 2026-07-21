@@ -99,9 +99,15 @@ function selo({ texto, bg, fg }) {
 
 // ---------- blocos do e-mail do solicitante ----------
 
+// Tiles do cabeçalho, um por tipo de evento — o ícone e a cor dizem o que
+// aconteceu antes da pessoa ler o texto. As cores saem da mesma paleta de
+// status dos selos, então o topo nunca contradiz o selo logo abaixo.
+// Ver a tabela em public/icons/email/README.md.
+const TILES = new Set(['recibo', 'resposta', 'resolvido', 'aguardando', 'fechado', 'cancelado', 'generico']);
+
 // Cabeçalho de conteúdo: tile do ícone à esquerda, manchete e chamada à direita.
-function tituloHtml({ titulo, chamada }) {
-  const tile = icone('topo', 56);
+function tituloHtml({ titulo, chamada, tile: nomeTile }) {
+  const tile = icone(`topo-${TILES.has(nomeTile) ? nomeTile : 'generico'}`, 56);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
     ${tile ? `<td width="56" valign="top" style="padding-right:16px;">${tile}</td>` : ''}
     <td valign="top">
@@ -154,12 +160,16 @@ function gridInfoHtml(chamado, equipamento) {
   const categoria = [chamado.categoria_nome, chamado.subcategoria_nome].filter(Boolean).join(' › ');
   const local = [chamado.unidade, chamado.departamento].filter(Boolean).join(' · ');
 
+  // A ordem é a leitura em Z, preenchendo esquerda→direita, linha a linha:
+  //   unidade     | solicitante
+  //   equipamento | categoria
+  //   responsável | aberto em
   const campos = [
+    { icone: 'unidade', rotulo: 'Unidade', valor: local },
     { icone: 'solicitante', rotulo: 'Solicitante', valor: chamado.criado_por },
     { icone: 'equipamento', rotulo: 'Equipamento', valor: equipamento },
-    { icone: 'unidade', rotulo: 'Unidade', valor: local },
-    { icone: 'responsavel', rotulo: 'Responsável', valor: chamado.responsavel_email },
     { icone: 'categoria', rotulo: 'Categoria', valor: categoria },
+    { icone: 'responsavel', rotulo: 'Responsável', valor: chamado.responsavel_email },
     { icone: 'aberto', rotulo: 'Aberto em', valor: dataBr(chamado.criado_em) }
   ].filter((c) => c.valor && c.valor !== '—');
 
@@ -253,9 +263,12 @@ const respiro = (px) => `<div style="height:${px}px;line-height:${px}px;font-siz
  * @param {string} [o.comentario] texto do comentário novo
  * @param {Array}  [o.mudancas]   [{de, para}] da transição de status
  * @param {string} [o.equipamento]
+ * @param {string} [o.tile]  qual tile do cabeçalho: 'recibo' | 'resposta' |
+ *   'resolvido' | 'aguardando' | 'fechado' | 'cancelado'. Vazio ou desconhecido
+ *   cai no 'generico'.
  * @returns {{subject:string, html:string, text:string}}
  */
-export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento }) {
+export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, tile }) {
   const url = ORIGEM ? `${ORIGEM}/chamados?chamado=${chamado.id}` : '';
   const evento = eventoHtml({ comentario, autor, mudancas });
 
@@ -278,7 +291,7 @@ export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentar
         </td></tr>
 
         <tr><td style="background:${P.surface};padding:26px;border:1px solid ${P.linha};border-top:0;border-radius:0 0 14px 14px;">
-          ${tituloHtml({ titulo, chamada })}
+          ${tituloHtml({ titulo, chamada, tile })}
           ${evento ? respiro(22) + evento : ''}
           ${respiro(18)}
           ${cardChamadoHtml(chamado)}

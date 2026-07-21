@@ -1625,20 +1625,25 @@ async function nomeEquipamentoDoChamado(chamado) {
 
 // Manchete e frase de abertura que o SOLICITANTE lê, por status novo. Status
 // customizado cai no genérico — o aviso continua saindo, só sem texto próprio.
+// 'tile' escolhe o ícone e a cor do topo do e-mail (ver emailChamado.js).
 const TEXTO_SOLICITANTE = {
   AGUARDANDO_USUARIO: {
+    tile: 'aguardando',
     titulo: 'Precisamos de uma informação sua',
     chamada: 'A equipe de TI respondeu e está aguardando seu retorno para continuar o atendimento.'
   },
   RESOLVIDO: {
+    tile: 'resolvido',
     titulo: 'Seu chamado foi resolvido',
     chamada: 'Se o problema voltar a acontecer, é só responder pelo portal que reabrimos o atendimento.'
   },
   FECHADO: {
+    tile: 'fechado',
     titulo: 'Seu chamado foi encerrado',
     chamada: 'O atendimento foi concluído e o chamado está fechado.'
   },
   CANCELADO: {
+    tile: 'cancelado',
     titulo: 'Seu chamado foi cancelado',
     chamada: 'Se ainda precisar de ajuda, abra um novo chamado pelo portal.'
   }
@@ -1647,6 +1652,7 @@ const tituloParaSolicitante = (status) =>
   TEXTO_SOLICITANTE[status]?.titulo || `Seu chamado está como ${rotular(status)}`;
 const chamadaParaSolicitante = (status) =>
   TEXTO_SOLICITANTE[status]?.chamada || 'O status do seu chamado foi atualizado pela equipe de TI.';
+const tileParaSolicitante = (status) => TEXTO_SOLICITANTE[status]?.tile || 'generico';
 
 // Identificação da máquina pelo AgentID que o próprio agente Tactical grava em
 // HKLM\SOFTWARE\TacticalRMM. Chega ao front pelo atalho ?agent= distribuído por
@@ -1867,6 +1873,7 @@ app.post('/api/chamados-intecs', exigirAuth, carregarPerfilChamados, wrap(async 
   // próprio dono, então aqui o envio é direto — é justamente para ele.
   await notificarSolicitante({
     chamado: chamadoCompleto, ator: { id: 0, email: req.user.email }, equipamento,
+    tile: 'recibo',
     titulo: 'Recebemos seu chamado', // o nº já vai no assunto, via emailParaSolicitante
     chamada: 'A equipe de TI já foi avisada. Você recebe um e-mail a cada resposta ou mudança de status.'
   });
@@ -1961,6 +1968,7 @@ app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigir
       if (await chamadosIntecsRepo.statusNotificaSolicitante(statusDepois)) {
         await notificarSolicitante({
           chamado: atualizado, ator, equipamento, mudancas,
+          tile: tileParaSolicitante(statusDepois),
           titulo: tituloParaSolicitante(statusDepois),
           chamada: chamadaParaSolicitante(statusDepois)
         });
@@ -2037,6 +2045,7 @@ app.post('/api/chamados-intecs/:id/comentarios', exigirAuth, carregarPerfilChama
   if (daEquipe) {
     await notificarSolicitante({
       chamado: chamadoCompleto, ator, equipamento, comentario: texto,
+      tile: 'resposta',
       titulo: 'A equipe de TI respondeu seu chamado',
       chamada: 'Você pode responder pelo portal, no próprio chamado.'
     });

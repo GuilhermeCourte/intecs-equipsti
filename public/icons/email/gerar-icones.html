@@ -14,15 +14,17 @@
   .branco { background: #FFFFFF; }
   .cartao { background: #F5F4F8; }
 
-  /* Tile grande do cabecalho: quadrado lavanda arredondado com o icone dentro. */
-  #ic-topo {
+  /* Tile grande do cabecalho: um por tipo de evento, cada um na cor do proprio
+     estado. As cores saem da paleta de status do portal, as mesmas dos selos
+     (--ok / --warn / --danger / --info / --neutral), para nao brigarem entre si. */
+  .topo {
     width: 112px; height: 112px; background: #FFFFFF;
     display: flex; align-items: center; justify-content: center;
   }
-  #ic-topo span {
-    width: 96px; height: 96px; border-radius: 28px; background: #EDEAFB;
+  .topo span {
+    width: 96px; height: 96px; border-radius: 28px;
     display: flex; align-items: center; justify-content: center;
-    color: #5B45E0; font-size: 54px; line-height: 1;
+    font-size: 54px; line-height: 1;
   }
 
   /* Tile do card do chamado: quadrado branco sobre o cinza do cartao. */
@@ -37,7 +39,14 @@
   }
 </style>
 
-<div id="ic-topo"><span><i class="ph-fill ph-headset"></i></span></div>
+<div class="topo" id="ic-topo-recibo"><span style="background:#FCF3E0;color:#9A6700;"><i class="ph-fill ph-bell"></i></span></div>
+<div class="topo" id="ic-topo-resposta"><span style="background:#EDEBFA;color:#4A3BD1;"><i class="ph-fill ph-chat-circle-dots"></i></span></div>
+<div class="topo" id="ic-topo-resolvido"><span style="background:#E6F4EA;color:#1A7F37;"><i class="ph-fill ph-check-circle"></i></span></div>
+<div class="topo" id="ic-topo-aguardando"><span style="background:#FAEEE1;color:#B4530F;"><i class="ph-fill ph-question"></i></span></div>
+<div class="topo" id="ic-topo-fechado"><span style="background:#EFEDE9;color:#57534E;"><i class="ph-fill ph-archive"></i></span></div>
+<div class="topo" id="ic-topo-cancelado"><span style="background:#FBECEA;color:#B3261E;"><i class="ph-fill ph-x-circle"></i></span></div>
+<div class="topo" id="ic-topo-generico"><span style="background:#EDEBFA;color:#4A3BD1;"><i class="ph-fill ph-arrows-clockwise"></i></span></div>
+
 <div id="ic-chamado"><span><i class="ph-fill ph-clipboard-text"></i></span></div>
 
 <div class="cel branco" id="ic-solicitante"><i class="ph-bold ph-user"></i></div>
