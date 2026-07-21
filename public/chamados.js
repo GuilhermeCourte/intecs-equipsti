@@ -178,6 +178,12 @@ async function entrar() {
     _abrirNovoAoEntrar = false;
     abrirModalNovo();
   }
+  // Chegou pelo botão "Ver chamado" de um e-mail: abre direto o detalhe.
+  if (_abrirChamadoAoEntrar) {
+    const id = _abrirChamadoAoEntrar;
+    _abrirChamadoAoEntrar = null;
+    abrirDetalhe(id);
+  }
 }
 
 function configurarLogin() {
@@ -448,15 +454,19 @@ const AGENT_KEY = 'ci_agent_id';
 // lista — por isso o app manda ?novo=1 junto com o ?agent=. Fica em variável,
 // e não no localStorage, porque é intenção de uma visita só.
 let _abrirNovoAoEntrar = false;
+// ?chamado=<id> vem do botão "Ver chamado" dos e-mails de notificação.
+let _abrirChamadoAoEntrar = null;
 
 function lerParametrosDaUrl() {
   const params = new URLSearchParams(location.search);
   const id = trim(params.get('agent'));
   if (id) localStorage.setItem(AGENT_KEY, id);
   _abrirNovoAoEntrar = params.get('novo') === '1';
-  if (!id && !_abrirNovoAoEntrar) return;
+  _abrirChamadoAoEntrar = Number(params.get('chamado')) || null;
+  if (!id && !_abrirNovoAoEntrar && !_abrirChamadoAoEntrar) return;
   params.delete('agent');
   params.delete('novo');
+  params.delete('chamado');
   const q = params.toString();
   history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
 }

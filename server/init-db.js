@@ -496,6 +496,20 @@ SELECT v.nome, v.tipo, v.cor, v.ordem FROM (VALUES
 ) AS v(nome, tipo, cor, ordem)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.EQUIPSTI_chamados_intecs_status s WHERE s.nome = v.nome);
 
+-- notifica_solicitante: este status manda e-mail para quem abriu o chamado?
+-- Não dá para deduzir de tipo_sistema — AGUARDANDO_USUARIO e EM_ATENDIMENTO são
+-- os dois 'ANDAMENTO', mas só o primeiro exige ação do solicitante. Fica como
+-- coluna própria para o rótulo continuar customizável sem quebrar o aviso.
+IF COL_LENGTH('dbo.EQUIPSTI_chamados_intecs_status', 'notifica_solicitante') IS NULL
+BEGIN
+  ALTER TABLE dbo.EQUIPSTI_chamados_intecs_status
+    ADD notifica_solicitante BIT NOT NULL DEFAULT 0;
+
+  -- Marcação inicial só na criação da coluna: depois disso o valor é do usuário.
+  EXEC('UPDATE dbo.EQUIPSTI_chamados_intecs_status SET notifica_solicitante = 1
+         WHERE nome IN (''AGUARDANDO_USUARIO'', ''RESOLVIDO'', ''FECHADO'', ''CANCELADO'')');
+END
+
 -- ============================================================
 -- Calendário: vencimentos de licenças, contratos e afins.
 -- 'anual' = evento se repete todo ano no mesmo dia/mês de 'data'.

@@ -7,6 +7,7 @@ const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
 const N = (v) => ({ type: sql.Int, value: v == null ? null : Number(v) });
 const DEC = (v) => ({ type: sql.Decimal(6, 2), value: v == null ? null : Number(v) });
 const DT = (v) => ({ type: sql.DateTime2, value: v || null });
+const B = (v) => ({ type: sql.Bit, value: v ? 1 : 0 });
 
 export async function listarCategorias() {
   const [cats, subs] = await Promise.all([
@@ -85,20 +86,43 @@ export async function listarStatusConfig() {
   return r.recordset;
 }
 
-export async function criarStatus({ nome, tipo_sistema, cor, ordem }) {
+export async function criarStatus({ nome, tipo_sistema, cor, ordem, notifica_solicitante }) {
   const inserted = await query(
-    `INSERT INTO dbo.EQUIPSTI_chamados_intecs_status (nome, tipo_sistema, cor, ordem)
-     OUTPUT INSERTED.* VALUES (@nome, @tipo, @cor, @ordem)`,
-    { nome: S(nome), tipo: S(tipo_sistema), cor: S(cor), ordem: N(ordem || 0) }
+    `INSERT INTO dbo.EQUIPSTI_chamados_intecs_status (nome, tipo_sistema, cor, ordem, notifica_solicitante)
+     OUTPUT INSERTED.* VALUES (@nome, @tipo, @cor, @ordem, @notifica)`,
+    {
+      nome: S(nome), tipo: S(tipo_sistema), cor: S(cor), ordem: N(ordem || 0),
+      notifica: B(notifica_solicitante)
+    }
   );
   return inserted.recordset[0];
 }
 
-export async function atualizarStatus(id, { tipo_sistema, cor, ordem }) {
+export async function atualizarStatus(id, { tipo_sistema, cor, ordem, notifica_solicitante }) {
+  // notifica_solicitante só é tocado quando vem no payload — assim um PUT
+  // parcial (só cor/ordem) não desliga o aviso ao solicitante sem querer.
+  const params = { id: N(id), tipo: S(tipo_sistema), cor: S(cor), ordem: N(ordem || 0) };
+  let setNotifica = '';
+  if (notifica_solicitante !== undefined) {
+    params.notifica = B(notifica_solicitante);
+    setNotifica = ', notifica_solicitante = @notifica';
+  }
   await query(
-    `UPDATE dbo.EQUIPSTI_chamados_intecs_status SET tipo_sistema = @tipo, cor = @cor, ordem = @ordem WHERE id = @id`,
-    { id: N(id), tipo: S(tipo_sistema), cor: S(cor), ordem: N(ordem || 0) }
+    `UPDATE dbo.EQUIPSTI_chamados_intecs_status
+        SET tipo_sistema = @tipo, cor = @cor, ordem = @ordem${setNotifica}
+      WHERE id = @id`,
+    params
   );
+}
+
+// Este status avisa por e-mail quem abriu o chamado? Ver a coluna
+// notifica_solicitante em init-db.js — status desconhecido não avisa.
+export async function statusNotificaSolicitante(nome) {
+  const r = await query(
+    'SELECT notifica_solicitante FROM dbo.EQUIPSTI_chamados_intecs_status WHERE nome = @nome',
+    { nome: S(nome) }
+  );
+  return r.recordset[0]?.notifica_solicitante === true;
 }
 
 export async function removerStatus(id) {
@@ -165,13 +189,16 @@ export async function listarChamadosIntecs() {
 }
 
 export async function getChamadoIntecs(id) {
+  // tipo_sistema_status alimenta a cor do selo de status no e-mail — o nome do
+  // status é customizável, o tipo é que tem significado fixo.
   const result = await query(`
     SELECT c.*, cat.nome AS categoria_nome, sub.nome AS subcategoria_nome,
-           u.email AS responsavel_email
+           u.email AS responsavel_email, st.tipo_sistema AS tipo_sistema_status
     FROM dbo.EQUIPSTI_chamados_intecs c
     LEFT JOIN dbo.EQUIPSTI_chamados_intecs_categorias cat ON cat.id = c.categoria_id
     LEFT JOIN dbo.EQUIPSTI_chamados_intecs_subcategorias sub ON sub.id = c.subcategoria_id
     LEFT JOIN dbo.EQUIPSTI_usuarios u ON u.id = c.responsavel_id
+    LEFT JOIN dbo.EQUIPSTI_chamados_intecs_status st ON st.nome = c.status
     WHERE c.id = @id
   `, { id: N(id) });
   return result.recordset[0] || null;

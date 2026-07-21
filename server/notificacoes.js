@@ -10,6 +10,7 @@
 // ============================================================
 import { query, sql } from './db.js';
 import { enviarEmail } from './email.js';
+import { emailParaSolicitante } from './emailChamado.js';
 
 const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
 
@@ -92,6 +93,53 @@ function renderMudancasTxt(mudancas) {
   return '\n\nAlterações:\n' + mudancas.map((m) => `- ${m.campo}: ${m.de || '—'} -> ${m.para || '—'}`).join('\n');
 }
 
+// Aceita apenas endereços sintaticamente válidos — um registro malformado no
+// cadastro faria o servidor recusar a mensagem inteira.
+const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
+
+// Fragmento SQL que restringe destinatários por papel e/ou por id, acumulando
+// os parâmetros em 'params'. Prefixo evita colisão quando o mesmo params serve
+// a dois filtros.
+//
+// A distinção que importa: NÃO pedir escopo (campos ausentes) significa "todos
+// os ativos" — o padrão de Registros/Empréstimos. Pedir escopo e ele resolver
+// vazio (ex.: [] e [] quando o chamado não tem responsável) significa
+// "ninguém". Sem isso, um escopo vazio cairia no padrão e mandaria e-mail para
+// a empresa inteira, que é o oposto do pedido.
+function filtroDestinatarios({ papeis, usuarioIds }, params, prefixo = '') {
+  const pediuEscopo = papeis !== undefined || usuarioIds !== undefined;
+  const condicoes = [];
+
+  const listaPapeis = Array.isArray(papeis) ? papeis.filter(Boolean) : [];
+  if (listaPapeis.length) {
+    listaPapeis.forEach((p, i) => { params[`${prefixo}papel${i}`] = S(p); });
+    condicoes.push(`role IN (${listaPapeis.map((_, i) => `@${prefixo}papel${i}`).join(', ')})`);
+  }
+
+  const listaIds = (Array.isArray(usuarioIds) ? usuarioIds : []).map(Number).filter(Boolean);
+  if (listaIds.length) {
+    listaIds.forEach((id, i) => { params[`${prefixo}uid${i}`] = id; });
+    condicoes.push(`id IN (${listaIds.map((_, i) => `@${prefixo}uid${i}`).join(', ')})`);
+  }
+
+  if (condicoes.length) return `AND (${condicoes.join(' OR ')})`;
+  return pediuEscopo ? 'AND 1 = 0' : '';
+}
+
+// Lista de e-mails que recebem a notificação: usuários ativos, exceto o autor.
+// Sem 'papeis' nem 'usuarioIds' => todos (comportamento padrão). Com eles, o
+// destino é a união dos dois — ex.: a equipe técnica + o dono do chamado.
+async function destinatariosEmail({ atorId, papeis, usuarioIds }) {
+  const params = { atorId };
+  const filtro = filtroDestinatarios({ papeis, usuarioIds }, params);
+  const r = await query(
+    `SELECT DISTINCT email FROM dbo.EQUIPSTI_usuarios
+      WHERE ativo = 1 AND id <> @atorId AND email IS NOT NULL ${filtro}`,
+    params
+  );
+  return r.recordset.map((u) => u.email).filter(emailValido);
+}
+
 /**
  * @param {object} o
  * @param {'REGISTRO'|'EMPRESTIMO'|'CHAMADO'} o.tipo
@@ -103,53 +151,113 @@ function renderMudancasTxt(mudancas) {
  * @param {{id:number,email:string}} o.ator  quem executou a ação
  * @param {boolean} [o.email]    também enviar e-mail?
  * @param {Array<{campo:string,de:string,para:string}>} [o.mudancas]  alterações (de → para) p/ o e-mail
+ * @param {string[]} [o.emailPapeis]      restringe o e-mail a estes papéis (ex.: ['TECNICO','MASTER'])
+ * @param {number[]} [o.emailUsuarioIds]  usuários que recebem o e-mail mesmo fora dos papéis (ex.: dono do chamado)
+ * @param {string[]} [o.papeis]   restringe o SININHO a estes papéis (só quem tem a tela)
+ * @param {{conteudoHtml:string, texto:string}} [o.corpo]  corpo pronto do e-mail (ex.: ficha do chamado)
  */
-export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ator, email = false, mudancas }) {
+export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ator, email = false, mudancas, emailPapeis, emailUsuarioIds, papeis, corpo }) {
   try {
     const atorId = Number(ator?.id) || 0;
 
-    // 1) Sininho: insere uma linha por destinatário (todos ativos, exceto o autor).
-    //    O fan-out acontece no próprio SQL via INSERT ... SELECT.
+    // 1) Sininho: insere uma linha por destinatário (ativos, exceto o autor).
+    //    O fan-out acontece no próprio SQL via INSERT ... SELECT. 'papeis'
+    //    limita a quem realmente tem sininho — gravar para quem só usa o
+    //    portal /chamados seria linha que ninguém nunca vai ler.
+    const paramsSino = {
+      tipo: S(tipo), acao: S(acao), titulo: S(titulo), msg: S(mensagem),
+      link: S(link), refId: refId == null ? null : Number(refId),
+      ator: S(ator?.email), atorId
+    };
+    const filtroSino = filtroDestinatarios({ papeis }, paramsSino, 'sino_');
     await query(
       `INSERT INTO dbo.EQUIPSTI_notificacoes
          (usuario_id, tipo, acao, titulo, mensagem, link, ref_id, ator_email)
        SELECT id, @tipo, @acao, @titulo, @msg, @link, @refId, @ator
          FROM dbo.EQUIPSTI_usuarios
-        WHERE ativo = 1 AND id <> @atorId`,
-      {
-        tipo: S(tipo), acao: S(acao), titulo: S(titulo), msg: S(mensagem),
-        link: S(link), refId: refId == null ? null : Number(refId),
-        ator: S(ator?.email), atorId
-      }
+        WHERE ativo = 1 AND id <> @atorId ${filtroSino}`,
+      paramsSino
     );
 
     // 2) E-mail (apenas quando email=true): BCC a todos os destinatários.
-    //    Disparo fire-and-forget para não atrasar a resposta da requisição.
+    //    O envio é AGUARDADO de propósito: em serverless (Vercel) a invocação
+    //    congela assim que a resposta HTTP sai, e um disparo em segundo plano
+    //    seria interrompido no meio do diálogo SMTP — o e-mail nunca chegava.
     if (email) {
-      const r = await query(
-        `SELECT email FROM dbo.EQUIPSTI_usuarios
-          WHERE ativo = 1 AND id <> @atorId AND email IS NOT NULL`,
-        { atorId }
-      );
-      const dest = r.recordset.map((u) => u.email).filter(Boolean);
+      const dest = await destinatariosEmail({ atorId, papeis: emailPapeis, usuarioIds: emailUsuarioIds });
       if (dest.length) {
-        const corpo = mensagem || titulo;
+        const corpoPronto = corpo;                  // ficha do chamado, quando houver
+        const corpoTexto = mensagem || titulo;      // fallback genérico
         const quem = ator?.email || 'sistema';
-        enviarEmail({
-          bcc: dest,
-          subject: `[Gestão TI] ${titulo}`,
-          text: `${titulo}\n\n${corpo}${renderMudancasTxt(mudancas)}\n\nAção realizada por: ${quem}`,
-          html: montarEmailHtml({
-            tag: TIPO_LABEL[tipo] || 'Notificação',
-            titulo,
-            conteudoHtml: `<p style="margin:0 0 12px;">${esc(corpo)}</p>` + renderMudancasHtml(mudancas),
-            rodapeHtml: `Ação realizada por <strong style="color:#2b2b2b;">${esc(quem)}</strong>.`
-          })
-        }).catch((e) => console.warn('[email] falhou:', e.message));
+        try {
+          await enviarEmail({
+            bcc: dest,
+            subject: `[Gestão TI] ${titulo}`,
+            text: corpoPronto
+              ? `${titulo}\n\n${corpoPronto.texto}\n\nAção realizada por: ${quem}`
+              : `${titulo}\n\n${corpoTexto}${renderMudancasTxt(mudancas)}\n\nAção realizada por: ${quem}`,
+            html: montarEmailHtml({
+              tag: TIPO_LABEL[tipo] || 'Notificação',
+              titulo,
+              conteudoHtml: corpoPronto
+                ? corpoPronto.conteudoHtml
+                : `<p style="margin:0 0 12px;">${esc(corpoTexto)}</p>` + renderMudancasHtml(mudancas),
+              rodapeHtml: `Ação realizada por <strong style="color:#2b2b2b;">${esc(quem)}</strong>.`
+            })
+          });
+        } catch (e) {
+          // Falha de e-mail nunca derruba a operação principal, mas precisa
+          // aparecer no log com a resposta do servidor para ser diagnosticável.
+          console.error('[email] falhou:', e.responseCode || '', e.response || e.message);
+        }
       }
     }
   } catch (err) {
     console.warn('[notificar] falhou:', err.message);
+  }
+}
+
+/**
+ * E-mail para quem ABRIU o chamado, com a identidade do portal /chamados.
+ *
+ * Vive fora de notificar() de propósito: o solicitante não tem sininho (o portal
+ * não tem um), então aqui não há fan-out — é só e-mail, para uma pessoa. Também
+ * nunca lança, pela mesma razão que notificar(): não pode derrubar a operação.
+ *
+ * @param {object} o
+ * @param {object} o.chamado   linha de getChamadoIntecs()
+ * @param {{id:number,email:string}} o.ator  quem executou a ação
+ * @param {string} o.titulo    manchete do e-mail
+ * @param {string} [o.chamada] frase de abertura
+ * @param {string} [o.comentario]
+ * @param {Array}  [o.mudancas]
+ * @param {string} [o.equipamento]
+ * @returns {Promise<boolean>} true se o e-mail saiu
+ */
+export async function notificarSolicitante({ chamado, ator, titulo, chamada, comentario, mudancas, equipamento }) {
+  try {
+    const donoId = Number(chamado?.usuario_id) || 0;
+    if (!donoId) return false;
+    // Quem age não é avisado da própria ação — mesma regra do sininho.
+    if (donoId === (Number(ator?.id) || 0)) return false;
+
+    const r = await query(
+      'SELECT email FROM dbo.EQUIPSTI_usuarios WHERE id = @id AND ativo = 1',
+      { id: donoId }
+    );
+    // email_contato é o que ele digitou no formulário: vale como reserva
+    // quando a conta não tem e-mail cadastrado.
+    const destino = [r.recordset[0]?.email, chamado.email_contato].find(emailValido);
+    if (!destino) return false;
+
+    const { subject, html, text } = emailParaSolicitante({
+      chamado, titulo, chamada, autor: ator?.email || 'a equipe de TI',
+      comentario, mudancas, equipamento
+    });
+    return await enviarEmail({ to: destino, subject, html, text });
+  } catch (e) {
+    console.error('[notificarSolicitante] falhou:', e.responseCode || '', e.response || e.message);
+    return false;
   }
 }
 

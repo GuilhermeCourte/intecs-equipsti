@@ -22,7 +22,12 @@ function getTransporter() {
     secure: String(process.env.SMTP_SECURE).toLowerCase() === 'true', // false = STARTTLS (587)
     auth: process.env.SMTP_USER
       ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
-      : undefined
+      : undefined,
+    // Como o envio é aguardado antes da resposta HTTP, um SMTP lento não pode
+    // segurar a requisição indefinidamente (na Vercel a função tem tempo limite).
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
   return transporter;
 }
@@ -37,6 +42,9 @@ export async function enviarEmail({ to, bcc, subject, html, text }) {
   if (!t || (!to && !temBcc)) return false;
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
   // Quando só há BCC, 'to' = remetente (servidores costumam recusar msg só com BCC).
-  await t.sendMail({ from, to: to || from, bcc: temBcc ? bcc : undefined, subject, text, html });
+  const info = await t.sendMail({ from, to: to || from, bcc: temBcc ? bcc : undefined, subject, text, html });
+  // Entrega parcial não lança: o servidor aceita a mensagem e recusa só alguns
+  // endereços. Sem este log a falha ficaria invisível.
+  if (info?.rejected?.length) console.warn('[email] destinatários recusados:', info.rejected.join(', '));
   return true;
 }
