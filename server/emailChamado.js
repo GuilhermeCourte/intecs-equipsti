@@ -154,32 +154,31 @@ function celulaInfo({ icone: nome, rotulo, valor }) {
   </tr></table>`;
 }
 
-// Grid de duas colunas. Campo vazio e' descartado antes de parear, entao o
-// grid nunca mostra buraco no meio.
+// Grid de duas colunas com POSIÇÕES FIXAS: cada campo tem seu lugar, e campo
+// vazio vira célula em branco em vez de puxar os de baixo. Assim a leitura é
+// sempre a mesma, chamado com ou sem equipamento vinculado.
 function gridInfoHtml(chamado, equipamento) {
   const categoria = [chamado.categoria_nome, chamado.subcategoria_nome].filter(Boolean).join(' › ');
   const local = [chamado.unidade, chamado.departamento].filter(Boolean).join(' · ');
 
-  // A ordem é a leitura em Z, preenchendo esquerda→direita, linha a linha:
-  //   unidade     | solicitante
-  //   equipamento | categoria
-  //   responsável | aberto em
-  const campos = [
-    { icone: 'unidade', rotulo: 'Unidade', valor: local },
-    { icone: 'solicitante', rotulo: 'Solicitante', valor: chamado.criado_por },
-    { icone: 'equipamento', rotulo: 'Equipamento', valor: equipamento },
-    { icone: 'categoria', rotulo: 'Categoria', valor: categoria },
-    { icone: 'responsavel', rotulo: 'Responsável', valor: chamado.responsavel_email },
-    { icone: 'aberto', rotulo: 'Aberto em', valor: dataBr(chamado.criado_em) }
-  ].filter((c) => c.valor && c.valor !== '—');
+  const preenchido = (c) => c && c.valor && c.valor !== '—';
+  const grade = [
+    [{ icone: 'unidade', rotulo: 'Unidade', valor: local },
+     { icone: 'solicitante', rotulo: 'Solicitante', valor: chamado.criado_por }],
+    [{ icone: 'equipamento', rotulo: 'Equipamento', valor: equipamento },
+     { icone: 'categoria', rotulo: 'Categoria', valor: categoria }],
+    [{ icone: 'responsavel', rotulo: 'Responsável', valor: chamado.responsavel_email },
+     { icone: 'aberto', rotulo: 'Aberto em', valor: dataBr(chamado.criado_em) }]
+  ];
 
   let linhas = '';
-  for (let i = 0; i < campos.length; i += 2) {
-    const esquerda = celulaInfo(campos[i]);
-    const direita = campos[i + 1] ? celulaInfo(campos[i + 1]) : '';
+  for (const [esq, dir] of grade) {
+    // Linha inteira vazia sai fora: buraco de uma célula preserva a coluna,
+    // mas de duas só produziria um vão vertical sem informação nenhuma.
+    if (!preenchido(esq) && !preenchido(dir)) continue;
     linhas += `<tr>
-      <td width="50%" valign="top" style="padding:0 10px 20px 0;">${esquerda}</td>
-      <td width="50%" valign="top" style="padding:0 0 20px 10px;">${direita}</td>
+      <td width="50%" valign="top" style="padding:0 10px 20px 0;">${preenchido(esq) ? celulaInfo(esq) : '&nbsp;'}</td>
+      <td width="50%" valign="top" style="padding:0 0 20px 10px;">${preenchido(dir) ? celulaInfo(dir) : '&nbsp;'}</td>
     </tr>`;
   }
   if (!linhas) return '';
