@@ -154,7 +154,8 @@ async function destinatariosEmail({ atorId, papeis, usuarioIds }) {
  * @param {string[]} [o.emailPapeis]      restringe o e-mail a estes papéis (ex.: ['TECNICO','MASTER'])
  * @param {number[]} [o.emailUsuarioIds]  usuários que recebem o e-mail mesmo fora dos papéis (ex.: dono do chamado)
  * @param {string[]} [o.papeis]   restringe o SININHO a estes papéis (só quem tem a tela)
- * @param {{conteudoHtml:string, texto:string}} [o.corpo]  corpo pronto do e-mail (ex.: ficha do chamado)
+ * @param {{html:string, texto:string}} [o.corpo]  e-mail já montado (ex.: a ficha
+ *   do chamado). Quando vem, substitui o template genérico inteiro.
  */
 export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ator, email = false, mudancas, emailPapeis, emailUsuarioIds, papeis, corpo }) {
   try {
@@ -194,16 +195,18 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
             bcc: dest,
             subject: `[Gestão TI] ${titulo}`,
             text: corpoPronto
-              ? `${titulo}\n\n${corpoPronto.texto}\n\nAção realizada por: ${quem}`
+              ? corpoPronto.texto
               : `${titulo}\n\n${corpoTexto}${renderMudancasTxt(mudancas)}\n\nAção realizada por: ${quem}`,
-            html: montarEmailHtml({
-              tag: TIPO_LABEL[tipo] || 'Notificação',
-              titulo,
-              conteudoHtml: corpoPronto
-                ? corpoPronto.conteudoHtml
-                : `<p style="margin:0 0 12px;">${esc(corpoTexto)}</p>` + renderMudancasHtml(mudancas),
-              rodapeHtml: `Ação realizada por <strong style="color:#2b2b2b;">${esc(quem)}</strong>.`
-            })
+            // Corpo pronto já é o documento inteiro — quem monta sabe melhor que
+            // o template genérico como aquele evento deve aparecer.
+            html: corpoPronto
+              ? corpoPronto.html
+              : montarEmailHtml({
+                tag: TIPO_LABEL[tipo] || 'Notificação',
+                titulo,
+                conteudoHtml: `<p style="margin:0 0 12px;">${esc(corpoTexto)}</p>` + renderMudancasHtml(mudancas),
+                rodapeHtml: `Ação realizada por <strong style="color:#2b2b2b;">${esc(quem)}</strong>.`
+              })
           });
         } catch (e) {
           // Falha de e-mail nunca derruba a operação principal, mas precisa

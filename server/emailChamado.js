@@ -29,6 +29,10 @@ const P = {
 // branco continua legível. Não usar o atalho 'background:', que sobrescreve a
 // reserva nos clientes que entendem só parte da regra.
 const HEADER_COR_RESERVA = '#2C36E8'; // azul do meio do linear-gradient
+
+// Faixa do e-mail da equipe: chapada, sem gradiente. Distingue de relance o
+// aviso interno da conversa com o usuário, sem mudar mais nada no corpo.
+const CABECALHO_EQUIPE = '#2b2b2b';
 const HEADER_GRADIENTE = [
   'radial-gradient(620px 620px at -10% 30%, #F97C26 0%, rgba(249, 124, 38, .55) 30%, rgba(249, 124, 38, 0) 60%)',
   'radial-gradient(200px 200px at 72% 34%, rgba(250, 140, 60, .95) 0%, rgba(160, 90, 190, .55) 55%, rgba(44, 54, 232, 0) 80%)',
@@ -250,28 +254,13 @@ function botaoHtml(url, texto) {
 // Espaçador vertical entre os cards.
 const respiro = (px) => `<div style="height:${px}px;line-height:${px}px;font-size:0;">&nbsp;</div>`;
 
-/**
- * E-mail para o SOLICITANTE, com a identidade do portal /chamados.
- * A interação (comentário / mudança de status) vem ANTES da ficha: é o que ele
- * abriu o e-mail para ler; a ficha é contexto de apoio.
- * @param {object} o
- * @param {object} o.chamado      linha de getChamadoIntecs()
- * @param {string} o.titulo       manchete (ex.: 'Seu chamado foi resolvido')
- * @param {string} [o.chamada]    frase de abertura
- * @param {string} [o.autor]      quem executou a ação
- * @param {string} [o.comentario] texto do comentário novo
- * @param {Array}  [o.mudancas]   [{de, para}] da transição de status
- * @param {string} [o.equipamento]
- * @param {string} [o.tile]  qual tile do cabeçalho: 'recibo' | 'resposta' |
- *   'resolvido' | 'aguardando' | 'fechado' | 'cancelado'. Vazio ou desconhecido
- *   cai no 'generico'.
- * @returns {{subject:string, html:string, text:string}}
- */
-export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, tile }) {
-  const url = ORIGEM ? `${ORIGEM}/chamados?chamado=${chamado.id}` : '';
+// Documento completo do e-mail. Solicitante e equipe compartilham TODO o corpo
+// — a única diferença é a faixa do topo, e para onde o botão leva.
+// 'cabecalhoEstilo' é passado inteiro pelo chamador porque o gradiente precisa
+// de background-color e background-image separados (ver HEADER_GRADIENTE).
+function montarDocumento({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, tile, url, cabecalhoBg, cabecalhoEstilo }) {
   const evento = eventoHtml({ comentario, autor, mudancas });
-
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -285,7 +274,7 @@ export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentar
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
           style="max-width:560px;width:100%;font-family:${FONTE};">
 
-        <tr><td bgcolor="${HEADER_COR_RESERVA}" style="background-color:${HEADER_COR_RESERVA};background-image:${HEADER_GRADIENTE};padding:18px 26px;border-radius:14px 14px 0 0;">
+        <tr><td bgcolor="${cabecalhoBg}" style="${cabecalhoEstilo}padding:18px 26px;border-radius:14px 14px 0 0;">
           ${LOGO_URL ? `<img src="${esc(LOGO_URL)}" alt="Intecs" height="24" style="height:24px;width:auto;vertical-align:middle;border:0;margin-right:10px;display:inline-block;">` : ''}<span style="color:#ffffff;font-size:19px;font-weight:700;letter-spacing:.3px;vertical-align:middle;">GTI · Chamados</span>
         </td></tr>
 
@@ -308,11 +297,54 @@ export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentar
   </table>
 </body>
 </html>`;
+}
 
+/**
+ * E-mail para o SOLICITANTE, com a identidade do portal /chamados.
+ * A interação (comentário / mudança de status) vem ANTES da ficha: é o que ele
+ * abriu o e-mail para ler; a ficha é contexto de apoio.
+ * @param {object} o
+ * @param {object} o.chamado      linha de getChamadoIntecs()
+ * @param {string} o.titulo       manchete (ex.: 'Seu chamado foi resolvido')
+ * @param {string} [o.chamada]    frase de abertura
+ * @param {string} [o.autor]      quem executou a ação
+ * @param {string} [o.comentario] texto do comentário novo
+ * @param {Array}  [o.mudancas]   [{de, para}] da transição de status
+ * @param {string} [o.equipamento]
+ * @param {string} [o.tile]  qual tile do cabeçalho: 'recibo' | 'resposta' |
+ *   'resolvido' | 'aguardando' | 'fechado' | 'cancelado'. Vazio ou desconhecido
+ *   cai no 'generico'.
+ * @returns {{subject:string, html:string, text:string}}
+ */
+export function emailParaSolicitante(o) {
+  const url = ORIGEM ? `${ORIGEM}/chamados?chamado=${o.chamado.id}` : '';
   return {
-    subject: `[Chamado #${chamado.id}] ${titulo}`,
-    html,
-    text: textoChamado({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, url })
+    subject: `[Chamado #${o.chamado.id}] ${o.titulo}`,
+    html: montarDocumento({
+      ...o, url,
+      cabecalhoBg: HEADER_COR_RESERVA,
+      cabecalhoEstilo: `background-color:${HEADER_COR_RESERVA};background-image:${HEADER_GRADIENTE};`
+    }),
+    text: textoChamado({ ...o, url })
+  };
+}
+
+/**
+ * E-mail para a EQUIPE — mesmo corpo do solicitante, só o topo muda: faixa
+ * chapada #2b2b2b em vez do gradiente da marca, para separar de relance o que é
+ * aviso interno do que é conversa com o usuário. O botão leva para o admin, não
+ * para o portal: é lá que a equipe atende.
+ * @returns {{html:string, texto:string}}
+ */
+export function emailParaEquipe(o) {
+  const url = ORIGEM ? `${ORIGEM}/#tab-chamados` : '';
+  return {
+    html: montarDocumento({
+      ...o, url,
+      cabecalhoBg: CABECALHO_EQUIPE,
+      cabecalhoEstilo: `background-color:${CABECALHO_EQUIPE};`
+    }),
+    texto: textoChamado({ ...o, url })
   };
 }
 
@@ -340,60 +372,6 @@ function textoChamado({ chamado, titulo, chamada, autor, comentario, mudancas, e
   if (prazo !== '—') linhas.push(`Prazo de conclusão: ${prazo}`);
   if (url) linhas.push('', `Ver chamado: ${url}`);
   return linhas.join('\n');
-}
-
-// Linha "rótulo / valor" da ficha enxuta da equipe.
-function linhaFicha(rotulo, valor, ultima) {
-  if (valor == null || valor === '' || valor === '—') return '';
-  const borda = ultima ? '' : `border-bottom:1px solid ${P.linha};`;
-  return `<tr>
-    <td style="padding:9px 0;${borda}width:38%;vertical-align:top;font-size:12px;color:${P.muted};
-        text-transform:uppercase;letter-spacing:.5px;">${esc(rotulo)}</td>
-    <td style="padding:9px 0;${borda}font-size:14px;color:${P.ink};font-weight:600;
-        word-break:break-word;">${esc(valor)}</td>
-  </tr>`;
-}
-
-/**
- * Corpo do e-mail para a EQUIPE — moldura do admin, ficha em lista simples.
- * Sem os cards e ícones do e-mail do solicitante: aqui o público é interno e
- * lê muitos avisos por dia, então densidade vale mais que enfeite.
- * @returns {{conteudoHtml:string, texto:string}}
- */
-export function corpoChamadoEquipe({ chamado, chamada, autor, comentario, mudancas, equipamento }) {
-  const url = ORIGEM ? `${ORIGEM}/#tab-chamados` : '';
-  const tipoStatus = chamado.tipo_sistema_status || 'ABERTO';
-  const seloStatus = SELO_POR_TIPO[tipoStatus] || SELO_POR_TIPO.ABERTO;
-  const seloPrio = SELO_POR_PRIORIDADE[String(chamado.prioridade || '').toUpperCase()]
-    || SELO_POR_PRIORIDADE.MEDIA;
-
-  const categoria = [chamado.categoria_nome, chamado.subcategoria_nome].filter(Boolean).join(' › ');
-  const local = [chamado.unidade, chamado.departamento].filter(Boolean).join(' · ');
-  const ficha = [
-    linhaFicha('Solicitante', chamado.criado_por),
-    linhaFicha('Unidade', local),
-    linhaFicha('Categoria', categoria),
-    linhaFicha('Equipamento', equipamento),
-    linhaFicha('Responsável', chamado.responsavel_email),
-    linhaFicha('Aberto em', dataBr(chamado.criado_em)),
-    linhaFicha('Prazo de conclusão', dataBr(chamado.sla_conclusao_prazo), true)
-  ].filter(Boolean).join('');
-
-  const conteudoHtml =
-    (chamada ? `<p style="margin:0 0 16px;">${esc(chamada)}</p>` : '')
-    + `<div style="font-size:16px;font-weight:700;color:${P.ink};margin-bottom:12px;word-break:break-word;">`
-    + `#${esc(chamado.id)} — ${esc(chamado.titulo)}</div>`
-    + selo({ texto: rotular(chamado.status), ...seloStatus })
-    + selo({ texto: rotular(chamado.prioridade), ...seloPrio })
-    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-        style="margin-top:16px;border-collapse:collapse;">${ficha}</table>`
-    + eventoHtml({ comentario, autor, mudancas })
-    + botaoHtml(url, 'Abrir no Gestão TI');
-
-  return {
-    conteudoHtml,
-    texto: textoChamado({ chamado, titulo: chamada || 'Chamado', chamada: null, autor, comentario, mudancas, equipamento, url })
-  };
 }
 
 export { rotular, dataBr };
