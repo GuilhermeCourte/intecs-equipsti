@@ -17,7 +17,7 @@
 
 $ErrorActionPreference = 'Continue'
 
-$VERSAO_ESPERADA = '1.0.3'
+$VERSAO_ESPERADA = '1.0.4'
 $NOME_APP = 'AbrirChamado'
 
 $HKLM = [Microsoft.Win32.RegistryHive]::LocalMachine
