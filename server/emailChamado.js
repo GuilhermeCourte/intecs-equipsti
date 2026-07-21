@@ -189,7 +189,7 @@ export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentar
           style="max-width:560px;width:100%;font-family:${FONTE};">
 
         <tr><td bgcolor="${HEADER_COR_RESERVA}" style="background-color:${HEADER_COR_RESERVA};background-image:${HEADER_GRADIENTE};padding:18px 26px;border-radius:14px 14px 0 0;">
-          ${LOGO_URL ? `<img src="${esc(LOGO_URL)}" alt="Intecs" height="24" style="height:24px;width:auto;vertical-align:middle;border:0;margin-right:10px;display:inline-block;">` : ''}<span style="color:#ffffff;font-size:19px;font-weight:700;letter-spacing:.3px;vertical-align:middle;">Gestão TI</span>
+          ${LOGO_URL ? `<img src="${esc(LOGO_URL)}" alt="Intecs" height="24" style="height:24px;width:auto;vertical-align:middle;border:0;margin-right:10px;display:inline-block;">` : ''}<span style="color:#ffffff;font-size:19px;font-weight:700;letter-spacing:.3px;vertical-align:middle;">GTI · Chamados</span>
         </td></tr>
 
         <tr><td style="background:${P.surface};padding:26px;border:1px solid ${P.linha};border-top:0;border-radius:0 0 14px 14px;">
