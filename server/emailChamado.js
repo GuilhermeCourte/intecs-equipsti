@@ -20,6 +20,20 @@ const P = {
   faint: '#A8A29E', linha: '#E7E5E0', cta: '#D45C0D', indigo: '#5B45E0'
 };
 
+// Fundo do cabeçalho. Cliente de e-mail é irregular com gradiente: Apple Mail e
+// iOS renderizam, o Outlook (motor do Word) ignora background-image por
+// completo. Por isso a cor sólida vai separada em background-color e em
+// bgcolor — quem não entende o gradiente ainda recebe um azul escuro, e o logo
+// branco continua legível. Não usar o atalho 'background:', que sobrescreve a
+// reserva nos clientes que entendem só parte da regra.
+const HEADER_COR_RESERVA = '#2C36E8'; // azul do meio do linear-gradient
+const HEADER_GRADIENTE = [
+  'radial-gradient(620px 620px at -10% 30%, #F97C26 0%, rgba(249, 124, 38, .55) 30%, rgba(249, 124, 38, 0) 60%)',
+  'radial-gradient(200px 200px at 72% 34%, rgba(250, 140, 60, .95) 0%, rgba(160, 90, 190, .55) 55%, rgba(44, 54, 232, 0) 80%)',
+  'radial-gradient(640px 540px at 96% 114%, rgba(18, 14, 106, .95) 0%, rgba(18, 14, 106, 0) 60%)',
+  'linear-gradient(160deg, #3B45F2 0%, #2C36E8 52%, #241F9E 100%)'
+].join(', ');
+
 // Selos de status, espelhando --ok/--warn/--danger/--info/--neutral do portal.
 const SELO_POR_TIPO = {
   ABERTO:    { bg: '#EFEDE9', fg: '#57534E' },
@@ -174,8 +188,8 @@ export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentar
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
           style="max-width:560px;width:100%;font-family:${FONTE};">
 
-        <tr><td style="background:${P.ink};padding:18px 26px;border-radius:14px 14px 0 0;">
-          ${LOGO_URL ? `<img src="${esc(LOGO_URL)}" alt="Intecs" height="24" style="height:24px;width:auto;vertical-align:middle;border:0;margin-right:10px;display:inline-block;">` : ''}<span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:.3px;vertical-align:middle;">Gestão TI</span>
+        <tr><td bgcolor="${HEADER_COR_RESERVA}" style="background-color:${HEADER_COR_RESERVA};background-image:${HEADER_GRADIENTE};padding:18px 26px;border-radius:14px 14px 0 0;">
+          ${LOGO_URL ? `<img src="${esc(LOGO_URL)}" alt="Intecs" height="24" style="height:24px;width:auto;vertical-align:middle;border:0;margin-right:10px;display:inline-block;">` : ''}<span style="color:#ffffff;font-size:19px;font-weight:700;letter-spacing:.3px;vertical-align:middle;">Gestão TI</span>
         </td></tr>
 
         <tr><td style="background:${P.surface};padding:26px;border:1px solid ${P.linha};border-top:0;border-radius:0 0 14px 14px;">
