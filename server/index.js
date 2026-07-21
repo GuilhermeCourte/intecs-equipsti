@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
-import { notificar, notificarTeste } from './notificacoes.js';
+import { notificar, notificarTeste, notificarSolicitante } from './notificacoes.js';
+import { corpoChamadoEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
@@ -364,8 +365,6 @@ function validarRegistro(d) {
   if (!d.equipamento) faltando.push('EQUIPAMENTO');
   if (!d.pat) faltando.push('PAT MSA');
   if (!d.tipo_aquisicao) faltando.push('COMPRADO/LOCADO');
-  if (!d.protocolo) faltando.push('PROTOCOLO');
-  if (!d.dataRecebimento) faltando.push('DATA DE RECEBIMENTO');
   if (faltando.length) throw new Error('Preencha: ' + faltando.join(', ') + '.');
 }
 
@@ -1604,6 +1603,51 @@ app.get('/api/tactical-agents', exigirAuth, wrap(async (req, res) => {
   res.json(agentes);
 }));
 
+// ===================== NOTIFICAÇÕES DOS CHAMADOS INTECS =====================
+// O sininho só existe no admin, e só TECNICO/MASTER usam o admin. BASICO e
+// GESTOR trabalham no portal /chamados, que não tem sininho — para eles o
+// e-mail é o único canal.
+const SININHO_CHAMADOS = ['TECNICO', 'MASTER'];
+
+// Nome legível do equipamento vinculado, para a ficha do e-mail.
+// Falha de RMM/banco não pode impedir o aviso: no pior caso vai sem o campo.
+async function nomeEquipamentoDoChamado(chamado) {
+  if (!chamado?.device_id) return '';
+  try {
+    const d = await deviceIntecsRepo.getDeviceById(chamado.device_id);
+    if (!d) return '';
+    const nome = d.nome_amigavel || d.tactical_agent_id || '';
+    return d.patrimonio ? `${nome} — PAT ${d.patrimonio}` : nome;
+  } catch {
+    return '';
+  }
+}
+
+// Manchete e frase de abertura que o SOLICITANTE lê, por status novo. Status
+// customizado cai no genérico — o aviso continua saindo, só sem texto próprio.
+const TEXTO_SOLICITANTE = {
+  AGUARDANDO_USUARIO: {
+    titulo: 'Precisamos de uma informação sua',
+    chamada: 'A equipe de TI respondeu e está aguardando seu retorno para continuar o atendimento.'
+  },
+  RESOLVIDO: {
+    titulo: 'Seu chamado foi resolvido',
+    chamada: 'Se o problema voltar a acontecer, é só responder pelo portal que reabrimos o atendimento.'
+  },
+  FECHADO: {
+    titulo: 'Seu chamado foi encerrado',
+    chamada: 'O atendimento foi concluído e o chamado está fechado.'
+  },
+  CANCELADO: {
+    titulo: 'Seu chamado foi cancelado',
+    chamada: 'Se ainda precisar de ajuda, abra um novo chamado pelo portal.'
+  }
+};
+const tituloParaSolicitante = (status) =>
+  TEXTO_SOLICITANTE[status]?.titulo || `Seu chamado está como ${rotular(status)}`;
+const chamadaParaSolicitante = (status) =>
+  TEXTO_SOLICITANTE[status]?.chamada || 'O status do seu chamado foi atualizado pela equipe de TI.';
+
 // Identificação da máquina pelo AgentID que o próprio agente Tactical grava em
 // HKLM\SOFTWARE\TacticalRMM. Chega ao front pelo atalho ?agent= distribuído por
 // script do RMM. É exato — ao contrário do IP, que atrás de NAT aponta para a
@@ -1718,7 +1762,8 @@ app.post('/api/chamados-intecs/status-config', exigirAuth, carregarPerfilChamado
     return res.status(400).json({ error: 'Informe nome e um tipo de sistema válido.' });
   }
   const status = await chamadosIntecsRepo.criarStatus({
-    nome, tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
+    nome, tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0,
+    notifica_solicitante: req.body.notifica_solicitante === true
   });
   res.status(201).json(status);
 }));
@@ -1728,7 +1773,8 @@ app.put('/api/chamados-intecs/status-config/:id', exigirAuth, carregarPerfilCham
   const tiposValidos = ['ABERTO', 'ANDAMENTO', 'RESOLVIDO', 'FECHADO', 'CANCELADO'];
   if (!tiposValidos.includes(tipoSistema)) return res.status(400).json({ error: 'Tipo de sistema inválido.' });
   await chamadosIntecsRepo.atualizarStatus(req.params.id, {
-    tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
+    tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0,
+    notifica_solicitante: req.body.notifica_solicitante // undefined = preserva o valor atual
   });
   res.json({ ok: true });
 }));
@@ -1799,11 +1845,30 @@ app.post('/api/chamados-intecs', exigirAuth, carregarPerfilChamados, wrap(async 
   });
 
   await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, 'CRIADO', null, null, titulo);
+
+  const ator = { id: req.user.sub, email: req.user.email };
+  const chamadoCompleto = await chamadosIntecsRepo.getChamadoIntecs(chamado.id);
+  const equipamento = await nomeEquipamentoDoChamado(chamadoCompleto);
+
   await notificar({
-    tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', email: false,
-    ator: { id: req.user.sub, email: req.user.email },
+    tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', refId: chamado.id,
+    papeis: SININHO_CHAMADOS, email: true,
+    emailPapeis: ['TECNICO', 'MASTER'], // quem atende — usuários básicos não recebem
+    ator,
     titulo: 'Novo chamado INTECS',
-    mensagem: `${req.user.email} abriu o chamado "${titulo}".`
+    mensagem: `${req.user.email} abriu o chamado "${titulo}".`,
+    corpo: corpoChamadoEquipe({
+      chamado: chamadoCompleto, equipamento, autor: req.user.email,
+      chamada: `${req.user.email} abriu um chamado.`
+    })
+  });
+
+  // Recibo para quem abriu. notificarSolicitante() pula quando o autor é o
+  // próprio dono, então aqui o envio é direto — é justamente para ele.
+  await notificarSolicitante({
+    chamado: chamadoCompleto, ator: { id: 0, email: req.user.email }, equipamento,
+    titulo: 'Recebemos seu chamado', // o nº já vai no assunto, via emailParaSolicitante
+    chamada: 'A equipe de TI já foi avisada. Você recebe um e-mail a cada resposta ou mudança de status.'
   });
 
   res.status(201).json(chamado);
@@ -1869,17 +1934,66 @@ app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigir
     for (const [acao, campo, antes, depois] of historicoEntradas) {
       await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, acao, campo, antes, depois);
     }
-    if (historicoEntradas.length) {
+  }
+
+  const atualizado = await chamadosIntecsRepo.getChamadoIntecs(chamado.id);
+
+  // Notifica POR TIPO de mudança, e não uma vez só para o lote: status importa
+  // ao solicitante, responsável importa a quem assumiu, prioridade e categoria
+  // são triagem interna e ficam só no sininho.
+  if (historicoEntradas.length) {
+    const ator = { id: req.user.sub, email: req.user.email };
+    const mudouStatus = historicoEntradas.find(([acao]) => acao === 'STATUS');
+    const mudouResponsavel = historicoEntradas.find(([acao]) => acao === 'RESPONSAVEL');
+    const equipamento = await nomeEquipamentoDoChamado(atualizado);
+
+    if (mudouStatus) {
+      const [, , statusAntes, statusDepois] = mudouStatus;
+      const mudancas = [{ campo: 'Status', de: statusAntes, para: statusDepois }];
       await notificar({
-        tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', email: false,
-        ator: { id: req.user.sub, email: req.user.email },
-        titulo: 'Chamado INTECS atualizado',
-        mensagem: `${req.user.email} atualizou o chamado "${chamado.titulo}".`
+        tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', refId: chamado.id,
+        papeis: SININHO_CHAMADOS, email: false, ator,
+        titulo: 'Status do chamado alterado',
+        mensagem: `#${chamado.id} "${chamado.titulo}": ${statusAntes} → ${statusDepois}.`
+      });
+      // Só avisa o solicitante quando o status novo está marcado para isso
+      // (coluna notifica_solicitante) — evita e-mail de troca interna de fila.
+      if (await chamadosIntecsRepo.statusNotificaSolicitante(statusDepois)) {
+        await notificarSolicitante({
+          chamado: atualizado, ator, equipamento, mudancas,
+          titulo: tituloParaSolicitante(statusDepois),
+          chamada: chamadaParaSolicitante(statusDepois)
+        });
+      }
+    }
+
+    if (mudouResponsavel && atualizado.responsavel_id) {
+      await notificar({
+        tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', refId: chamado.id,
+        papeis: SININHO_CHAMADOS, email: true,
+        emailPapeis: [], emailUsuarioIds: [atualizado.responsavel_id], ator,
+        titulo: 'Chamado atribuído a você',
+        mensagem: `#${chamado.id} "${chamado.titulo}" está sob sua responsabilidade.`,
+        corpo: corpoChamadoEquipe({
+          chamado: atualizado, equipamento, autor: req.user.email,
+          chamada: `${req.user.email} atribuiu este chamado a você.`
+        })
+      });
+    }
+
+    // Prioridade e categoria: só sininho da equipe, sem e-mail para ninguém.
+    const soTriagem = historicoEntradas.filter(([acao]) => ['PRIORIDADE', 'CATEGORIA'].includes(acao));
+    if (soTriagem.length) {
+      const resumo = soTriagem.map(([acao, , antes, depois]) => `${acao.toLowerCase()}: ${antes ?? '—'} → ${depois ?? '—'}`).join('; ');
+      await notificar({
+        tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', refId: chamado.id,
+        papeis: SININHO_CHAMADOS, email: false, ator,
+        titulo: 'Chamado reclassificado',
+        mensagem: `#${chamado.id} "${chamado.titulo}" — ${resumo}.`
       });
     }
   }
 
-  const atualizado = await chamadosIntecsRepo.getChamadoIntecs(chamado.id);
   res.json(atualizado);
 }));
 
@@ -1896,12 +2010,38 @@ app.post('/api/chamados-intecs/:id/comentarios', exigirAuth, carregarPerfilChama
   if (!chamado.sla_respondido_em) {
     await chamadosIntecsRepo.atualizarCamposChamado(chamado.id, { sla_respondido_em: new Date() });
   }
+  const ator = { id: req.user.sub, email: req.user.email };
+  const chamadoCompleto = await chamadosIntecsRepo.getChamadoIntecs(chamado.id);
+  const equipamento = await nomeEquipamentoDoChamado(chamadoCompleto);
+  const daEquipe = ['TECNICO', 'MASTER'].includes(req.perfilCI.role);
+
+  // Sininho é sempre da equipe. O e-mail vai na direção contrária a quem
+  // escreveu: solicitante escreveu -> avisa quem atende; equipe respondeu ->
+  // o solicitante recebe o e-mail dele (abaixo) e, entre a equipe, só o
+  // responsável é avisado, para o resto não virar cópia de conversa alheia.
+  // O responsável entra por id porque pode não ter papel TECNICO.
   await notificar({
-    tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', email: false,
-    ator: { id: req.user.sub, email: req.user.email },
+    tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', refId: chamado.id,
+    papeis: SININHO_CHAMADOS, ator,
+    email: true,
+    emailPapeis: daEquipe ? [] : ['TECNICO', 'MASTER'],
+    emailUsuarioIds: chamado.responsavel_id ? [chamado.responsavel_id] : [],
     titulo: 'Novo comentário no chamado INTECS',
-    mensagem: `${req.user.email} comentou no chamado "${chamado.titulo}".`
+    mensagem: `${req.user.email} comentou no chamado "${chamado.titulo}".`,
+    corpo: corpoChamadoEquipe({
+      chamado: chamadoCompleto, equipamento, autor: req.user.email, comentario: texto,
+      chamada: 'Novo comentário no chamado.'
+    })
   });
+
+  if (daEquipe) {
+    await notificarSolicitante({
+      chamado: chamadoCompleto, ator, equipamento, comentario: texto,
+      titulo: 'A equipe de TI respondeu seu chamado',
+      chamada: 'Você pode responder pelo portal, no próprio chamado.'
+    });
+  }
+
   res.status(201).json(comentario);
 }));
 

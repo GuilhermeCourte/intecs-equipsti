@@ -1,0 +1,52 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>gerador de icones do e-mail</title>
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+  /* Cada caixa e capturada como um PNG. O fundo da caixa e o mesmo fundo
+     sobre o qual o icone vai aparecer no e-mail — cliente de e-mail nao tem
+     PNG transparente confiavel no Outlook, entao a cor vai assada no arquivo. */
+  body { margin: 0; background: #fff; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; }
+  .cel {
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    color: #5B45E0; font-size: 26px; line-height: 1;
+  }
+  .branco { background: #FFFFFF; }
+  .cartao { background: #F5F4F8; }
+
+  /* Tile grande do cabecalho: quadrado lavanda arredondado com o icone dentro. */
+  #ic-topo {
+    width: 112px; height: 112px; background: #FFFFFF;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #ic-topo span {
+    width: 96px; height: 96px; border-radius: 28px; background: #EDEAFB;
+    display: flex; align-items: center; justify-content: center;
+    color: #5B45E0; font-size: 54px; line-height: 1;
+  }
+
+  /* Tile do card do chamado: quadrado branco sobre o cinza do cartao. */
+  #ic-chamado {
+    width: 88px; height: 88px; background: #F5F4F8;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #ic-chamado span {
+    width: 72px; height: 72px; border-radius: 18px; background: #FFFFFF;
+    display: flex; align-items: center; justify-content: center;
+    color: #5B45E0; font-size: 38px; line-height: 1;
+  }
+</style>
+
+<div id="ic-topo"><span><i class="ph-fill ph-headset"></i></span></div>
+<div id="ic-chamado"><span><i class="ph-fill ph-clipboard-text"></i></span></div>
+
+<div class="cel branco" id="ic-solicitante"><i class="ph-bold ph-user"></i></div>
+<div class="cel branco" id="ic-equipamento"><i class="ph-bold ph-laptop"></i></div>
+<div class="cel branco" id="ic-unidade"><i class="ph-bold ph-buildings"></i></div>
+<div class="cel branco" id="ic-responsavel"><i class="ph-bold ph-user-circle"></i></div>
+<div class="cel branco" id="ic-categoria"><i class="ph-bold ph-list-dashes"></i></div>
+<div class="cel branco" id="ic-aberto"><i class="ph-bold ph-clock"></i></div>
+
+<div class="cel cartao" id="ic-prazo"><i class="ph-bold ph-calendar-blank"></i></div>
+<div class="cel cartao" id="ic-comentario"><i class="ph-bold ph-chat-circle-dots"></i></div>
+<div class="cel cartao" id="ic-status"><i class="ph-bold ph-arrows-clockwise"></i></div>
