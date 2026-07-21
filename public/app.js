@@ -1932,7 +1932,7 @@ async function importarXlsx() {
     if (i !== -1) colIdx[c.field] = i;
   });
 
-  const obrigatorios = ['unidade', 'status', 'setor', 'ns', 'pat', 'equipamento', 'tipoAquisicao', 'protocolo', 'dataRecebimento'];
+  const obrigatorios = ['unidade', 'status', 'setor', 'ns', 'pat', 'equipamento', 'tipoAquisicao'];
   const faltando = obrigatorios.filter((f) => colIdx[f] === undefined);
   if (faltando.length) {
     $('alertImport').innerHTML =

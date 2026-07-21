@@ -364,8 +364,6 @@ function validarRegistro(d) {
   if (!d.equipamento) faltando.push('EQUIPAMENTO');
   if (!d.pat) faltando.push('PAT MSA');
   if (!d.tipo_aquisicao) faltando.push('COMPRADO/LOCADO');
-  if (!d.protocolo) faltando.push('PROTOCOLO');
-  if (!d.dataRecebimento) faltando.push('DATA DE RECEBIMENTO');
   if (faltando.length) throw new Error('Preencha: ' + faltando.join(', ') + '.');
 }
 
