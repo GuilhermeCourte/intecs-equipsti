@@ -13,7 +13,7 @@ import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 import { notificar, notificarTeste, notificarSolicitante } from './notificacoes.js';
-import { corpoChamadoEquipe, rotular } from './emailChamado.js';
+import { emailParaEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
@@ -1863,8 +1863,9 @@ app.post('/api/chamados-intecs', exigirAuth, carregarPerfilChamados, wrap(async 
     ator,
     titulo: 'Novo chamado INTECS',
     mensagem: `${req.user.email} abriu o chamado "${titulo}".`,
-    corpo: corpoChamadoEquipe({
+    corpo: emailParaEquipe({
       chamado: chamadoCompleto, equipamento, autor: req.user.email,
+      tile: 'recibo', titulo: 'Novo chamado INTECS',
       chamada: `${req.user.email} abriu um chamado.`
     })
   });
@@ -1982,8 +1983,9 @@ app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigir
         emailPapeis: [], emailUsuarioIds: [atualizado.responsavel_id], ator,
         titulo: 'Chamado atribuído a você',
         mensagem: `#${chamado.id} "${chamado.titulo}" está sob sua responsabilidade.`,
-        corpo: corpoChamadoEquipe({
+        corpo: emailParaEquipe({
           chamado: atualizado, equipamento, autor: req.user.email,
+          tile: 'generico', titulo: 'Chamado atribuído a você',
           chamada: `${req.user.email} atribuiu este chamado a você.`
         })
       });
@@ -2036,8 +2038,9 @@ app.post('/api/chamados-intecs/:id/comentarios', exigirAuth, carregarPerfilChama
     emailUsuarioIds: chamado.responsavel_id ? [chamado.responsavel_id] : [],
     titulo: 'Novo comentário no chamado INTECS',
     mensagem: `${req.user.email} comentou no chamado "${chamado.titulo}".`,
-    corpo: corpoChamadoEquipe({
+    corpo: emailParaEquipe({
       chamado: chamadoCompleto, equipamento, autor: req.user.email, comentario: texto,
+      tile: 'resposta', titulo: 'Novo comentário no chamado INTECS',
       chamada: 'Novo comentário no chamado.'
     })
   });
