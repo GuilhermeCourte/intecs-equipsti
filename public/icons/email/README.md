@@ -26,9 +26,25 @@ Cada arquivo tem o dobro do tamanho de exibição, para não borrar em tela reti
 
 | Arquivo | Fonte | Exibido | Onde |
 |---|---|---|---|
-| `topo.png` | 112px | 56px | tile ao lado da manchete |
+| `topo-*.png` | 112px | 56px | tile ao lado da manchete |
 | `chamado.png` | 88px | 44px | tile do card do chamado |
 | demais | 44px | 22px | rótulos do grid, prazo, evento |
+
+## Tiles do topo, um por evento
+
+O ícone e a cor do topo dizem o que aconteceu antes da pessoa ler o texto. As cores saem
+da mesma paleta de status usada nos selos, então o topo nunca contradiz o selo logo abaixo.
+`emailChamado.js` escolhe pelo parâmetro `tile`; valor desconhecido cai no `generico`.
+
+| `tile` | Ícone | Cor | Quando |
+|---|---|---|---|
+| `recibo` | `ph-bell` | âmbar `#9A6700` / `#FCF3E0` | chamado aberto, recibo ao solicitante |
+| `resposta` | `ph-chat-circle-dots` | índigo `#4A3BD1` / `#EDEBFA` | equipe comentou |
+| `resolvido` | `ph-check-circle` | verde `#1A7F37` / `#E6F4EA` | status virou RESOLVIDO |
+| `aguardando` | `ph-question` | laranja `#B4530F` / `#FAEEE1` | status pede ação do solicitante |
+| `fechado` | `ph-archive` | neutro `#57534E` / `#EFEDE9` | status virou FECHADO |
+| `cancelado` | `ph-x-circle` | vermelho `#B3261E` / `#FBECEA` | status virou CANCELADO |
+| `generico` | `ph-arrows-clockwise` | índigo `#4A3BD1` / `#EDEBFA` | status customizado, sem tile próprio |
 
 ## Como regerar
 
@@ -42,7 +58,7 @@ playwright-cli screenshot "#ic-solicitante" --filename solicitante.png --hires
 
 O arquivo sai no diretório de trabalho, não em `.playwright-cli/`.
 
-Ícones em uso: `ph-fill ph-headset` (topo), `ph-fill ph-clipboard-text` (chamado) e,
+Ícones em uso: `ph-fill ph-clipboard-text` (chamado), os tiles da tabela acima e,
 em `ph-bold`: `ph-user`, `ph-laptop`, `ph-buildings`, `ph-user-circle`,
 `ph-list-dashes`, `ph-clock`, `ph-calendar-blank`, `ph-chat-circle-dots`,
 `ph-arrows-clockwise`. Cor `#5B45E0`, o índigo do portal.

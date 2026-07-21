@@ -99,9 +99,15 @@ function selo({ texto, bg, fg }) {
 
 // ---------- blocos do e-mail do solicitante ----------
 
+// Tiles do cabeçalho, um por tipo de evento — o ícone e a cor dizem o que
+// aconteceu antes da pessoa ler o texto. As cores saem da mesma paleta de
+// status dos selos, então o topo nunca contradiz o selo logo abaixo.
+// Ver a tabela em public/icons/email/README.md.
+const TILES = new Set(['recibo', 'resposta', 'resolvido', 'aguardando', 'fechado', 'cancelado', 'generico']);
+
 // Cabeçalho de conteúdo: tile do ícone à esquerda, manchete e chamada à direita.
-function tituloHtml({ titulo, chamada }) {
-  const tile = icone('topo', 56);
+function tituloHtml({ titulo, chamada, tile: nomeTile }) {
+  const tile = icone(`topo-${TILES.has(nomeTile) ? nomeTile : 'generico'}`, 56);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
     ${tile ? `<td width="56" valign="top" style="padding-right:16px;">${tile}</td>` : ''}
     <td valign="top">
@@ -148,28 +154,31 @@ function celulaInfo({ icone: nome, rotulo, valor }) {
   </tr></table>`;
 }
 
-// Grid de duas colunas. Campo vazio e' descartado antes de parear, entao o
-// grid nunca mostra buraco no meio.
+// Grid de duas colunas com POSIÇÕES FIXAS: cada campo tem seu lugar, e campo
+// vazio vira célula em branco em vez de puxar os de baixo. Assim a leitura é
+// sempre a mesma, chamado com ou sem equipamento vinculado.
 function gridInfoHtml(chamado, equipamento) {
   const categoria = [chamado.categoria_nome, chamado.subcategoria_nome].filter(Boolean).join(' › ');
   const local = [chamado.unidade, chamado.departamento].filter(Boolean).join(' · ');
 
-  const campos = [
-    { icone: 'solicitante', rotulo: 'Solicitante', valor: chamado.criado_por },
-    { icone: 'equipamento', rotulo: 'Equipamento', valor: equipamento },
-    { icone: 'unidade', rotulo: 'Unidade', valor: local },
-    { icone: 'responsavel', rotulo: 'Responsável', valor: chamado.responsavel_email },
-    { icone: 'categoria', rotulo: 'Categoria', valor: categoria },
-    { icone: 'aberto', rotulo: 'Aberto em', valor: dataBr(chamado.criado_em) }
-  ].filter((c) => c.valor && c.valor !== '—');
+  const preenchido = (c) => c && c.valor && c.valor !== '—';
+  const grade = [
+    [{ icone: 'unidade', rotulo: 'Unidade', valor: local },
+     { icone: 'solicitante', rotulo: 'Solicitante', valor: chamado.criado_por }],
+    [{ icone: 'equipamento', rotulo: 'Equipamento', valor: equipamento },
+     { icone: 'categoria', rotulo: 'Categoria', valor: categoria }],
+    [{ icone: 'responsavel', rotulo: 'Responsável', valor: chamado.responsavel_email },
+     { icone: 'aberto', rotulo: 'Aberto em', valor: dataBr(chamado.criado_em) }]
+  ];
 
   let linhas = '';
-  for (let i = 0; i < campos.length; i += 2) {
-    const esquerda = celulaInfo(campos[i]);
-    const direita = campos[i + 1] ? celulaInfo(campos[i + 1]) : '';
+  for (const [esq, dir] of grade) {
+    // Linha inteira vazia sai fora: buraco de uma célula preserva a coluna,
+    // mas de duas só produziria um vão vertical sem informação nenhuma.
+    if (!preenchido(esq) && !preenchido(dir)) continue;
     linhas += `<tr>
-      <td width="50%" valign="top" style="padding:0 10px 20px 0;">${esquerda}</td>
-      <td width="50%" valign="top" style="padding:0 0 20px 10px;">${direita}</td>
+      <td width="50%" valign="top" style="padding:0 10px 20px 0;">${preenchido(esq) ? celulaInfo(esq) : '&nbsp;'}</td>
+      <td width="50%" valign="top" style="padding:0 0 20px 10px;">${preenchido(dir) ? celulaInfo(dir) : '&nbsp;'}</td>
     </tr>`;
   }
   if (!linhas) return '';
@@ -253,9 +262,12 @@ const respiro = (px) => `<div style="height:${px}px;line-height:${px}px;font-siz
  * @param {string} [o.comentario] texto do comentário novo
  * @param {Array}  [o.mudancas]   [{de, para}] da transição de status
  * @param {string} [o.equipamento]
+ * @param {string} [o.tile]  qual tile do cabeçalho: 'recibo' | 'resposta' |
+ *   'resolvido' | 'aguardando' | 'fechado' | 'cancelado'. Vazio ou desconhecido
+ *   cai no 'generico'.
  * @returns {{subject:string, html:string, text:string}}
  */
-export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento }) {
+export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, tile }) {
   const url = ORIGEM ? `${ORIGEM}/chamados?chamado=${chamado.id}` : '';
   const evento = eventoHtml({ comentario, autor, mudancas });
 
@@ -278,7 +290,7 @@ export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentar
         </td></tr>
 
         <tr><td style="background:${P.surface};padding:26px;border:1px solid ${P.linha};border-top:0;border-radius:0 0 14px 14px;">
-          ${tituloHtml({ titulo, chamada })}
+          ${tituloHtml({ titulo, chamada, tile })}
           ${evento ? respiro(22) + evento : ''}
           ${respiro(18)}
           ${cardChamadoHtml(chamado)}

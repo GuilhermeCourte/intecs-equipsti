@@ -234,7 +234,7 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
  * @param {string} [o.equipamento]
  * @returns {Promise<boolean>} true se o e-mail saiu
  */
-export async function notificarSolicitante({ chamado, ator, titulo, chamada, comentario, mudancas, equipamento }) {
+export async function notificarSolicitante({ chamado, ator, titulo, chamada, comentario, mudancas, equipamento, tile }) {
   try {
     const donoId = Number(chamado?.usuario_id) || 0;
     if (!donoId) return false;
@@ -252,7 +252,7 @@ export async function notificarSolicitante({ chamado, ator, titulo, chamada, com
 
     const { subject, html, text } = emailParaSolicitante({
       chamado, titulo, chamada, autor: ator?.email || 'a equipe de TI',
-      comentario, mudancas, equipamento
+      comentario, mudancas, equipamento, tile
     });
     return await enviarEmail({ to: destino, subject, html, text });
   } catch (e) {
