@@ -207,7 +207,6 @@ export function emailParaSolicitante({ chamado, titulo, chamada, autor, comentar
         </td></tr>
 
         <tr><td style="padding:18px 26px 6px;text-align:center;font-size:12px;line-height:1.6;color:${P.faint};">
-          Você recebeu este aviso porque abriu o chamado #${chamado.id}.<br>
           Mensagem automática do sistema de Gestão TI.
         </td></tr>
 
