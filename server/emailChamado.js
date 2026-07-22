@@ -243,8 +243,8 @@ function eventoHtml({ comentario, autor, mudancas }) {
 function botoesHtml(botoes) {
   const tds = (botoes || []).filter((b) => b && b.url).map((b) => {
     const img = b.icone && iconeUrl(b.icone)
-      ? `<img src="${esc(iconeUrl(b.icone))}" width="16" height="16" alt=""
-           style="vertical-align:-3px;border:0;margin-right:8px;width:16px;height:16px;">`
+      ? `<img src="${esc(iconeUrl(b.icone))}" width="24" height="24" alt=""
+           style="vertical-align:-7px;border:0;margin-right:8px;width:24px;height:24px;">`
       : '';
     return `<td align="center" style="background:${P.cta};border-radius:10px;">
       <a href="${esc(b.url)}" style="display:inline-block;padding:13px 24px;font-family:${FONTE};
