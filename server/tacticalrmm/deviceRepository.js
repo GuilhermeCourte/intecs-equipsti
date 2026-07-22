@@ -120,6 +120,17 @@ export async function getDeviceById(deviceId) {
   return result.recordset[0] || null;
 }
 
+// Linha do cache de agentes (a mesma tabela que alimenta a aba Conexão Remota).
+// Usada no detalhe do chamado para mostrar hostname/status da máquina vinculada.
+export async function getAgenteCache(tacticalAgentId) {
+  const result = await query(
+    `SELECT hostname, status_online, logged_username, site_name
+       FROM dbo.EQUIPSTI_tactical_agents WHERE tactical_agent_id = @id`,
+    { id: S(tacticalAgentId) }
+  );
+  return result.recordset[0] || null;
+}
+
 export async function salvarSnapshot(deviceId, chamadoId, snapshot) {
   const inserted = await query(
     `INSERT INTO dbo.EQUIPSTI_device_snapshots

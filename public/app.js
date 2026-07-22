@@ -125,7 +125,7 @@ function showAlert(_containerId, type, message) {
 // ---------- Confirmar / perguntar via modal (substitui confirm/prompt) ----------
 let askOnOk = null; // async handler — quando definido, OK não fecha o dialog direto
 
-function uiAsk({ title, message, input, value, input2Label, value2, input2Select, input3Label, value3, input3Mask, input4Label, value4, input5Label, value5, okText, danger, transfer, onOk }) {
+function uiAsk({ title, message, input, value, input2Label, value2, input2Select, input3Label, value3, input3Mask, input4Label, value4, input5Label, value5, okText, danger, transfer, onOk, semCancelar }) {
   return new Promise((resolve) => {
     askResolve = resolve;
     askOnOk = onOk || null;
@@ -216,6 +216,7 @@ function uiAsk({ title, message, input, value, input2Label, value2, input2Select
     const ok = $('askOk');
     ok.textContent = okText || 'OK';
     ok.className = 'btn ' + (danger ? 'btn-outline-danger' : 'btn-primary');
+    $('askCancel').classList.toggle('hidden', !!semCancelar);
     $('askOverlay').classList.add('show');
     if (input) setTimeout(() => { inp.focus(); inp.select(); }, 100);
   });
@@ -270,6 +271,11 @@ function uiConfirm(message, opts = {}) {
     okText: opts.okText || 'Confirmar', danger: opts.danger !== false,
     transfer: opts.transfer
   });
+}
+
+// Aviso simples (só OK, sem Cancelar) por cima de qualquer modal aberto.
+function uiAviso(message, opts = {}) {
+  return uiAsk({ title: opts.title || 'Aviso', message, okText: 'OK', danger: false, semCancelar: true });
 }
 
 function uiPrompt(message, opts = {}) {
@@ -3450,6 +3456,7 @@ let modalNovoChamadoIntecs = null;
 let modalChamadoIntecsDetalhe = null;
 let _chamadosIntecs = [];
 let _chamadoIntecsAtual = null;
+let _chamadoIntecsDetalhe = null; // dados do chamado aberto no modal (p/ regra de conexão remota)
 let _ciCategorias = [];
 let _ciUsuarios = [];
 let _ciSort = { col: 'criado_em', dir: 'desc' };
@@ -3765,6 +3772,7 @@ function renderHistorico(lista) {
 
 async function abrirChamadoIntecsDetalhe(id) {
   _chamadoIntecsAtual = id;
+  _chamadoIntecsDetalhe = null;
   $('ciDetalheTitle').textContent = 'Carregando...';
   ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => {
     $(elId).innerHTML = '<span class="text-muted">Carregando...</span>';
@@ -3775,6 +3783,7 @@ async function abrirChamadoIntecsDetalhe(id) {
 
   try {
     const data = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id));
+    _chamadoIntecsDetalhe = data;
     $('ciDetalheTitle').textContent = `#${data.id} — ${data.titulo}`;
     $('ciDetStatus').value = data.status;
     $('ciDetPrioridade').value = data.prioridade;
@@ -3792,6 +3801,36 @@ async function abrirChamadoIntecsDetalhe(id) {
   await carregarEquipamentoDoChamado(id);
 }
 
+// Cabeçalho da máquina vinculada ao chamado (a que o solicitante escolheu no
+// portal, não necessariamente a de onde ele abriu) com os botões de conexão
+// remota da aba Conexão Remota — o Take Control vai direto para ela.
+function renderMaquinaDoChamado(resumo) {
+  const maquina = resumo.maquina || {};
+  const hostname = maquina.hostname || '';
+  const agentId = resumo.tactical_agent_id || '';
+  if (!hostname && !agentId) return '';
+  const online = !!maquina.status_online;
+  // Conexão só para quem está atendendo o chamado: sem atribuição, o clique
+  // avisa em um modal (com atalho para se atribuir) em vez de conectar.
+  const atribuidoAMim = _chamadoIntecsDetalhe?.responsavel_id === _ciPerfil?.id;
+  const tituloControl = atribuidoAMim ? 'Assumir o controle da tela' : 'Atribua o chamado a você para conectar';
+  const botoes = podeAtenderCI() && agentId
+    ? '<div class="d-flex gap-1">'
+      + crBtn(agentId, 'control', tituloControl, 'ph-monitor-play', 'Conectar', online)
+      + crBtn(agentId, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', online)
+      + crBtn(agentId, 'file', 'Arquivos remotos', 'ph-folder-open', '', online)
+      + '</div>'
+    : '';
+  const aviso = botoes && !atribuidoAMim
+    ? '<div class="text-muted small mb-2"><i class="ph ph-info"></i> Atribua o chamado a você para conectar à máquina.</div>'
+    : '';
+  return '<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom pb-2 mb-2">'
+    + '<div>' + crBolinha(online) + '<strong>' + escapeHtml(hostname || agentId) + '</strong>'
+    + (maquina.site_name ? ' <span class="text-muted small">· ' + escapeHtml(maquina.site_name) + '</span>' : '')
+    + '</div>' + botoes + '</div>'
+    + aviso + '<div id="ciEqAlerta"></div>';
+}
+
 async function carregarEquipamentoDoChamado(id) {
   try {
     const resumo = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id) + '/equipamento');
@@ -3800,7 +3839,7 @@ async function carregarEquipamentoDoChamado(id) {
       ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => { $(elId).innerHTML = msg; });
       return;
     }
-    $('ci-eq-resumo').innerHTML = renderCamposEquipamento({
+    $('ci-eq-resumo').innerHTML = renderMaquinaDoChamado(resumo) + renderCamposEquipamento({
       status: resumo.status_online ? 'Online' : 'Offline',
       'CPU (%)': resumo.cpu_pct, 'RAM (%)': resumo.ram_pct, 'Uptime (seg)': resumo.uptime_seg,
       'Coletado em': fmtDataHora(resumo.coletado_em)
@@ -3933,6 +3972,18 @@ function configurarChamadosIntecs() {
     } finally {
       btn.disabled = false;
     }
+  });
+
+  // Botões de conexão remota da máquina vinculada (cabeçalho do tab Resumo).
+  // Sem atribuição não conecta: avisa em modal, com atalho para se atribuir.
+  $('ci-eq-resumo').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('.btn-cr');
+    if (!btn || btn.disabled) return;
+    if (_chamadoIntecsDetalhe && _chamadoIntecsDetalhe.responsavel_id !== _ciPerfil.id) {
+      await uiAviso('Atribua o chamado a você para conectar à máquina.', { title: 'Chamado não atribuído' });
+      return;
+    }
+    conectarViaBotao(btn);
   });
 
   $('btnAtualizarEquipamentoIntecs').addEventListener('click', async () => {
@@ -4314,9 +4365,10 @@ const crBolinha = (online) => '<span class="dash-dot ' + (online ? 'dash-dot--gr
   + '" title="' + (online ? 'Online' : 'Offline') + '"></span>';
 
 // Botão de conexão (Conectar/Terminal/Arquivos) — usado na tabela (pequeno)
-// e no modal (tamanho cheio).
+// e no modal (tamanho cheio). Offline vira cinza preenchido (btn-secondary),
+// como o botão de comentário bloqueado no detalhe do chamado.
 const crBtn = (agentId, tipo, titulo, icone, rotulo, online, extra = '', pequeno = true) =>
-  `<button type="button" class="btn ${pequeno ? 'btn-sm ' : ''}btn-outline-primary btn-cr${extra ? ' ' + extra : ''}"`
+  `<button type="button" class="btn ${pequeno ? 'btn-sm ' : ''}${online ? 'btn-outline-primary' : 'btn-secondary'} btn-cr${extra ? ' ' + extra : ''}"`
   + ` data-agent-id="${escapeHtml(agentId)}" data-cr-tipo="${tipo}" title="${titulo}"${online ? '' : ' disabled'}>`
   + `<i class="ph ${icone}"></i>${rotulo ? ' ' + rotulo : ''}</button>`;
 
@@ -4355,7 +4407,7 @@ function renderConexaoRemota() {
     const online = !!a.status_online;
     const acoes = podeConectar
       ? '<div class="d-flex gap-1 justify-content-end">'
-        + crBtn(a.tactical_agent_id, 'control', 'Assumir o controle da tela', 'ph-monitor-play', 'Conectar', online)
+        + crBtn(a.tactical_agent_id, 'control', 'Assumir o controle da tela', 'ph-monitor-play', '', online)
         + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', online)
         + crBtn(a.tactical_agent_id, 'file', 'Arquivos remotos', 'ph-folder-open', '', online)
         + '</div>'
@@ -4408,6 +4460,9 @@ async function conectarViaBotao(btn) {
     const msg = 'Não foi possível conectar: ' + escapeHtml(err.message);
     if ($('modalConexao').classList.contains('show')) {
       $('cxAlerta').innerHTML = '<div class="alert alert-danger py-2 small">' + msg + '</div>';
+    } else if ($('ciEqAlerta') && $('modalChamadoIntecsDetalhe').classList.contains('show')) {
+      // Botões no detalhe do chamado (tab Resumo do equipamento vinculado).
+      $('ciEqAlerta').innerHTML = '<div class="alert alert-danger py-2 small">' + msg + '</div>';
     } else {
       $('crStatus').innerHTML = '<span class="text-danger">' + msg + '</span>';
     }
@@ -4448,6 +4503,14 @@ function aplicarPermissoesDetalheChamado(chamado) {
   ['ciDetStatus', 'ciDetPrioridade', 'ciDetResponsavel'].forEach((id) => { $(id).disabled = !podeAtender; });
   $('btnAtualizarEquipamentoIntecs').style.display = podeAtender ? '' : 'none';
   $('ciNovoComentario').closest('.d-flex').style.display = podeComentar ? '' : 'none';
+  // Técnico só comenta no chamado atribuído a ele — mesmo que também seja o
+  // solicitante. Solicitante comum (portal) não passa por aqui.
+  const comentarioBloqueado = podeAtender && chamado.responsavel_id !== _ciPerfil.id;
+  $('ciNovoComentario').disabled = comentarioBloqueado;
+  $('ciNovoComentario').placeholder = comentarioBloqueado
+    ? 'Atribua o chamado a você para enviar um comentário'
+    : 'Escreva um comentário...';
+  $('btnEnviarComentarioIntecs').disabled = comentarioBloqueado;
   const btnAtribuir = $('btnAtribuirAMim');
   btnAtribuir.style.display = podeAtender ? '' : 'none';
   btnAtribuir.disabled = chamado.responsavel_id === _ciPerfil.id;

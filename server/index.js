@@ -2057,8 +2057,17 @@ app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigir
 app.post('/api/chamados-intecs/:id/comentarios', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
   const chamado = await chamadosIntecsRepo.getChamadoIntecs(req.params.id);
   if (!chamado) return res.status(404).json({ error: 'Chamado não encontrado.' });
-  const podeComentar = ['TECNICO', 'MASTER'].includes(req.perfilCI.role) || chamado.usuario_id === req.perfilCI.id;
-  if (!podeComentar) return res.status(403).json({ error: 'Sem permissão para comentar neste chamado.' });
+  // Atendente só comenta no chamado atribuído a ele (mesmo sendo o solicitante);
+  // solicitante comum comenta no próprio chamado, como sempre.
+  const daEquipe = ['TECNICO', 'MASTER'].includes(req.perfilCI.role);
+  const podeComentar = daEquipe
+    ? chamado.responsavel_id === req.perfilCI.id
+    : chamado.usuario_id === req.perfilCI.id;
+  if (!podeComentar) {
+    return res.status(403).json({ error: daEquipe
+      ? 'Atribua o chamado a você para enviar um comentário.'
+      : 'Sem permissão para comentar neste chamado.' });
+  }
   const texto = trim(req.body.texto || '');
   if (!texto) return res.status(400).json({ error: 'Escreva um comentário.' });
 
@@ -2070,7 +2079,6 @@ app.post('/api/chamados-intecs/:id/comentarios', exigirAuth, carregarPerfilChama
   const ator = { id: req.user.sub, email: req.user.email };
   const chamadoCompleto = await chamadosIntecsRepo.getChamadoIntecs(chamado.id);
   const equipamento = await nomeEquipamentoDoChamado(chamadoCompleto);
-  const daEquipe = ['TECNICO', 'MASTER'].includes(req.perfilCI.role);
 
   // Sininho é sempre da equipe. O e-mail vai na direção contrária a quem
   // escreveu: solicitante escreveu -> avisa quem atende; equipe respondeu ->
@@ -2110,7 +2118,23 @@ app.get('/api/chamados-intecs/:id/equipamento', exigirAuth, carregarPerfilChamad
   if (!(await podeVerChamado(req.perfilCI, chamado))) return res.status(403).json({ error: 'Sem acesso a este chamado.' });
   if (!chamado.device_id) return res.json(null);
   const resumo = await deviceService.getDeviceSummary(chamado.device_id);
-  res.json(resumo);
+  if (!resumo) return res.json(null);
+
+  // Identifica a máquina vinculada para o front oferecer a conexão remota
+  // (Conectar/Terminal/Arquivos) direto do detalhe do chamado. Hostname e
+  // status vêm do cache de agentes (mesma fonte da aba Conexão Remota);
+  // fallback para o nome do device e o status do snapshot.
+  const device = await deviceIntecsRepo.getDeviceById(chamado.device_id);
+  const agente = device?.tactical_agent_id ? await deviceIntecsRepo.getAgenteCache(device.tactical_agent_id) : null;
+  res.json({
+    ...resumo,
+    tactical_agent_id: device?.tactical_agent_id || null,
+    maquina: {
+      hostname: agente?.hostname || device?.nome_amigavel || null,
+      status_online: agente ? !!agente.status_online : !!resumo.status_online,
+      site_name: agente?.site_name || null
+    }
+  });
 }));
 
 app.post('/api/chamados-intecs/:id/equipamento/atualizar', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
