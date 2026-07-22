@@ -158,14 +158,15 @@ function celulaInfo({ icone: nome, rotulo, valor }) {
   </tr></table>`;
 }
 
-// Grid de duas colunas com POSIÇÕES FIXAS: cada campo tem seu lugar, e campo
-// vazio vira célula em branco em vez de puxar os de baixo. Assim a leitura é
-// sempre a mesma, chamado com ou sem equipamento vinculado.
+// Grid de duas colunas com POSIÇÕES FIXAS: cada campo tem seu lugar SEMPRE —
+// campo vazio mantém o ícone e o rótulo e mostra um traço no valor, em vez de
+// deixar um buraco em branco. Assim a leitura é sempre a mesma, chamado com ou
+// sem equipamento vinculado.
 function gridInfoHtml(chamado, equipamento) {
   const categoria = [chamado.categoria_nome, chamado.subcategoria_nome].filter(Boolean).join(' › ');
   const local = [chamado.unidade, chamado.departamento].filter(Boolean).join(' · ');
 
-  const preenchido = (c) => c && c.valor && c.valor !== '—';
+  const comTraco = (c) => ({ ...c, valor: c.valor && c.valor !== '—' ? c.valor : '—' });
   const grade = [
     [{ icone: 'unidade', rotulo: 'Unidade', valor: local },
      { icone: 'solicitante', rotulo: 'Solicitante', valor: chamado.criado_por }],
@@ -177,15 +178,11 @@ function gridInfoHtml(chamado, equipamento) {
 
   let linhas = '';
   for (const [esq, dir] of grade) {
-    // Linha inteira vazia sai fora: buraco de uma célula preserva a coluna,
-    // mas de duas só produziria um vão vertical sem informação nenhuma.
-    if (!preenchido(esq) && !preenchido(dir)) continue;
     linhas += `<tr>
-      <td width="50%" valign="top" style="padding:0 10px 20px 0;">${preenchido(esq) ? celulaInfo(esq) : '&nbsp;'}</td>
-      <td width="50%" valign="top" style="padding:0 0 20px 10px;">${preenchido(dir) ? celulaInfo(dir) : '&nbsp;'}</td>
+      <td width="50%" valign="top" style="padding:0 10px 20px 0;">${celulaInfo(comTraco(esq))}</td>
+      <td width="50%" valign="top" style="padding:0 0 20px 10px;">${celulaInfo(comTraco(dir))}</td>
     </tr>`;
   }
-  if (!linhas) return '';
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
       style="margin-top:24px;">${linhas}</table>`;
 }
@@ -240,15 +237,23 @@ function eventoHtml({ comentario, autor, mudancas }) {
   </tr></table>`;
 }
 
-// Botão do CTA. Usa tabela + fundo sólido: <a> estilizado some no Outlook.
-function botaoHtml(url, texto) {
-  if (!url) return '';
+// Botões de CTA, lado a lado numa única linha centralizada. Usa tabela +
+// fundo sólido: <a> estilizado some no Outlook. O ícone é PNG com o laranja
+// do botão assado no fundo (ver icons/email/README). Botão sem url é pulado.
+function botoesHtml(botoes) {
+  const tds = (botoes || []).filter((b) => b && b.url).map((b) => {
+    const img = b.icone && iconeUrl(b.icone)
+      ? `<img src="${esc(iconeUrl(b.icone))}" width="16" height="16" alt=""
+           style="vertical-align:-3px;border:0;margin-right:8px;width:16px;height:16px;">`
+      : '';
+    return `<td align="center" style="background:${P.cta};border-radius:10px;">
+      <a href="${esc(b.url)}" style="display:inline-block;padding:13px 24px;font-family:${FONTE};
+         font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">${img}${esc(b.texto)}</a>
+    </td>`;
+  });
+  if (!tds.length) return '';
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"
-      style="margin:26px auto 4px;"><tr>
-    <td align="center" style="background:${P.cta};border-radius:10px;">
-      <a href="${esc(url)}" style="display:inline-block;padding:13px 30px;font-family:${FONTE};
-         font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">${esc(texto)}</a>
-    </td></tr></table>`;
+      style="margin:26px auto 4px;"><tr>${tds.join('<td width="12">&nbsp;</td>')}</tr></table>`;
 }
 
 // Espaçador vertical entre os cards.
@@ -258,7 +263,7 @@ const respiro = (px) => `<div style="height:${px}px;line-height:${px}px;font-siz
 // — a única diferença é a faixa do topo, e para onde o botão leva.
 // 'cabecalhoEstilo' é passado inteiro pelo chamador porque o gradiente precisa
 // de background-color e background-image separados (ver HEADER_GRADIENTE).
-function montarDocumento({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, tile, url, cabecalhoBg, cabecalhoEstilo }) {
+function montarDocumento({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, tile, url, urlConectar, cabecalhoBg, cabecalhoEstilo }) {
   const evento = eventoHtml({ comentario, autor, mudancas });
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -285,7 +290,10 @@ function montarDocumento({ chamado, titulo, chamada, autor, comentario, mudancas
           ${cardChamadoHtml(chamado)}
           ${gridInfoHtml(chamado, equipamento)}
           ${prazoHtml(chamado)}
-          ${botaoHtml(url, 'Ver chamado')}
+          ${botoesHtml([
+            { url, texto: 'Ver chamado', icone: 'btn-ver' },
+            { url: urlConectar, texto: 'Conectar', icone: 'btn-conectar' }
+          ])}
         </td></tr>
 
         <tr><td style="padding:18px 26px 6px;text-align:center;font-size:12px;line-height:1.6;color:${P.faint};">
@@ -337,19 +345,23 @@ export function emailParaSolicitante(o) {
  * @returns {{html:string, texto:string}}
  */
 export function emailParaEquipe(o) {
-  const url = ORIGEM ? `${ORIGEM}/#tab-chamados` : '';
+  // Deep-links do admin: ?chamado= abre o modal do chamado; ?conectar= (só
+  // quando há máquina vinculada) já dispara o Take Control — o MeshCentral usa
+  // token efêmero, então o e-mail nunca leva a URL do mesh, sempre o admin.
+  const url = ORIGEM ? `${ORIGEM}/?chamado=${o.chamado.id}` : '';
+  const urlConectar = ORIGEM && o.chamado.device_id ? `${ORIGEM}/?conectar=${o.chamado.id}` : '';
   return {
     html: montarDocumento({
-      ...o, url,
+      ...o, url, urlConectar,
       cabecalhoBg: CABECALHO_EQUIPE,
       cabecalhoEstilo: `background-color:${CABECALHO_EQUIPE};`
     }),
-    texto: textoChamado({ ...o, url })
+    texto: textoChamado({ ...o, url, urlConectar })
   };
 }
 
 // Versão texto puro — fallback para cliente que não renderiza HTML.
-function textoChamado({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, url }) {
+function textoChamado({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, url, urlConectar }) {
   const linhas = [titulo, ''];
   if (chamada) linhas.push(chamada, '');
   if (comentario) linhas.push(`${autor} comentou:`, comentario, '');
@@ -371,6 +383,7 @@ function textoChamado({ chamado, titulo, chamada, autor, comentario, mudancas, e
   const prazo = dataBr(chamado.sla_conclusao_prazo);
   if (prazo !== '—') linhas.push(`Prazo de conclusão: ${prazo}`);
   if (url) linhas.push('', `Ver chamado: ${url}`);
+  if (urlConectar) linhas.push(`Conectar à máquina: ${urlConectar}`);
   return linhas.join('\n');
 }
 

@@ -28,6 +28,7 @@ Cada arquivo tem o dobro do tamanho de exibição, para não borrar em tela reti
 |---|---|---|---|
 | `topo-*.png` | 112px | 56px | tile ao lado da manchete |
 | `chamado.png` | 88px | 44px | tile do card do chamado |
+| `btn-*.png` | 32px | 16px | dentro dos botões de CTA (fundo laranja `P.cta` assado) |
 | demais | 44px | 22px | rótulos do grid, prazo, evento |
 
 ## Tiles do topo, um por evento
@@ -61,4 +62,5 @@ O arquivo sai no diretório de trabalho, não em `.playwright-cli/`.
 Ícones em uso: `ph-fill ph-clipboard-text` (chamado), os tiles da tabela acima e,
 em `ph-bold`: `ph-user`, `ph-laptop`, `ph-buildings`, `ph-user-circle`,
 `ph-list-dashes`, `ph-clock`, `ph-calendar-blank`, `ph-chat-circle-dots`,
-`ph-arrows-clockwise`. Cor `#5B45E0`, o índigo do portal.
+`ph-arrows-clockwise`. Cor `#5B45E0`, o índigo do portal. Nos botões de CTA
+(`btn-ver` = `ph-eye`, `btn-conectar` = `ph-monitor-play`): branco sobre `#D45C0D`.

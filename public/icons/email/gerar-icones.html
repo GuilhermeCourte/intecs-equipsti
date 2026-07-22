@@ -14,6 +14,14 @@
   .branco { background: #FFFFFF; }
   .cartao { background: #F5F4F8; }
 
+  /* Icones dos botoes de CTA: glifo branco sobre o laranja do botao (P.cta),
+     exibidos a 16px dentro do <a>. */
+  .btn-cta {
+    width: 32px; height: 32px; background: #D45C0D;
+    display: flex; align-items: center; justify-content: center;
+    color: #FFFFFF; font-size: 20px; line-height: 1;
+  }
+
   /* Tile grande do cabecalho: um por tipo de evento, cada um na cor do proprio
      estado. As cores saem da paleta de status do portal, as mesmas dos selos
      (--ok / --warn / --danger / --info / --neutral), para nao brigarem entre si. */
@@ -55,6 +63,9 @@
 <div class="cel branco" id="ic-responsavel"><i class="ph-bold ph-user-circle"></i></div>
 <div class="cel branco" id="ic-categoria"><i class="ph-bold ph-list-dashes"></i></div>
 <div class="cel branco" id="ic-aberto"><i class="ph-bold ph-clock"></i></div>
+
+<div class="btn-cta" id="ic-btn-ver"><i class="ph-bold ph-eye"></i></div>
+<div class="btn-cta" id="ic-btn-conectar"><i class="ph-bold ph-monitor-play"></i></div>
 
 <div class="cel cartao" id="ic-prazo"><i class="ph-bold ph-calendar-blank"></i></div>
 <div class="cel cartao" id="ic-comentario"><i class="ph-bold ph-chat-circle-dots"></i></div>
