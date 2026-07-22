@@ -4264,6 +4264,10 @@ async function processarDeepLinkChamado() {
   if (!_ciPerfil) return;
   const abaEl = $('tab-chamados');
   if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
+  // Sub-aba INTECS (a lista): fechando o modal a pessoa cai na lista de
+  // chamados, não no comparativo INTECS vs MSA que é a sub-aba padrão.
+  const subEl = $('sub-tab-intecs');
+  if (subEl) bootstrap.Tab.getOrCreateInstance(subEl).show();
 
   // Conexão direta: mesma regra do modal — só o responsável, máquina online.
   // Navega a PRÓPRIA aba (sem window.open): clique de e-mail já abriu esta aba,
