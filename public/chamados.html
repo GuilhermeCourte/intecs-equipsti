@@ -349,6 +349,12 @@
     }
     .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .brand img { height: 26px; width: auto; display: block; }
+    .brand .brand-mark { width: 28px; height: 28px; border-radius: 8px; box-shadow: var(--shadow-sm); flex: none; }
+    .brand-name {
+      font-size: .95rem; font-weight: 700; letter-spacing: -.01em;
+      color: var(--ink); white-space: nowrap;
+    }
+    .brand-name .brand-dot { color: var(--faint); font-weight: 500; margin: 0 2px; }
     .brand-duo { display: flex; align-items: center; gap: 12px; }
     .brand-sep { width: 1px; height: 22px; background: var(--line-strong); }
     .topbar-right { display: flex; align-items: center; gap: 10px; }
@@ -367,10 +373,26 @@
       .user-chip { padding: 4px; box-shadow: none; background: transparent; }
       .user-chip small { display: none; }
       .brand img { height: 22px; }
+      .brand .brand-mark { width: 24px; height: 24px; border-radius: 7px; }
+      .brand-name { font-size: .88rem; }
     }
 
     /* ============ 9. Página / molduras técnicas / hero ============ */
     .page { position: relative; max-width: 960px; margin: 0 auto; padding: 8px 20px 72px; }
+    .page-foot {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+      background: rgba(247, 246, 243, .88); /* mesmo tom do fundo da página (--bg) */
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      /* max() alinha o conteúdo com a coluna de 960px da página */
+      padding: 10px max(20px, calc(50% - 460px));
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+    }
+    .page-foot img { height: 18px; width: auto; display: block; opacity: .75; }
+    .page-foot span {
+      font-family: var(--mono); font-size: .66rem; font-weight: 500;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--faint);
+    }
     @media (min-width: 992px) {
       .page::before, .page::after {
         content: ''; position: absolute; top: 0; bottom: 0; width: 1px;
@@ -687,7 +709,8 @@
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand">
-          <img src="logo_intecs_cor.png" alt="Intecs">
+          <img src="favicon_chamados.png" alt="" class="brand-mark">
+          <span class="brand-name">GTI <span class="brand-dot">·</span> Chamados</span>
           <span id="brandArmazem" class="brand-duo" style="display:none">
             <span class="brand-sep"></span>
             <img src="logo_armazem.png" alt="Armazém Solidário">
@@ -736,6 +759,11 @@
       <div id="listaStatus" class="lista-status"></div>
       <div id="listaChamados" class="tickets"></div>
       <nav id="listaPaginacao" class="paginacao" aria-label="Paginação de chamados"></nav>
+
+      <footer class="page-foot">
+        <img src="logo_intecs_cor.png" alt="Intecs">
+        <span>Suporte interno de TI</span>
+      </footer>
     </main>
   </div>
 
@@ -784,8 +812,8 @@
               <div class="callout">
                 <i class="ph ph-desktop"></i>
                 <div class="callout-body">
-                  <span id="nc_maquina" class="callout-text"><span class="spin" aria-hidden="true"></span> Detectando máquina...</span>
-                  <div id="nc_maquina_select_wrap" class="mt-2" style="display:none">
+                  <label class="form-label" for="nc_maquina_select" id="nc_maquina">Máquina</label>
+                  <div id="nc_maquina_select_wrap">
                     <select class="form-select form-select-sm" id="nc_maquina_select"></select>
                   </div>
                 </div>
@@ -829,6 +857,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/scripts/choices.min.js" crossorigin="anonymous"></script>
-  <script src="chamados.js?v=6"></script>
+  <script src="chamados.js?v=7"></script>
 </body>
 </html>

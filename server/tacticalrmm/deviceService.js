@@ -95,7 +95,15 @@ export async function vincularEquipamento(tacticalAgentId, usuarioId) {
 }
 
 export async function listarAgentesDisponiveis() {
-  const agentesRemotos = await client.getAgents();
+  let agentesRemotos;
+  try {
+    agentesRemotos = await client.getAgents();
+  } catch (err) {
+    // RMM fora do ar não pode travar a abertura de chamado — a seleção de
+    // máquina agora é obrigatória no portal, então serve o cache local.
+    console.warn('[tacticalrmm] lista de agentes indisponível, servindo cache local:', err.message);
+    return repo.listTacticalAgents();
+  }
   const lista = Array.isArray(agentesRemotos) ? agentesRemotos : (agentesRemotos?.results || []);
   for (const agent of lista) {
     await repo.upsertTacticalAgent({
@@ -106,7 +114,9 @@ export async function listarAgentesDisponiveis() {
       status_online: agent.status === 'online',
       last_seen: agent.last_seen || null,
       public_ip: agent.public_ip || null,
-      local_ips: agent.local_ips || null
+      local_ips: agent.local_ips || null,
+      // Usuário logado (ou o último, se ninguém está na máquina agora).
+      logged_username: agent.logged_username || null
     });
   }
   return repo.listTacticalAgents();
@@ -132,6 +142,22 @@ export async function getResumoAgente(tacticalAgentId) {
     console.warn('[tacticalrmm] agente', tacticalAgentId, 'não resolvido:', err.message);
     return null;
   }
+}
+
+// Acesso remoto (aba Conexão Remota do admin): URLs do MeshCentral com token
+// de login efêmero — geradas a cada clique, nunca cacheadas. Devolve null
+// quando o agente não resolve, para a rota responder 404 em vez de estourar.
+export async function getConexaoRemota(tacticalAgentId) {
+  if (!tacticalAgentId) return null;
+  const mesh = await client.getMeshCentralUrls(tacticalAgentId);
+  if (!mesh || !mesh.control) return null;
+  return {
+    hostname: mesh.hostname,
+    control: mesh.control,
+    terminal: mesh.terminal,
+    file: mesh.file,
+    status: mesh.status
+  };
 }
 
 // Detecção da máquina do usuário no momento da abertura do chamado — pelo IP

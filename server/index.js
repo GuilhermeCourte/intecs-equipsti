@@ -1599,8 +1599,55 @@ app.get('/api/dashboard', exigirAuth, wrap(async (req, res) => {
 // Master) valem só aqui — o resto do app continua sem restrição por papel.
 
 app.get('/api/tactical-agents', exigirAuth, wrap(async (req, res) => {
-  const agentes = await deviceService.listarAgentesDisponiveis();
+  // ?cache=1: responde só com o que está no banco, sem consultar o Tactical
+  // RMM — instantâneo. A aba Conexão Remota abre com o cache e dispara a
+  // sincronização de verdade (sem o parâmetro) em segundo plano.
+  const agentes = req.query.cache === '1'
+    ? await deviceIntecsRepo.listTacticalAgents()
+    : await deviceService.listarAgentesDisponiveis();
   res.json(agentes);
+}));
+
+// Acesso remoto da aba "Conexão Remota" do admin: devolve as URLs do
+// MeshCentral (controle de tela, terminal e arquivos) com token efêmero.
+// Só TECNICO/MASTER — é literalmente assumir a máquina de alguém.
+app.get('/api/tactical-agents/:agentId/conexao-remota', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const agentId = trim(req.params.agentId || '');
+  if (!agentId) return res.status(400).json({ error: 'Informe o agente.' });
+  try {
+    const conexao = await deviceService.getConexaoRemota(agentId);
+    if (!conexao) return res.status(404).json({ error: 'Agente não encontrado no Tactical RMM.' });
+    res.json(conexao);
+  } catch (err) {
+    res.status(502).json({ error: 'Tactical RMM indisponível: ' + err.message });
+  }
+}));
+
+// Máquinas que o portal /chamados oferece no select "Selecione a máquina...".
+// A unidade da máquina é o SITE do Tactical RMM (client INTECS → SEDE e
+// servidores; client UNIDADES → um site por loja). A regra fica aqui no
+// servidor e o front só obedece ao "modo":
+//   SEDE    → lista vazia: o portal mostra apenas a máquina detectada (e, sem
+//             detecção, permite abrir sem equipamento).
+//   UNIDADE → todas as máquinas do site da unidade do usuário; se o RMM ainda
+//             não tem site pra unidade (ou o perfil não tem unidade, caso de
+//             TECNICO/MASTER), degrada para a lista completa — ninguém fica
+//             sem saída por causa de organização pendente no RMM.
+app.get('/api/chamados-intecs/maquinas', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const norm = (v) => trim(v).toUpperCase();
+  const unidade = norm(req.perfilCI.unidade);
+  const agentes = await deviceService.listarAgentesDisponiveis();
+  const item = (a) => ({
+    tactical_agent_id: a.tactical_agent_id,
+    hostname: a.hostname,
+    unidade: a.site_name,
+    status_online: !!a.status_online
+  });
+
+  if (unidade === 'SEDE') return res.json({ modo: 'SEDE', maquinas: [] });
+
+  const daUnidade = unidade ? agentes.filter((a) => norm(a.site_name) === unidade) : [];
+  res.json({ modo: 'UNIDADE', maquinas: (daUnidade.length ? daUnidade : agentes).map(item) });
 }));
 
 // ===================== NOTIFICAÇÕES DOS CHAMADOS INTECS =====================

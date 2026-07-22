@@ -4268,6 +4268,180 @@ function podeAtenderCI() {
   return !!_ciPerfil && ['TECNICO', 'MASTER'].includes(_ciPerfil.role);
 }
 
+// ============================================================
+//  Aba Conexão Remota — máquinas do RMM + acesso via MeshCentral
+// ============================================================
+let _crAgentes = [];
+let _crCarregando = false;
+
+async function carregarConexaoRemota() {
+  if (_crCarregando) return;
+  _crCarregando = true;
+  $('crStatus').textContent = '';
+  try {
+    // O papel decide se as ações aparecem; sem perfil a tabela sai só-leitura.
+    if (!_ciPerfil) await carregarMeuPerfilCI().catch(() => {});
+
+    // 1) Cache primeiro: a aba abre na hora com a última sincronização...
+    try {
+      _crAgentes = await api('GET', '/api/tactical-agents?cache=1');
+    } catch { _crAgentes = []; }
+    if (_crAgentes.length) {
+      renderConexaoRemota();
+      $('crStatus').textContent += ' · atualizando...';
+    } else {
+      $('crTbody').innerHTML = '<tr><td colspan="4" class="text-muted">Carregando... (sincronizando)</td></tr>';
+    }
+
+    // 2) ...e a sincronização de verdade roda por trás e re-renderiza no fim.
+    _crAgentes = await api('GET', '/api/tactical-agents');
+    renderConexaoRemota();
+  } catch (err) {
+    if (_crAgentes.length) {
+      // Sync falhou mas o cache está na tela: avisa sem derrubar a tabela.
+      $('crStatus').textContent += ' · não foi possível atualizar agora';
+    } else {
+      $('crTbody').innerHTML = '<tr><td colspan="4" class="text-danger">Erro ao carregar as máquinas: '
+        + escapeHtml(err.message) + '</td></tr>';
+    }
+  } finally {
+    _crCarregando = false;
+  }
+}
+
+// Bolinha de status (verde/vermelha) com o texto no title para quem passar o mouse.
+const crBolinha = (online) => '<span class="dash-dot ' + (online ? 'dash-dot--green' : 'dash-dot--red')
+  + '" title="' + (online ? 'Online' : 'Offline') + '"></span>';
+
+// Botão de conexão (Conectar/Terminal/Arquivos) — usado na tabela (pequeno)
+// e no modal (tamanho cheio).
+const crBtn = (agentId, tipo, titulo, icone, rotulo, online, extra = '', pequeno = true) =>
+  `<button type="button" class="btn ${pequeno ? 'btn-sm ' : ''}btn-outline-primary btn-cr${extra ? ' ' + extra : ''}"`
+  + ` data-agent-id="${escapeHtml(agentId)}" data-cr-tipo="${tipo}" title="${titulo}"${online ? '' : ' disabled'}>`
+  + `<i class="ph ${icone}"></i>${rotulo ? ' ' + rotulo : ''}</button>`;
+
+// Colunas da tabela (com funil de filtro, igual ao resto do sistema).
+const CR_COLS = [
+  { key: 'hostname', label: 'Hostname' },
+  { key: 'logged_username', label: 'Usuário' },
+  { key: 'site_name', label: 'Unidade' },
+];
+
+function crColVal(a, col) {
+  const v = a[CR_COLS[col]?.key];
+  return (v == null || String(v).trim() === '') ? '' : String(v);
+}
+
+const crFilterCtx = {
+  theadSel: '#crThead th[data-col]',
+  getRows: () => _crAgentes,
+  colVal: crColVal,
+  filters: {},
+  maxItems: 6,
+  clearBtnId: 'btnLimparFiltrosConexao',
+  buscaId: 'crBusca',
+  onApply: () => renderConexaoRemota(),
+};
+
+function renderConexaoRemota() {
+  const termo = buscaNorm($('crBusca').value.trim());
+  const podeConectar = podeAtenderCI();
+  const lista = _crAgentes
+    .filter((a) => ctxPassa(crFilterCtx, a))
+    .filter((a) => !termo || buscaNorm((a.hostname || '') + ' ' + (a.logged_username || '') + ' ' + (a.site_name || '')).includes(termo))
+    .sort((a, b) => String(a.hostname || '').localeCompare(String(b.hostname || '')));
+
+  $('crTbody').innerHTML = lista.map((a) => {
+    const online = !!a.status_online;
+    const acoes = podeConectar
+      ? '<div class="d-flex gap-1 justify-content-end">'
+        + crBtn(a.tactical_agent_id, 'control', 'Assumir o controle da tela', 'ph-monitor-play', 'Conectar', online)
+        + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', online)
+        + crBtn(a.tactical_agent_id, 'file', 'Arquivos remotos', 'ph-folder-open', '', online)
+        + '</div>'
+      : '';
+    return '<tr data-agent-id="' + escapeHtml(a.tactical_agent_id) + '" style="cursor:pointer">'
+      + '<td>' + crBolinha(online) + escapeHtml(a.hostname || a.tactical_agent_id) + '</td>'
+      + '<td>' + escapeHtml(a.logged_username || '—') + '</td>'
+      + '<td>' + escapeHtml(a.site_name || '—') + '</td>'
+      + '<td class="text-end">' + acoes + '</td>'
+      + '</tr>';
+  }).join('') || '<tr><td colspan="4" class="text-muted">Nenhuma máquina encontrada.</td></tr>';
+
+  $('crStatus').textContent = lista.length + (lista.length === 1 ? ' máquina' : ' máquinas');
+  ctxAtualizarTh(crFilterCtx); // acende o funil da coluna filtrada e o funil-x da toolbar
+}
+
+// Modal com o resumo da máquina + botões de conexão (abre no clique da linha).
+let _modalConexao = null;
+
+function abrirModalConexao(agentId) {
+  const a = _crAgentes.find((x) => x.tactical_agent_id === agentId);
+  if (!a) return;
+  const online = !!a.status_online;
+  $('cxHostname').innerHTML = crBolinha(online) + escapeHtml(a.hostname || a.tactical_agent_id);
+  $('cxUsuario').textContent = a.logged_username || '—';
+  $('cxUnidade').textContent = a.site_name || '—';
+  $('cxAlerta').innerHTML = online ? ''
+    : '<div class="alert alert-secondary py-2 small">Máquina offline — não é possível conectar agora.</div>';
+  $('cxBotoes').innerHTML = podeAtenderCI()
+    ? crBtn(a.tactical_agent_id, 'control', 'Assumir o controle da tela', 'ph-monitor-play', 'Conectar', online, 'flex-fill', false)
+      + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', 'Terminal', online, 'flex-fill', false)
+      + crBtn(a.tactical_agent_id, 'file', 'Arquivos remotos', 'ph-folder-open', 'Arquivos', online, 'flex-fill', false)
+    : '';
+  _modalConexao = _modalConexao || new bootstrap.Modal($('modalConexao'));
+  _modalConexao.show();
+}
+
+// Abre a sessão do MeshCentral a partir de um botão (da tabela ou do modal).
+async function conectarViaBotao(btn) {
+  // A aba nova precisa abrir de forma SÍNCRONA (antes de qualquer await),
+  // senão o bloqueador de pop-up a mata; a URL entra quando a API responder.
+  const win = window.open('', '_blank');
+  btn.disabled = true;
+  try {
+    const conexao = await api('GET', '/api/tactical-agents/'
+      + encodeURIComponent(btn.dataset.agentId) + '/conexao-remota');
+    win.location = conexao[btn.dataset.crTipo];
+  } catch (err) {
+    win.close();
+    const msg = 'Não foi possível conectar: ' + escapeHtml(err.message);
+    if ($('modalConexao').classList.contains('show')) {
+      $('cxAlerta').innerHTML = '<div class="alert alert-danger py-2 small">' + msg + '</div>';
+    } else {
+      $('crStatus').innerHTML = '<span class="text-danger">' + msg + '</span>';
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function configurarConexaoRemota() {
+  // Cabeçalho com funil por coluna (mesmo componente das outras tabelas).
+  $('crThead').innerHTML = thFiltravel(CR_COLS) + '<th></th>';
+  wireCtxFiltro(crFilterCtx, $('crThead'));
+
+  $('tab-conexao').addEventListener('shown.bs.tab', carregarConexaoRemota);
+  $('btnRefreshConexao').addEventListener('click', carregarConexaoRemota);
+  $('crBusca').addEventListener('input', renderConexaoRemota);
+  $('btnLimparFiltrosConexao').addEventListener('click', () => {
+    Object.keys(crFilterCtx.filters).forEach((k) => delete crFilterCtx.filters[k]);
+    $('crBusca').value = '';
+    renderConexaoRemota();
+  });
+
+  $('crTbody').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.btn-cr');
+    if (btn) { if (!btn.disabled) conectarViaBotao(btn); return; }
+    const tr = ev.target.closest('tr[data-agent-id]');
+    if (tr) abrirModalConexao(tr.dataset.agentId);
+  });
+  $('cxBotoes').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.btn-cr');
+    if (btn && !btn.disabled) conectarViaBotao(btn);
+  });
+}
+
 function aplicarPermissoesDetalheChamado(chamado) {
   const podeAtender = podeAtenderCI();
   const podeComentar = podeAtender || chamado.usuario_id === _ciPerfil.id;
@@ -5187,6 +5361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarDashboardIntecs();
   configurarCategoriasIntecs();
   configurarVerificarMaquina();
+  configurarConexaoRemota();
   configurarMenuMobile();
   configurarCalendario();
 
@@ -5196,6 +5371,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('abaAtiva', btn.id);
     });
   });
+  // Redimensionar a janela muda a largura das abas (e o padding delas perto
+  // de 1400px) — reposiciona o slider para não ficar deslocado da aba ativa.
+  window.addEventListener('resize', () => requestAnimationFrame(() => posicionarSlider(false)));
 
   $('tab-dashboard').addEventListener('shown.bs.tab', carregarDashboard);
   $('btnAtualizarDashboard').addEventListener('click', carregarDashboard);
