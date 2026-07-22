@@ -46,7 +46,16 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   const senha = String(req.body.senha || '');
   if (!email || !senha) return res.status(400).json({ error: 'Informe e-mail e senha.' });
 
-  const r = await query('SELECT id, email, senha_hash, ativo FROM dbo.EQUIPSTI_usuarios WHERE email = @email', { email: S(email) });
+  // Aceita e-mail completo ou só a parte antes do @ (facilidade de digitação).
+  const r = email.includes('@')
+    ? await query('SELECT id, email, senha_hash, ativo FROM dbo.EQUIPSTI_usuarios WHERE email = @email', { email: S(email) })
+    : await query(
+        `SELECT id, email, senha_hash, ativo FROM dbo.EQUIPSTI_usuarios
+          WHERE CHARINDEX('@', email) > 1 AND LOWER(LEFT(email, CHARINDEX('@', email) - 1)) = @usuario`,
+        { usuario: S(email) });
+  if (r.recordset.length > 1) {
+    return res.status(401).json({ error: 'Mais de um usuário com esse nome. Informe o e-mail completo.' });
+  }
   const u = r.recordset[0];
   if (!u || !(await bcrypt.compare(senha, u.senha_hash))) {
     return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
