@@ -392,15 +392,15 @@ export async function listarAtendentes() {
 
 export async function listarUsuariosComPapel() {
   const result = await query(
-    'SELECT id, email, role, unidade, setor, ativo FROM dbo.EQUIPSTI_usuarios ORDER BY email'
+    'SELECT id, email, role, unidade, setor, ativo, permissoes FROM dbo.EQUIPSTI_usuarios ORDER BY email'
   );
   return result.recordset;
 }
 
-export async function atualizarPapelUsuario(id, { role, unidade, setor }) {
+export async function atualizarPapelUsuario(id, { role, unidade, setor, permissoesJson = null }) {
   await query(
-    `UPDATE dbo.EQUIPSTI_usuarios SET role = @role, unidade = @unidade, setor = @setor WHERE id = @id`,
-    { id: N(id), role: S(role), unidade: S(unidade), setor: S(setor) }
+    `UPDATE dbo.EQUIPSTI_usuarios SET role = @role, unidade = @unidade, setor = @setor, permissoes = @permissoes WHERE id = @id`,
+    { id: N(id), role: S(role), unidade: S(unidade), setor: S(setor), permissoes: S(permissoesJson) }
   );
 }
 

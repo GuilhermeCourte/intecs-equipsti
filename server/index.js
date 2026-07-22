@@ -18,7 +18,11 @@ import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
 import { calcularPrazosSla } from './chamadosIntecsSla.js';
-import { carregarPerfilChamados, exigirPapel, podeVerChamado } from './chamadosIntecsAuth.js';
+import { carregarPerfilChamados, exigirPapel, exigirPermissao, podeVerChamado } from './chamadosIntecsAuth.js';
+import {
+  CHAVES_PERMISSOES, PADROES_POR_PAPEL, ROTULOS,
+  permissoesEfetivas, calcularOverrides, validarPermissoes, isCustomizado, papelValido
+} from './permissoes.js';
 
 dotenv.config();
 
@@ -185,12 +189,12 @@ app.post('/api/biometric/auth/verify', wrap(async (req, res) => {
 }));
 
 // ===================== USUÁRIOS =====================
-app.get('/api/users', exigirAuth, wrap(async (req, res) => {
+app.get('/api/users', exigirAuth, exigirPermissao('aba_usuarios'), wrap(async (req, res) => {
   const r = await query('SELECT id, email, criado_em, ativo FROM dbo.EQUIPSTI_usuarios ORDER BY email');
   res.json(r.recordset);
 }));
 
-app.post('/api/users', exigirAuth, wrap(async (req, res) => {
+app.post('/api/users', exigirAuth, exigirPermissao('aba_usuarios'), wrap(async (req, res) => {
   const email = trim(req.body.email).toLowerCase();
   const senha = String(req.body.senha || '');
   if (!email) return res.status(400).json({ error: 'Informe o e-mail.' });
@@ -207,7 +211,7 @@ app.post('/api/users', exigirAuth, wrap(async (req, res) => {
   res.status(201).json({ ok: true, id: inserted.recordset[0].id });
 }));
 
-app.put('/api/users/:id', exigirAuth, wrap(async (req, res) => {
+app.put('/api/users/:id', exigirAuth, exigirPermissao('aba_usuarios'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const novoEmail = req.body.email !== undefined ? trim(req.body.email).toLowerCase() : null;
   const novaSenha = req.body.senha !== undefined ? String(req.body.senha) : null;
@@ -261,7 +265,7 @@ app.get('/api/options', exigirAuth, wrap(async (req, res) => {
   res.json(out);
 }));
 
-app.put('/api/options/quantidade', exigirAuth, wrap(async (req, res) => {
+app.put('/api/options/quantidade', exigirAuth, exigirPermissao('aba_gerenciar'), wrap(async (req, res) => {
   const valor = trim(req.body.valor);
   const qtd = parseInt(req.body.quantidade, 10);
   if (isNaN(qtd) || qtd < 0) return res.status(400).json({ error: 'Quantidade inválida.' });
@@ -270,7 +274,7 @@ app.put('/api/options/quantidade', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.post('/api/options', exigirAuth, wrap(async (req, res) => {
+app.post('/api/options', exigirAuth, exigirPermissao('aba_gerenciar'), wrap(async (req, res) => {
   const lista = trim(req.body.lista).toUpperCase();
   const valor = trim(req.body.valor).toUpperCase();
   const detalhe = trim(req.body.detalhe || '') || null;
@@ -293,7 +297,7 @@ app.post('/api/options', exigirAuth, wrap(async (req, res) => {
 }));
 
 // Renomeia uma opção (atualiza também os registros que a usavam).
-app.put('/api/options/rename', exigirAuth, wrap(async (req, res) => {
+app.put('/api/options/rename', exigirAuth, exigirPermissao('aba_gerenciar'), wrap(async (req, res) => {
   const lista = trim(req.body.lista).toUpperCase();
   const valor = trim(req.body.valor);
   const novoValor = trim(req.body.novoValor).toUpperCase();
@@ -310,7 +314,7 @@ app.put('/api/options/rename', exigirAuth, wrap(async (req, res) => {
 }));
 
 // Atualiza o detalhe e o preço de uma opção de equipamento.
-app.put('/api/options/detalhe', exigirAuth, wrap(async (req, res) => {
+app.put('/api/options/detalhe', exigirAuth, exigirPermissao('aba_gerenciar'), wrap(async (req, res) => {
   const lista = trim(req.body.lista).toUpperCase();
   const valor = trim(req.body.valor);
   const detalhe = trim(req.body.detalhe || '') || null;
@@ -337,7 +341,7 @@ app.put('/api/options/detalhe', exigirAuth, wrap(async (req, res) => {
 }));
 
 // Oculta / exibe uma opção.
-app.put('/api/options/hidden', exigirAuth, wrap(async (req, res) => {
+app.put('/api/options/hidden', exigirAuth, exigirPermissao('aba_gerenciar'), wrap(async (req, res) => {
   const lista = trim(req.body.lista).toUpperCase();
   const valor = trim(req.body.valor);
   const oculto = req.body.oculto ? 1 : 0;
@@ -377,7 +381,7 @@ function validarRegistro(d) {
   if (faltando.length) throw new Error('Preencha: ' + faltando.join(', ') + '.');
 }
 
-app.get('/api/records', exigirAuth, wrap(async (req, res) => {
+app.get('/api/records', exigirAuth, exigirPermissao('aba_registros'), wrap(async (req, res) => {
   const selectFields = `SELECT id, unidade, status, setor, usuario, ns,
     pat, equipamento, equipamento_detalhe AS equipamentoDetalhe, insumo, tipo_aquisicao AS tipoAquisicao, protocolo,
     CONVERT(varchar(10), data_recebimento, 23) AS dataRecebimento, valor, obs,
@@ -411,7 +415,7 @@ const FACET_COLS = {
 };
 const FACET_PADRAO = Object.keys(FACET_COLS).filter((k) => k !== 'obs'); // obs: quase única por linha, só sob demanda
 
-app.get('/api/records/facets', exigirAuth, wrap(async (req, res) => {
+app.get('/api/records/facets', exigirAuth, exigirPermissao('aba_registros'), wrap(async (req, res) => {
   const pedidos = req.query.campo
     ? String(req.query.campo).split(',').filter((c) => FACET_COLS[c]) // whitelist
     : FACET_PADRAO;
@@ -423,7 +427,7 @@ app.get('/api/records/facets', exigirAuth, wrap(async (req, res) => {
   res.json(out);
 }));
 
-app.get('/api/records/:id/imagem', exigirAuth, wrap(async (req, res) => {
+app.get('/api/records/:id/imagem', exigirAuth, exigirPermissao('aba_registros'), wrap(async (req, res) => {
   const r = await query(`SELECT imagem_base64, imagem2_base64, imagem3_base64 FROM dbo.EQUIPSTI_registros WHERE id = @id`,
     { id: Number(req.params.id) });
   if (!r.recordset.length) return res.status(404).json({ error: 'Não encontrado.' });
@@ -431,7 +435,7 @@ app.get('/api/records/:id/imagem', exigirAuth, wrap(async (req, res) => {
   res.json({ imagem_base64: row.imagem_base64 || null, imagem2_base64: row.imagem2_base64 || null, imagem3_base64: row.imagem3_base64 || null });
 }));
 
-app.get('/api/records/:id/log', exigirAuth, wrap(async (req, res) => {
+app.get('/api/records/:id/log', exigirAuth, exigirPermissao('aba_registros'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const r = await query(`SELECT acao, campo, valor_anterior AS valorAnterior, valor_novo AS valorNovo,
     justificativa, usuario, CONVERT(varchar(19), data_hora, 120) AS dataHora
@@ -440,7 +444,7 @@ app.get('/api/records/:id/log', exigirAuth, wrap(async (req, res) => {
   res.json(r.recordset);
 }));
 
-app.post('/api/records', exigirAuth, wrap(async (req, res) => {
+app.post('/api/records', exigirAuth, exigirPermissao('aba_registros'), wrap(async (req, res) => {
   const d = lerRegistro(req.body);
   validarRegistro(d);
   const usuario = req.user.email;
@@ -474,7 +478,7 @@ const CAMPOS_LOG = [
   ['dataRecebimento','DATA RECEBIMENTO'], ['valor','VALOR'], ['obs','OBS']
 ];
 
-app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
+app.put('/api/records/:id', exigirAuth, exigirPermissao('aba_registros'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const d = lerRegistro(req.body);
   validarRegistro(d);
@@ -550,7 +554,7 @@ app.put('/api/records/:id', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.delete('/api/records/:id', exigirAuth, wrap(async (req, res) => {
+app.delete('/api/records/:id', exigirAuth, exigirPermissao('aba_registros'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const prev = await query('SELECT pat, ns, equipamento FROM dbo.EQUIPSTI_registros WHERE id = @id', { id });
   await query('DELETE FROM dbo.EQUIPSTI_registros WHERE id = @id', { id });
@@ -607,12 +611,12 @@ function paramsInternet(d) {
   };
 }
 
-app.get('/api/internet', exigirAuth, wrap(async (req, res) => {
+app.get('/api/internet', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   const r = await query(`${INTERNET_SELECT} ORDER BY unidade, id DESC`);
   res.json(r.recordset);
 }));
 
-app.post('/api/internet', exigirAuth, wrap(async (req, res) => {
+app.post('/api/internet', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   const d = lerInternet(req.body);
   if (!d.unidade) return res.status(400).json({ error: 'Selecione a unidade.' });
   await query(`INSERT INTO dbo.EQUIPSTI_internet
@@ -622,7 +626,7 @@ app.post('/api/internet', exigirAuth, wrap(async (req, res) => {
   res.status(201).json({ ok: true });
 }));
 
-app.put('/api/internet/:id', exigirAuth, wrap(async (req, res) => {
+app.put('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const d = lerInternet(req.body);
   if (!d.unidade) return res.status(400).json({ error: 'Selecione a unidade.' });
@@ -636,7 +640,7 @@ app.put('/api/internet/:id', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.delete('/api/internet/:id', exigirAuth, wrap(async (req, res) => {
+app.delete('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   await query('DELETE FROM dbo.EQUIPSTI_internet WHERE id = @id', { id: Number(req.params.id) });
   res.json({ ok: true });
 }));
@@ -679,12 +683,12 @@ function validarEventoCalendario(d, res) {
   return true;
 }
 
-app.get('/api/calendario/eventos', exigirAuth, wrap(async (req, res) => {
+app.get('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const r = await query(`${CALENDARIO_SELECT} ORDER BY data`);
   res.json(r.recordset);
 }));
 
-app.post('/api/calendario/eventos', exigirAuth, wrap(async (req, res) => {
+app.post('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
   await query(`INSERT INTO dbo.EQUIPSTI_calendario_eventos
@@ -694,7 +698,7 @@ app.post('/api/calendario/eventos', exigirAuth, wrap(async (req, res) => {
   res.status(201).json({ ok: true });
 }));
 
-app.put('/api/calendario/eventos/:id', exigirAuth, wrap(async (req, res) => {
+app.put('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
@@ -706,19 +710,19 @@ app.put('/api/calendario/eventos/:id', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.delete('/api/calendario/eventos/:id', exigirAuth, wrap(async (req, res) => {
+app.delete('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   await query('DELETE FROM dbo.EQUIPSTI_calendario_eventos WHERE id = @id', { id: Number(req.params.id) });
   res.json({ ok: true });
 }));
 
 // ===================== PATs (origem dos empréstimos) =====================
-app.get('/api/pats', exigirAuth, wrap(async (req, res) => {
+app.get('/api/pats', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_registros
     WHERE pat IS NOT NULL AND LTRIM(RTRIM(pat)) <> '' ORDER BY pat`);
   res.json(r.recordset.map((row) => row.pat));
 }));
 
-app.get('/api/pats/:pat/info', exigirAuth, wrap(async (req, res) => {
+app.get('/api/pats/:pat/info', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const pat = trim(req.params.pat);
   const r = await query(
     `SELECT TOP 1 equipamento, ns FROM dbo.EQUIPSTI_registros
@@ -729,7 +733,7 @@ app.get('/api/pats/:pat/info', exigirAuth, wrap(async (req, res) => {
 }));
 
 // NS distintos para um PAT (para popular o select de NS no form de empréstimo).
-app.get('/api/pats/:pat/ns', exigirAuth, wrap(async (req, res) => {
+app.get('/api/pats/:pat/ns', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const pat = trim(req.params.pat);
   const r = await query(
     `SELECT DISTINCT ns FROM dbo.EQUIPSTI_registros
@@ -740,7 +744,7 @@ app.get('/api/pats/:pat/ns', exigirAuth, wrap(async (req, res) => {
 }));
 
 // Histórico completo de um PAT (+NS opcional): unidade(s) de origem + linha do tempo de empréstimos.
-app.get('/api/pats/:pat/history', exigirAuth, wrap(async (req, res) => {
+app.get('/api/pats/:pat/history', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const pat = trim(req.params.pat);
   const ns  = trim(req.query.ns);
   const origens = await query(
@@ -777,12 +781,12 @@ async function lookupEquip(pat, ns) {
     : { equipamento: '', setor: '', unidade: '', ns: '' };
 }
 
-app.get('/api/pats/:pat/lookup', exigirAuth, wrap(async (req, res) => {
+app.get('/api/pats/:pat/lookup', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   res.json(await lookupEquip(req.params.pat, req.query.ns));
 }));
 
 // ===================== EMPRÉSTIMOS =====================
-app.get('/api/loans', exigirAuth, wrap(async (req, res) => {
+app.get('/api/loans', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const r = await query(`SELECT id, pat, ns, unidade,
     CONVERT(varchar(10), data_emprestimo, 23) AS data,
     status,
@@ -793,7 +797,7 @@ app.get('/api/loans', exigirAuth, wrap(async (req, res) => {
   res.json(r.recordset);
 }));
 
-app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
+app.post('/api/loans', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const pat = trim(req.body.pat);
   const ns  = trim(req.body.ns);
   const unidade = trim(req.body.unidade);
@@ -854,7 +858,7 @@ app.post('/api/loans', exigirAuth, wrap(async (req, res) => {
   res.status(201).json({ ok: true });
 }));
 
-app.put('/api/loans/:id/status', exigirAuth, wrap(async (req, res) => {
+app.put('/api/loans/:id/status', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const status = trim(req.body.status).toUpperCase();
   if (status !== 'EMPRESTADO' && status !== 'DEVOLVIDO') {
@@ -1057,7 +1061,7 @@ async function sincronizarIntecsMsa() {
   }
 }
 
-app.get('/api/intecs-msa', exigirAuth, wrap(async (req, res) => {
+app.get('/api/intecs-msa', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   try { await sincronizarIntecsMsa(); }
   catch (e) { console.warn('[intecs-msa sync] falhou:', e.message); }
   const r = await query(`SELECT id,
@@ -1074,7 +1078,7 @@ app.get('/api/intecs-msa', exigirAuth, wrap(async (req, res) => {
   res.json(r.recordset);
 }));
 
-app.post('/api/intecs-msa', exigirAuth, wrap(async (req, res) => {
+app.post('/api/intecs-msa', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const d = lerIntecsMsa(req.body);
   await query(`INSERT INTO dbo.EQUIPSTI_chamados_intecsmsa
     (data_solicitacao, numero_chamado_msa, problema, unidade, glpi, status_intecs,
@@ -1087,7 +1091,7 @@ app.post('/api/intecs-msa', exigirAuth, wrap(async (req, res) => {
   res.status(201).json({ ok: true });
 }));
 
-app.put('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
+app.put('/api/intecs-msa/:id', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const d = lerIntecsMsa(req.body);
   const antesRes = await query(`SELECT numero_chamado_msa, problema, unidade, glpi, status_intecs,
@@ -1129,7 +1133,7 @@ app.put('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.delete('/api/intecs-msa/:id', exigirAuth, wrap(async (req, res) => {
+app.delete('/api/intecs-msa/:id', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const prev = await query(
     'SELECT numero_chamado_msa, patrimonio_msa, ns FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE id = @id', { id });
@@ -1297,7 +1301,7 @@ async function eurosaCall(fn) {
   return result;
 }
 
-app.get('/api/chamados', exigirAuth, wrap(async (req, res) => {
+app.get('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const result = await eurosaCall(() => eurosaFetchChamados());
   console.log('[chamados] status:', result.status, '| data:', JSON.stringify(result.data).slice(0, 200));
   res.json(result.data);
@@ -1355,7 +1359,7 @@ const CHAMADO_UNIDADES = [
   'AS - MBOI MIRIM',
 ];
 
-app.get('/api/chamados/assuntos', exigirAuth, wrap(async (req, res) => {
+app.get('/api/chamados/assuntos', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const dados = {
     Pesquisa: '', Ativo: '1', Ordem: [], Tudo: 'true', Ajax: 'true',
     Filtro: { ListaCatalogoUsuario: ['', 'equal'] }
@@ -1372,7 +1376,7 @@ app.get('/api/chamados/unidades', exigirAuth, (req, res) => {
   res.json(CHAMADO_UNIDADES);
 });
 
-app.get('/api/chamados/:chave', exigirAuth, wrap(async (req, res) => {
+app.get('/api/chamados/:chave', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const chave = trim(req.params.chave);
 
   const [detalhe, detalhesExtra] = await Promise.all([
@@ -1416,7 +1420,7 @@ app.get('/api/chamados/:chave', exigirAuth, wrap(async (req, res) => {
   res.json(data);
 }));
 
-app.post('/api/chamados/:chave/interacao', exigirAuth, wrap(async (req, res) => {
+app.post('/api/chamados/:chave/interacao', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const chave   = trim(req.params.chave);
   const codigo  = trim(req.body.codigo   || '');
   const descricao = trim(req.body.descricao || '');
@@ -1454,7 +1458,7 @@ app.post('/api/chamados/:chave/interacao', exigirAuth, wrap(async (req, res) => 
   res.status(201).json(result.data);
 }));
 
-app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
+app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const codCatalogo   = trim(req.body.codCatalogo   || '');
   const assuntoText   = trim(req.body.assuntoText   || '');
   const descricao     = trim(req.body.descricao     || '');
@@ -1553,7 +1557,7 @@ app.post('/api/chamados', exigirAuth, wrap(async (req, res) => {
 }));
 
 // ===================== DASHBOARD =====================
-app.get('/api/dashboard', exigirAuth, wrap(async (req, res) => {
+app.get('/api/dashboard', exigirAuth, exigirPermissao('aba_dashboard'), wrap(async (req, res) => {
   const [rEquip, rTotal, rEmp, rEmpTotal, rInsumos] = await Promise.all([
     query(`
       SELECT
@@ -1607,7 +1611,7 @@ app.get('/api/dashboard', exigirAuth, wrap(async (req, res) => {
 // Módulo interno, independente do MSA/Eurosa. Papéis (Básico/Gestor/Técnico/
 // Master) valem só aqui — o resto do app continua sem restrição por papel.
 
-app.get('/api/tactical-agents', exigirAuth, wrap(async (req, res) => {
+app.get('/api/tactical-agents', exigirAuth, exigirPermissao('aba_conexao'), wrap(async (req, res) => {
   // ?cache=1: responde só com o que está no banco, sem consultar o Tactical
   // RMM — instantâneo. A aba Conexão Remota abre com o cache e dispara a
   // sincronização de verdade (sem o parâmetro) em segundo plano.
@@ -1620,7 +1624,7 @@ app.get('/api/tactical-agents', exigirAuth, wrap(async (req, res) => {
 // Acesso remoto da aba "Conexão Remota" do admin: devolve as URLs do
 // MeshCentral (controle de tela, terminal e arquivos) com token efêmero.
 // Só TECNICO/MASTER — é literalmente assumir a máquina de alguém.
-app.get('/api/tactical-agents/:agentId/conexao-remota', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+app.get('/api/tactical-agents/:agentId/conexao-remota', exigirAuth, carregarPerfilChamados, exigirPermissao('aba_conexao'), exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
   const agentId = trim(req.params.agentId || '');
   if (!agentId) return res.status(400).json({ error: 'Informe o agente.' });
   try {
@@ -1636,12 +1640,12 @@ app.get('/api/tactical-agents/:agentId/conexao-remota', exigirAuth, carregarPerf
 // A unidade da máquina é o SITE do Tactical RMM (client INTECS → SEDE e
 // servidores; client UNIDADES → um site por loja). A regra fica aqui no
 // servidor e o front só obedece ao "modo":
-//   SEDE    → lista vazia: o portal mostra apenas a máquina detectada (e, sem
-//             detecção, permite abrir sem equipamento).
-//   UNIDADE → todas as máquinas do site da unidade do usuário; se o RMM ainda
-//             não tem site pra unidade (ou o perfil não tem unidade, caso de
-//             TECNICO/MASTER), degrada para a lista completa — ninguém fica
-//             sem saída por causa de organização pendente no RMM.
+//   permissão chamados_ver_todas_maquinas (TECNICO por padrão; nos demais é
+//   toggle por usuário) → lista completa de agentes;
+//   SEDE ou sem unidade → lista vazia: o portal mostra apenas a máquina
+//             detectada (e, sem detecção, permite abrir sem equipamento);
+//   UNIDADE → só as máquinas do site da unidade do usuário (site ainda não
+//             criado no RMM → lista vazia, mesmo caminho da detecção).
 app.get('/api/chamados-intecs/maquinas', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
   const norm = (v) => trim(v).toUpperCase();
   const unidade = norm(req.perfilCI.unidade);
@@ -1653,10 +1657,13 @@ app.get('/api/chamados-intecs/maquinas', exigirAuth, carregarPerfilChamados, wra
     status_online: !!a.status_online
   });
 
-  if (unidade === 'SEDE') return res.json({ modo: 'SEDE', maquinas: [] });
+  if (req.perfilCI.permissoesEfetivas.chamados_ver_todas_maquinas) {
+    return res.json({ modo: 'UNIDADE', maquinas: agentes.map(item) });
+  }
+  if (unidade === 'SEDE' || !unidade) return res.json({ modo: 'SEDE', maquinas: [] });
 
-  const daUnidade = unidade ? agentes.filter((a) => norm(a.site_name) === unidade) : [];
-  res.json({ modo: 'UNIDADE', maquinas: (daUnidade.length ? daUnidade : agentes).map(item) });
+  const daUnidade = agentes.filter((a) => norm(a.site_name) === unidade);
+  res.json({ modo: 'UNIDADE', maquinas: daUnidade.map(item) });
 }));
 
 // ===================== NOTIFICAÇÕES DOS CHAMADOS INTECS =====================
@@ -1734,7 +1741,11 @@ app.post('/api/chamados-intecs/verificar-maquina', exigirAuth, wrap(async (req, 
 }));
 
 app.get('/api/chamados-intecs/meu-perfil', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
-  res.json({ id: req.perfilCI.id, email: req.perfilCI.email, role: req.perfilCI.role, unidade: req.perfilCI.unidade, setor: req.perfilCI.setor });
+  res.json({
+    id: req.perfilCI.id, email: req.perfilCI.email, role: req.perfilCI.role,
+    unidade: req.perfilCI.unidade, setor: req.perfilCI.setor,
+    permissoes: req.perfilCI.permissoesEfetivas
+  });
 }));
 
 app.get('/api/chamados-intecs/categorias', exigirAuth, wrap(async (req, res) => {
@@ -1848,16 +1859,49 @@ app.delete('/api/chamados-intecs/status-config/:id', exigirAuth, carregarPerfilC
 
 // ---------- Administração (só Master) ----------
 
-app.get('/api/chamados-intecs/usuarios', exigirAuth, carregarPerfilChamados, exigirPapel('MASTER'), wrap(async (req, res) => {
-  const usuarios = await chamadosIntecsRepo.listarUsuariosComPapel();
-  res.json(usuarios);
+// Catálogo de permissões (chaves, rótulos e padrões por papel) — o modal
+// de edição usa para montar os switches e resetá-los ao trocar o papel.
+app.get('/api/chamados-intecs/permissoes/catalogo', exigirAuth, carregarPerfilChamados, exigirPapel('MASTER'), wrap(async (req, res) => {
+  res.json({ chaves: CHAVES_PERMISSOES, padroes: PADROES_POR_PAPEL, rotulos: ROTULOS });
 }));
 
-app.put('/api/chamados-intecs/usuarios/:id', exigirAuth, carregarPerfilChamados, exigirPapel('MASTER'), wrap(async (req, res) => {
+app.get('/api/chamados-intecs/usuarios', exigirAuth, carregarPerfilChamados, exigirPapel('MASTER'), exigirPermissao('aba_usuarios'), wrap(async (req, res) => {
+  const usuarios = await chamadosIntecsRepo.listarUsuariosComPapel();
+  // Nunca vaza o JSON cru de overrides: o front recebe as efetivas + o flag "PAPEL+".
+  res.json(usuarios.map((u) => ({
+    id: u.id, email: u.email, role: u.role, unidade: u.unidade, setor: u.setor, ativo: u.ativo,
+    permissoes: permissoesEfetivas(u.role, u.permissoes),
+    permissoes_customizadas: isCustomizado(u.role, u.permissoes)
+  })));
+}));
+
+app.put('/api/chamados-intecs/usuarios/:id', exigirAuth, carregarPerfilChamados, exigirPapel('MASTER'), exigirPermissao('aba_usuarios'), wrap(async (req, res) => {
   const role = trim(req.body.role || 'BASICO');
+  if (!papelValido(role)) return res.status(400).json({ error: 'Papel inválido: ' + role });
   const unidade = trim(req.body.unidade || '') || null;
   const setor = trim(req.body.setor || '') || null;
-  await chamadosIntecsRepo.atualizarPapelUsuario(req.params.id, { role, unidade, setor });
+
+  const atual = (await query(
+    'SELECT role, permissoes FROM dbo.EQUIPSTI_usuarios WHERE id = @id',
+    { id: { type: sql.Int, value: Number(req.params.id) } }
+  )).recordset[0];
+  if (!atual) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+  // O front manda o estado COMPLETO dos switches; grava-se só o diff vs. o
+  // padrão do papel (NULL = padrão puro). Sem `permissoes` no body: mantém os
+  // overrides atuais — a menos que o papel mude (aí reseta, para não sobrar
+  // override órfão calculado contra o papel antigo).
+  let permissoesJson = null;
+  if (req.body.permissoes !== undefined) {
+    const v = validarPermissoes(req.body.permissoes);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    const overrides = calcularOverrides(role, req.body.permissoes);
+    permissoesJson = overrides ? JSON.stringify(overrides) : null;
+  } else if (role === atual.role) {
+    permissoesJson = atual.permissoes;
+  }
+
+  await chamadosIntecsRepo.atualizarPapelUsuario(req.params.id, { role, unidade, setor, permissoesJson });
   res.json({ ok: true });
 }));
 
