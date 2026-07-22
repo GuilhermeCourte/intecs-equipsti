@@ -244,6 +244,10 @@ IF COL_LENGTH('dbo.EQUIPSTI_tactical_agents', 'public_ip') IS NULL
   ALTER TABLE dbo.EQUIPSTI_tactical_agents ADD public_ip NVARCHAR(64) NULL;
 IF COL_LENGTH('dbo.EQUIPSTI_tactical_agents', 'local_ips') IS NULL
   ALTER TABLE dbo.EQUIPSTI_tactical_agents ADD local_ips NVARCHAR(255) NULL;
+-- Usuário logado na máquina (aba Conexão Remota) — o RMM manda o atual ou,
+-- com a máquina ociosa/desligada, o último que entrou.
+IF COL_LENGTH('dbo.EQUIPSTI_tactical_agents', 'logged_username') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_tactical_agents ADD logged_username NVARCHAR(255) NULL;
 
 -- Equipamento (entidade de negócio) — referencia um agente do Tactical RMM,
 -- com enriquecimento manual por cima (patrimônio, apelido, etc.).

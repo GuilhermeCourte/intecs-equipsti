@@ -11,18 +11,19 @@ dotenv.config();
 const BASE_URL = (process.env.TACTICALRMM_API_URL || '').replace(/\/+$/, '');
 const API_KEY = process.env.TACTICALRMM_API_KEY || '';
 
-async function tacticalRequest(path, { method = 'GET', retry = true } = {}) {
+async function tacticalRequest(path, { method = 'GET', body = null, retry = true } = {}) {
   if (!BASE_URL || !API_KEY) {
     throw new Error('TACTICALRMM_API_URL/TACTICALRMM_API_KEY não configurados no .env');
   }
 
   const res = await fetch(BASE_URL + path, {
     method,
-    headers: { 'X-API-KEY': API_KEY, 'Content-Type': 'application/json' }
+    headers: { 'X-API-KEY': API_KEY, 'Content-Type': 'application/json' },
+    body: body == null ? undefined : JSON.stringify(body)
   });
 
   if (res.status >= 500 && retry) {
-    return tacticalRequest(path, { method, retry: false });
+    return tacticalRequest(path, { method, body, retry: false });
   }
 
   const text = await res.text();
@@ -44,4 +45,10 @@ export function getAgents() {
 // Detalhe completo de um agente (hardware, SO, rede, segurança, etc.).
 export function getAgentDetail(agentId) {
   return tacticalRequest(`/agents/${encodeURIComponent(agentId)}/`);
+}
+
+// URLs de acesso remoto via MeshCentral ({ control, terminal, file, ... }).
+// O token de login embutido é efêmero — gerar a cada clique, nunca cachear.
+export function getMeshCentralUrls(agentId) {
+  return tacticalRequest(`/agents/${encodeURIComponent(agentId)}/meshcentral/`);
 }

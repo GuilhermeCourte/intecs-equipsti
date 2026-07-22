@@ -6,7 +6,6 @@ const $ = (id) => document.getElementById(id);
 let TOKEN = localStorage.getItem('token') || '';
 let _perfil = null;
 let _categorias = [];
-let _maquinaId = null;
 let _chamadoAtual = null;
 let modalNovo, modalDetalhe;
 const choicesMap = {};
@@ -471,63 +470,72 @@ function lerParametrosDaUrl() {
   history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
 }
 
-function preencherSelectMaquinas(agentes) {
-  setChoicesOptions('nc_maquina_select', agentes.map((a) => ({
-    value: a.tactical_agent_id, label: a.hostname || a.tactical_agent_id
-  })));
-  $('nc_maquina_select_wrap').style.display = '';
-}
+// Valor especial do select de máquina: só aparece quando não há lista possível
+// (sede sem detecção, ou nada carregado) e permite abrir o chamado sem
+// equipamento — único caso em que isso é aceito.
+const SEM_MAQUINA = 'SEM_MAQUINA';
 
-// Sem candidato por IP: lista os equipamentos para o usuário escolher, em vez
-// de deixá-lo sem saída como antes.
-async function listarMaquinasParaEscolha() {
-  const agentes = await api('GET', '/api/tactical-agents');
-  if (!agentes.length) throw new Error('sem agentes');
-  preencherSelectMaquinas(agentes);
-}
-
-async function verificarMaquina() {
-  _maquinaId = null;
-  $('nc_maquina_select_wrap').style.display = 'none';
-  $('nc_maquina').innerHTML = '<span class="spin" aria-hidden="true"></span> Detectando máquina...';
-
-  // 1) Caminho preferencial: AgentID do agente instalado — exato, sem palpite.
+// Detecção da própria máquina — só para ROTULAR "minha máquina" na lista, quem
+// escolhe é sempre o usuário. AgentID da bandeja primeiro (exato); IP depois,
+// e só com match ÚNICO: atrás de NAT um IP aponta para a rede inteira.
+async function detectarMinhaMaquina() {
   const salvo = trim(localStorage.getItem(AGENT_KEY));
   if (salvo) {
     try {
       const agente = await api('GET', '/api/chamados-intecs/agente/' + encodeURIComponent(salvo));
-      _maquinaId = agente.tactical_agent_id;
-      $('nc_maquina').innerHTML = 'Máquina identificada: <strong>'
-        + escapeHtml(agente.hostname || agente.tactical_agent_id)
-        + '</strong> <button type="button" class="callout-link" id="btnTrocarMaquina">trocar</button>';
-      $('btnTrocarMaquina').addEventListener('click', () => {
-        localStorage.removeItem(AGENT_KEY);
-        verificarMaquina();
-      });
-      return;
+      return { id: agente.tactical_agent_id, hostname: agente.hostname || agente.tactical_agent_id };
     } catch {
       // Agente removido ou máquina reinstalada: esquece o ID e tenta por IP.
       localStorage.removeItem(AGENT_KEY);
     }
   }
-
-  // 2) Fallback por IP — devolve candidatos, nunca uma certeza.
   try {
     const { matches } = await api('POST', '/api/chamados-intecs/verificar-maquina');
     if (matches.length === 1) {
-      _maquinaId = matches[0].tactical_agent_id;
-      $('nc_maquina').textContent = 'Máquina detectada: ' + (matches[0].hostname || matches[0].tactical_agent_id);
-      return;
+      return { id: matches[0].tactical_agent_id, hostname: matches[0].hostname || matches[0].tactical_agent_id };
     }
-    // Com mais de um candidato NÃO se escolhe o primeiro: nesta rede um mesmo
-    // IP público pertence a várias máquinas, e chutar vincularia a errada.
-    $('nc_maquina').textContent = matches.length
-      ? 'Encontramos mais de uma máquina nesta rede — selecione a sua:'
-      : 'Não identificamos sua máquina automaticamente — selecione na lista:';
-    if (matches.length) preencherSelectMaquinas(matches);
-    else await listarMaquinasParaEscolha();
-  } catch (err) {
-    $('nc_maquina').textContent = 'Não identificamos sua máquina — o chamado será aberto sem equipamento.';
+  } catch { /* sem detecção — segue sem rótulo */ }
+  return null;
+}
+
+// Monta o select conforme o modo que o servidor decidiu:
+//   SEDE    → só a própria máquina (ou "não identificada", que abre sem equipamento);
+//   UNIDADE → todas as máquinas da unidade, a detectada no topo.
+function montarOpcoesMaquina(minha, { modo, maquinas }) {
+  const minhaOpcao = minha ? [{ value: minha.id, label: minha.hostname + ' — minha máquina' }] : [];
+  if (modo === 'SEDE') {
+    setChoicesOptions('nc_maquina_select', minhaOpcao.length
+      ? minhaOpcao
+      : [{ value: SEM_MAQUINA, label: 'Máquina não identificada' }], '');
+    return;
+  }
+  const outras = (maquinas || [])
+    .filter((m) => !minha || m.tactical_agent_id !== minha.id)
+    .sort((a, b) => trim(a.hostname).localeCompare(trim(b.hostname)))
+    .map((m) => ({ value: m.tactical_agent_id, label: m.hostname || m.tactical_agent_id }));
+  const opcoes = [...minhaOpcao, ...outras];
+  // Lista vazia com seleção obrigatória seria beco sem saída (cache nunca
+  // sincronizado): deixa abrir sem equipamento, como o portal fazia antes.
+  setChoicesOptions('nc_maquina_select', opcoes.length
+    ? opcoes
+    : [{ value: SEM_MAQUINA, label: 'Máquina não identificada' }], '');
+}
+
+async function verificarMaquina() {
+  // O sync com o Tactical RMM leva alguns segundos: enquanto isso o select
+  // avisa que está carregando (opção desabilitada, não dá pra escolher).
+  setChoicesOptions('nc_maquina_select', [{ value: '__carregando', label: 'Carregando máquinas...', disabled: true }], '');
+  try {
+    // Detecção e lista correm em paralelo; o select nasce em "Selecione..." e
+    // nada é pré-escolhido de propósito — apontar a máquina é decisão do usuário.
+    const [minha, resposta] = await Promise.all([
+      detectarMinhaMaquina(),
+      api('GET', '/api/chamados-intecs/maquinas')
+    ]);
+    montarOpcoesMaquina(minha, resposta);
+  } catch {
+    // API indisponível no meio da sessão: não trava o chamado por causa disso.
+    setChoicesOptions('nc_maquina_select', [{ value: SEM_MAQUINA, label: 'Máquina não identificada' }], '');
   }
 }
 
@@ -550,16 +558,15 @@ function configurarChamados() {
   $('btnNovo').addEventListener('click', abrirModalNovo);
 
   $('nc_categoria').addEventListener('change', () => popularSubcategorias($('nc_categoria').value));
-  $('nc_maquina_select').addEventListener('change', () => {
-    _maquinaId = $('nc_maquina_select').value;
-    // Lembra a escolha (identifica a máquina, não o usuário) para o próximo
-    // chamado já nascer preenchido. O botão "trocar" desfaz.
-    if (_maquinaId) localStorage.setItem(AGENT_KEY, _maquinaId);
-  });
+  // A escolha manual NÃO vai para o localStorage: apontar a máquina de um
+  // colega num chamado não pode virar a "minha máquina" do próximo. Só o
+  // ?agent= do app da bandeja alimenta o AGENT_KEY.
 
   $('btnAbrir').addEventListener('click', async () => {
     const titulo = trim($('nc_titulo').value);
     if (!titulo) { $('alertNovo').innerHTML = '<div class="alert alert-warning py-2 mb-0">Informe um título.</div>'; return; }
+    const maquina = $('nc_maquina_select').value;
+    if (!maquina) { $('alertNovo').innerHTML = '<div class="alert alert-warning py-2 mb-0">Selecione a máquina.</div>'; return; }
     const btn = $('btnAbrir');
     btn.disabled = true;
     try {
@@ -570,7 +577,7 @@ function configurarChamados() {
         prioridade: $('nc_prioridade').value,
         telefone: trim($('nc_telefone').value),
         descricao: trim($('nc_descricao').value),
-        tactical_agent_id: _maquinaId || null
+        tactical_agent_id: maquina === SEM_MAQUINA ? null : maquina
       });
       modalNovo.hide();
       toast('Chamado aberto com sucesso.');

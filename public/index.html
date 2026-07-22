@@ -520,10 +520,15 @@
     .app-tabs .nav-link {
       position: relative; z-index: 2;
       flex: 1 0 auto; border: none; border-radius: 10px;
-      color: var(--muted); font-weight: 600; padding: .6rem 1rem;
+      color: var(--muted); font-weight: 600; padding: .6rem .85rem;
       display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
       white-space: nowrap; background: transparent;
       transition: color 0.35s ease, transform 0.2s ease;
+    }
+    /* Com 9 abas o padding padrão estourava o card e cortava a última;
+       em telas menores aperta um pouco mais para caber tudo sem rolagem. */
+    @media (max-width: 1399.98px) {
+      .app-tabs .nav-link { padding: .6rem .7rem; }
     }
     .app-tabs .nav-link i { font-size: 1.15rem; }
     .app-tabs .nav-link:hover { color: var(--ink); background: transparent; }
@@ -881,6 +886,15 @@
     .dash-stat-value--orange { color: var(--dash-orange); }
     .dash-dot--red { background: var(--dash-red); }
     .dash-dot--green { background: var(--dash-green); }
+
+    /* Botões do modal Conexão Remota: ícone grande com o nome embaixo. */
+    #cxBotoes .btn-cr {
+      display: flex; flex-direction: column; align-items: center;
+      gap: .3rem; padding: .85rem .5rem;
+    }
+    #cxBotoes .btn-cr .ph { font-size: 1.9rem; }
+    /* Valores (hostname/usuário/unidade) maiores, proporcionais aos botões. */
+    #cxHostname, #cxUsuario, #cxUnidade { font-size: 1.25rem; }
 
     .ci-secao-colapsavel .ph-caret-down { transition: transform .2s; }
     .ci-secao-colapsavel button[data-bs-toggle="collapse"]:not(.collapsed) .ph-caret-down { transform: rotate(180deg); }
@@ -1311,6 +1325,7 @@
           <button type="button" class="mm-item" data-tab="tab-registros"><i class="ph ph-table"></i> Registros</button>
           <button type="button" class="mm-item" data-tab="tab-emprestimos"><i class="ph ph-hand-arrow-up"></i> Empréstimos</button>
           <button type="button" class="mm-item" data-tab="tab-chamados"><i class="ph ph-headset"></i> Chamados</button>
+          <button type="button" class="mm-item" data-tab="tab-conexao"><i class="ph ph-screencast"></i> Conexão Remota</button>
           <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
           <button type="button" class="mm-item" data-tab="tab-calendario"><i class="ph ph-calendar-blank"></i> Calendário</button>
           <button type="button" class="mm-item" data-tab="tab-gerenciar"><i class="ph ph-sliders-horizontal"></i> Opções</button>
@@ -1336,6 +1351,10 @@
           <button class="nav-link" id="tab-chamados" data-bs-toggle="tab"
             data-bs-target="#pane-chamados" type="button" role="tab">
             <i class="ph ph-headset"></i> Chamados
+          </button>
+          <button class="nav-link" id="tab-conexao" data-bs-toggle="tab"
+            data-bs-target="#pane-conexao" type="button" role="tab">
+            <i class="ph ph-screencast"></i> Conexão Remota
           </button>
           <button class="nav-link" id="tab-internet" data-bs-toggle="tab"
             data-bs-target="#pane-internet" type="button" role="tab">
@@ -2146,6 +2165,37 @@
                 </div>
               </div>
 
+            </div>
+          </div>
+
+          <!-- ABA CONEXÃO REMOTA -->
+          <div class="tab-pane fade" id="pane-conexao" role="tabpanel">
+            <h2 class="pane-titulo-mobile">Conexão Remota</h2>
+            <div class="d-flex align-items-center mb-3 gap-2">
+              <p class="text-muted mb-0">Assuma o controle das máquinas.</p>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-end gap-1 mb-2">
+              <div id="crStatus" class="text-muted small me-2"></div>
+              <div class="input-group input-group-sm busca-tabela">
+                <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                <input type="search" class="form-control" id="crBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosConexao" title="Limpar filtros">
+                <i class="ph ph-funnel-x fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshConexao" title="Atualizar">
+                <i class="ph ph-arrow-clockwise fs-5"></i>
+              </button>
+            </div>
+            <div class="table-responsive table-sticky">
+              <table class="table table-sm table-striped table-hover align-middle" id="tabelaConexao">
+                <thead class="table-light">
+                  <!-- Cabeçalho montado pelo JS (thFiltravel): colunas com funil. -->
+                  <tr id="crThead"></tr>
+                </thead>
+                <tbody id="crTbody"></tbody>
+              </table>
             </div>
           </div>
 
@@ -3006,6 +3056,36 @@
     </div>
   </div>
 
+  <!-- ===================== MODAL CONEXÃO REMOTA ===================== -->
+  <div class="modal fade" id="modalConexao" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-screencast me-2"></i>Conexão Remota</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-3">
+            <div class="col-12 col-sm-4">
+              <div class="text-muted small">Hostname</div>
+              <div id="cxHostname" class="fw-semibold text-nowrap"></div>
+            </div>
+            <div class="col-6 col-sm-4">
+              <div class="text-muted small">Usuário</div>
+              <div id="cxUsuario" class="fw-semibold"></div>
+            </div>
+            <div class="col-6 col-sm-4">
+              <div class="text-muted small">Unidade</div>
+              <div id="cxUnidade" class="fw-semibold"></div>
+            </div>
+          </div>
+          <div id="cxAlerta"></div>
+          <div class="d-flex gap-2 flex-wrap" id="cxBotoes"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== MODAL HISTÓRICO DO PAT ===================== -->
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalHistorico" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
@@ -3435,7 +3515,7 @@
   <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=18"></script>
   <script>
     /* Mostra a barra de scroll das tabelas enquanto rola e a oculta
        pouco depois de parar (~700ms). Funciona para X e Y. */

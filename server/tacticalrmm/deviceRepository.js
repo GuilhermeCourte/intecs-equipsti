@@ -16,29 +16,32 @@ export async function upsertTacticalAgent(agent) {
       `UPDATE dbo.EQUIPSTI_tactical_agents SET
          hostname = @hostname, client_name = @client_name, site_name = @site_name,
          status_online = @status_online, last_seen = @last_seen,
-         public_ip = @publicIp, local_ips = @localIps, atualizado_em = SYSUTCDATETIME()
+         public_ip = @publicIp, local_ips = @localIps, logged_username = @loggedUsername,
+         atualizado_em = SYSUTCDATETIME()
        WHERE tactical_agent_id = @id`,
       {
         id: S(agent.tactical_agent_id), hostname: S(agent.hostname),
         client_name: S(agent.client_name), site_name: S(agent.site_name),
         status_online: { type: sql.Bit, value: !!agent.status_online },
         last_seen: { type: sql.DateTime2, value: agent.last_seen || null },
-        publicIp: S(agent.public_ip), localIps: S(agent.local_ips)
+        publicIp: S(agent.public_ip), localIps: S(agent.local_ips),
+        loggedUsername: S(agent.logged_username)
       }
     );
     return existe.recordset[0].id;
   }
   const inserted = await query(
     `INSERT INTO dbo.EQUIPSTI_tactical_agents
-       (tactical_agent_id, hostname, client_name, site_name, status_online, last_seen, public_ip, local_ips)
+       (tactical_agent_id, hostname, client_name, site_name, status_online, last_seen, public_ip, local_ips, logged_username)
      OUTPUT INSERTED.id
-     VALUES (@id, @hostname, @client_name, @site_name, @status_online, @last_seen, @publicIp, @localIps)`,
+     VALUES (@id, @hostname, @client_name, @site_name, @status_online, @last_seen, @publicIp, @localIps, @loggedUsername)`,
     {
       id: S(agent.tactical_agent_id), hostname: S(agent.hostname),
       client_name: S(agent.client_name), site_name: S(agent.site_name),
       status_online: { type: sql.Bit, value: !!agent.status_online },
       last_seen: { type: sql.DateTime2, value: agent.last_seen || null },
-      publicIp: S(agent.public_ip), localIps: S(agent.local_ips)
+      publicIp: S(agent.public_ip), localIps: S(agent.local_ips),
+      loggedUsername: S(agent.logged_username)
     }
   );
   return inserted.recordset[0].id;
