@@ -4236,6 +4236,63 @@ function ciCapturarAgentIdDaUrl() {
   history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
 }
 
+// Deep-links dos e-mails da equipe: ?chamado=ID abre o modal do chamado;
+// ?conectar=ID tenta ir direto pro Take Control da máquina vinculada.
+// Guardados em memória (intenção única desta aba) e tirados da URL na hora.
+let _deepLinkChamado = null;
+let _deepLinkConectar = null;
+
+function ciCapturarDeepLinkChamado() {
+  const params = new URLSearchParams(location.search);
+  const chamado = trim(params.get('chamado'));
+  const conectar = trim(params.get('conectar'));
+  if (!chamado && !conectar) return;
+  _deepLinkChamado = chamado || null;
+  _deepLinkConectar = conectar || null;
+  params.delete('chamado');
+  params.delete('conectar');
+  const q = params.toString();
+  history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+}
+
+async function processarDeepLinkChamado() {
+  const id = _deepLinkConectar || _deepLinkChamado;
+  if (!id) return;
+  const conectar = !!_deepLinkConectar;
+  _deepLinkChamado = _deepLinkConectar = null;
+  if (!_ciPerfil) await carregarMeuPerfilCI().catch(() => {});
+  if (!_ciPerfil) return;
+  const abaEl = $('tab-chamados');
+  if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
+
+  // Conexão direta: mesma regra do modal — só o responsável, máquina online.
+  // Navega a PRÓPRIA aba (sem window.open): clique de e-mail já abriu esta aba,
+  // e navegação direta não sofre bloqueador de pop-up.
+  let motivo = '';
+  if (conectar && podeAtenderCI()) {
+    try {
+      const chamado = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id));
+      const equipamento = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id) + '/equipamento');
+      if (chamado.responsavel_id !== _ciPerfil.id) motivo = 'atribuicao';
+      else if (!equipamento?.tactical_agent_id) motivo = 'sem-maquina';
+      else if (!equipamento.maquina?.status_online) motivo = 'offline';
+      else {
+        const conexao = await api('GET', '/api/tactical-agents/'
+          + encodeURIComponent(equipamento.tactical_agent_id) + '/conexao-remota');
+        location.href = conexao.control;
+        return;
+      }
+    } catch { /* cai no modal do chamado */ }
+  }
+
+  await abrirChamadoIntecsDetalhe(id);
+  if (motivo === 'atribuicao') {
+    uiAviso('Atribua o chamado a você para conectar à máquina.', { title: 'Chamado não atribuído' });
+  } else if (motivo === 'offline') {
+    uiAviso('A máquina está offline no momento — não é possível conectar agora.', { title: 'Máquina offline' });
+  }
+}
+
 function ciPreencherSelectMaquinas(agentes) {
   const itens = [{ value: '', label: 'Selecione a máquina...', placeholder: true }].concat(
     agentes.map((a) => ({ value: a.tactical_agent_id, label: a.hostname || a.tactical_agent_id }))
@@ -4872,6 +4929,7 @@ async function entrarNoApp(email, restaurarAba = false) {
     }
   }
   requestAnimationFrame(() => posicionarSlider(false));
+  processarDeepLinkChamado(); // fire-and-forget: corre em paralelo com o resto
   if (dadosCarregados) return;
   dadosCarregados = true;
   try {
@@ -5338,6 +5396,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // O atalho do RMM pode cair aqui também; o ?agent= precisa ser guardado
   // antes de qualquer navegação limpar a URL.
   ciCapturarAgentIdDaUrl();
+  ciCapturarDeepLinkChamado();
   if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
   modalEditar = new bootstrap.Modal($('modalEditar'));
   modalMsg = new bootstrap.Modal($('modalMsg'));
