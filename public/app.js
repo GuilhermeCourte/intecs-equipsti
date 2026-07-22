@@ -4241,6 +4241,7 @@ function ciCapturarAgentIdDaUrl() {
 // Guardados em memória (intenção única desta aba) e tirados da URL na hora.
 let _deepLinkChamado = null;
 let _deepLinkConectar = null;
+let _forcarViewChamadosIntecs = false; // deep-link pede a lista; o shown.bs.tab consome
 
 function ciCapturarDeepLinkChamado() {
   const params = new URLSearchParams(location.search);
@@ -4264,10 +4265,20 @@ async function processarDeepLinkChamado() {
   if (!_ciPerfil) return;
   const abaEl = $('tab-chamados');
   if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
-  // Sub-aba INTECS (a lista): fechando o modal a pessoa cai na lista de
-  // chamados, não no comparativo INTECS vs MSA que é a sub-aba padrão.
+  // Sub-aba INTECS com a visão "Chamados" (lista): fechando o modal a pessoa
+  // cai na lista, não no comparativo nem no Dashboard. O shown.bs.tab da
+  // sub-aba força o Dashboard para quem pode vê-lo, então o pedido vai num
+  // flag que o próprio handler consome; se a sub-aba já estiver ativa, o
+  // evento não dispara e a troca é feita direto.
   const subEl = $('sub-tab-intecs');
-  if (subEl) bootstrap.Tab.getOrCreateInstance(subEl).show();
+  if (subEl) {
+    if (subEl.classList.contains('active')) {
+      mostrarViewChamadosIntecs();
+    } else {
+      _forcarViewChamadosIntecs = true;
+      bootstrap.Tab.getOrCreateInstance(subEl).show();
+    }
+  }
 
   // Conexão direta: mesma regra do modal — só o responsável, máquina online.
   // Navega a PRÓPRIA aba (sem window.open): clique de e-mail já abriu esta aba,
@@ -5564,7 +5575,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!_ciUsuarios.length) await carregarUsuariosIntecs();
     if (!_ciPrioridadesConfig.length) await carregarPrioridadesEStatusIntecs();
     carregarChamadosIntecs();
-    if (_ciPerfil.role === 'BASICO') {
+    if (_ciPerfil.role === 'BASICO' || _forcarViewChamadosIntecs) {
+      _forcarViewChamadosIntecs = false; // pedido de uma vez só (deep-link do e-mail)
       mostrarViewChamadosIntecs();
     } else {
       mostrarViewDashboardIntecs();
