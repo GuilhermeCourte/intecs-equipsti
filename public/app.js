@@ -2103,7 +2103,12 @@ async function loadUsuarios() {
       const status = ativo
         ? '<span class="badge-status badge-ativo">ATIVO</span>'
         : '<span class="badge-status badge-inativo">INATIVO</span>';
-      const papel = _souMasterCI ? '<td>' + escapeHtml(u.role || '') + '</td>' : '';
+      // "PAPEL+" = permissões personalizadas (diferem do padrão do papel).
+      const papel = _souMasterCI
+        ? '<td>' + escapeHtml(u.role || '') +
+          (u.permissoes_customizadas ? '<span class="fw-bold" title="Permissões personalizadas">+</span>' : '') +
+          '</td>'
+        : '';
       return '<tr class="row-clicavel" data-user-id="' + u.id + '">' +
         '<td class="opt-nome">' + emailHtml + '</td>' +
         papel +
@@ -2123,6 +2128,39 @@ async function loadUsuarios() {
 
 let modalEditarUsuario = null;
 
+// Catálogo de permissões (chaves, rótulos e padrões por papel) — só MASTER.
+let _permCatalogo = null;
+
+async function carregarPermCatalogo() {
+  if (!_permCatalogo) _permCatalogo = await api('GET', '/api/chamados-intecs/permissoes/catalogo');
+  return _permCatalogo;
+}
+
+function renderPermissoesSwitches(valores) {
+  const box = $('eu_permissoes_switches');
+  if (!box || !_permCatalogo) return;
+  const abas = _permCatalogo.chaves.filter((k) => k.startsWith('aba_'));
+  const funcionais = _permCatalogo.chaves.filter((k) => !k.startsWith('aba_'));
+  const sw = (k) => '<div class="col-6"><div class="form-check form-switch">' +
+    '<input class="form-check-input" type="checkbox" id="perm_' + k + '" data-perm="' + k + '"' +
+    (valores && valores[k] ? ' checked' : '') + '>' +
+    '<label class="form-check-label" for="perm_' + k + '">' + escapeHtml(_permCatalogo.rotulos[k] || k) + '</label>' +
+    '</div></div>';
+  box.innerHTML =
+    '<div class="col-12 text-muted small fw-semibold">Abas do sistema</div>' + abas.map(sw).join('') +
+    '<div class="col-12 text-muted small fw-semibold mt-1">Portal de chamados</div>' + funcionais.map(sw).join('');
+}
+
+// Estado completo dos switches (o servidor grava só o diff vs. o padrão).
+// null = switches não renderizados (catálogo indisponível) → não enviar.
+function lerPermissoesSwitches() {
+  const els = document.querySelectorAll('#eu_permissoes_switches [data-perm]');
+  if (!els.length) return null;
+  const out = {};
+  els.forEach((el) => { out[el.dataset.perm] = el.checked; });
+  return out;
+}
+
 async function abrirEditarUsuario(id) {
   const u = _usuariosCache.find((x) => String(x.id) === String(id));
   if (!u) return;
@@ -2136,6 +2174,8 @@ async function abrirEditarUsuario(id) {
   $('eu_role_grupo').style.display = _souMasterCI ? '' : 'none';
   $('eu_unidade_grupo').style.display = _souMasterCI ? '' : 'none';
   $('eu_setor_grupo').style.display = _souMasterCI ? '' : 'none';
+  $('eu_permissoes_grupo').style.display = 'none';
+  $('eu_permissoes_switches').innerHTML = '';
   if (_souMasterCI) {
     if (!OPTIONS.UNIDADE || !OPTIONS.UNIDADE.length) { try { await loadOptions(); } catch { /* ignora */ } }
     const unidades = activeValues('UNIDADE');
@@ -2146,6 +2186,13 @@ async function abrirEditarUsuario(id) {
       unidades.map((v) => `<option value="${escapeHtml(v)}" ${u.unidade === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
     $('eu_setor').innerHTML = '<option value="">-</option>' +
       setores.map((v) => `<option value="${escapeHtml(v)}" ${u.setor === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+    // Switches pré-marcados com as permissões efetivas do usuário; se o
+    // catálogo falhar o grupo fica oculto e o salvar não mexe nas permissões.
+    try {
+      await carregarPermCatalogo();
+      renderPermissoesSwitches(u.permissoes || _permCatalogo.padroes[u.role] || {});
+      $('eu_permissoes_grupo').style.display = '';
+    } catch { /* grupo permanece oculto */ }
   }
   modalEditarUsuario.show();
 }
@@ -2154,6 +2201,11 @@ function configurarModalEditarUsuario() {
   $('listaUsuarios').addEventListener('click', (ev) => {
     const row = ev.target.closest('tr[data-user-id]');
     if (row) abrirEditarUsuario(row.getAttribute('data-user-id'));
+  });
+
+  // Trocar o papel reseta os switches para o padrão do papel novo.
+  $('eu_role').addEventListener('change', () => {
+    if (_permCatalogo) renderPermissoesSwitches(_permCatalogo.padroes[$('eu_role').value] || {});
   });
 
   $('btnSalvarEditarUsuario').addEventListener('click', async () => {
@@ -2174,9 +2226,14 @@ function configurarModalEditarUsuario() {
       }
       if (ativo !== !!original.ativo) await api('PUT', '/api/users/' + id, { ativo });
       if (_souMasterCI) {
-        await api('PUT', '/api/chamados-intecs/usuarios/' + id, {
+        const body = {
           role: $('eu_role').value, unidade: $('eu_unidade').value, setor: $('eu_setor').value
-        });
+        };
+        // Sem switches renderizados o campo é omitido e o servidor preserva
+        // as permissões atuais (troca de papel reseta pro padrão do novo).
+        const permissoes = lerPermissoesSwitches();
+        if (permissoes) body.permissoes = permissoes;
+        await api('PUT', '/api/chamados-intecs/usuarios/' + id, body);
       }
       modalEditarUsuario.hide();
       await loadUsuarios();
@@ -4361,7 +4418,13 @@ async function verificarMaquinaAutomatico() {
     $('ciMaquinaDetectada').textContent = matches.length
       ? 'Mais de uma máquina nessa rede — selecione a sua:'
       : 'Não identificamos a máquina automaticamente — selecione na lista:';
-    ciPreencherSelectMaquinas(matches.length ? matches : await api('GET', '/api/tactical-agents'));
+    // Sem permissão de Conexão Remota o /api/tactical-agents responde 403 —
+    // degrada para lista vazia (o chamado pode ser aberto sem equipamento).
+    let agentes = matches;
+    if (!agentes.length) {
+      try { agentes = await api('GET', '/api/tactical-agents'); } catch { agentes = []; }
+    }
+    ciPreencherSelectMaquinas(agentes);
   } catch (err) {
     $('ciMaquinaDetectada').textContent = 'Não identificamos a máquina — o chamado será aberto sem equipamento.';
   }
@@ -4385,6 +4448,42 @@ async function carregarMeuPerfilCI() {
   const podeDashboard = ['GESTOR', 'TECNICO', 'MASTER'].includes(_ciPerfil.role);
   $('btnDashboardIntecs').style.display = podeDashboard ? '' : 'none';
   $('btnChamadosIntecsView').style.display = '';
+}
+
+// ---- Permissões por usuário: quais abas do admin aparecem ----
+// O servidor manda as efetivas (padrão do papel + overrides) no meu-perfil.
+const ABA_PERMISSAO = {
+  'tab-dashboard': 'aba_dashboard',
+  'tab-registros': 'aba_registros',
+  'tab-emprestimos': 'aba_emprestimos',
+  'tab-chamados': 'aba_chamados',
+  'tab-conexao': 'aba_conexao',
+  'tab-internet': 'aba_internet',
+  'tab-calendario': 'aba_calendario',
+  'tab-gerenciar': 'aba_gerenciar',
+  'tab-usuarios': 'aba_usuarios'
+};
+
+function permiteAba(abaId) {
+  const chave = ABA_PERMISSAO[abaId];
+  if (!chave) return true;
+  // Perfil indisponível (falha de rede/servidor antigo): degrada pro mínimo.
+  if (!_ciPerfil || !_ciPerfil.permissoes) return abaId === 'tab-chamados';
+  return !!_ciPerfil.permissoes[chave];
+}
+
+function aplicarPermissoesAbas() {
+  for (const abaId of Object.keys(ABA_PERMISSAO)) {
+    const ok = permiteAba(abaId);
+    const btn = $(abaId);
+    if (btn) btn.classList.toggle('d-none', !ok);
+    const item = document.querySelector('.mm-item[data-tab="' + abaId + '"]');
+    if (item) item.classList.toggle('d-none', !ok);
+  }
+}
+
+function primeiraAbaPermitida() {
+  return Object.keys(ABA_PERMISSAO).find(permiteAba) || 'tab-chamados';
 }
 
 function podeAtenderCI() {
@@ -4935,13 +5034,20 @@ async function entrarNoApp(email, restaurarAba = false) {
   $('authView').classList.add('hidden');
   $('appView').classList.remove('hidden');
   $('userEmail').textContent = email || '';
+  // As permissões decidem quais abas existem — carrega o perfil ANTES de
+  // escolher a aba inicial (falha → permiteAba degrada pra só Chamados).
+  if (!_ciPerfil) await carregarMeuPerfilCI().catch(() => {});
+  aplicarPermissoesAbas();
   carregarNotificacoes();
-  if (restaurarAba) {
-    const abaId = localStorage.getItem('abaAtiva');
-    if (abaId && abaId !== 'tab-dashboard') {
-      const abaEl = $(abaId);
-      if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
-    }
+  // Aba inicial: a salva, se permitida; senão a primeira aba permitida.
+  let abaInicial = (restaurarAba && localStorage.getItem('abaAtiva')) || 'tab-dashboard';
+  if (!permiteAba(abaInicial)) abaInicial = primeiraAbaPermitida();
+  // Compara com a ativa no DOM: logout/login na mesma página herda a aba do
+  // usuário anterior (que pode até estar oculta pro novo).
+  const ativaAgora = document.querySelector('.app-tabs .nav-link.active');
+  if (!ativaAgora || ativaAgora.id !== abaInicial) {
+    const abaEl = $(abaInicial);
+    if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
   }
   requestAnimationFrame(() => posicionarSlider(false));
   processarDeepLinkChamado(); // fire-and-forget: corre em paralelo com o resto
@@ -4949,9 +5055,8 @@ async function entrarNoApp(email, restaurarAba = false) {
   dadosCarregados = true;
   try {
     await loadOptions();
-    // Carrega dashboard se for a aba ativa (ou padrão)
-    const abaAtiva = localStorage.getItem('abaAtiva') || 'tab-dashboard';
-    if (!restaurarAba || abaAtiva === 'tab-dashboard') carregarDashboard();
+    // Dashboard só carrega se for a aba inicial (e o usuário puder vê-la)
+    if (abaInicial === 'tab-dashboard') carregarDashboard();
     // Não pré-carrega registros na inicialização; são carregados ao entrar na aba
   } catch (err) {
     showAlert('alertDashboard', 'danger', 'Erro ao carregar dados: ' + err.message);
@@ -4961,6 +5066,7 @@ async function entrarNoApp(email, restaurarAba = false) {
 function sairDoApp() {
   dadosCarregados = false;
   TOKEN = '';
+  _ciPerfil = null; // próximo login recarrega papel/permissões
   invalidarCacheTodos(); // não herdar registros/facetas na próxima sessão da aba
   localStorage.removeItem('token');
   document.documentElement.classList.remove('sessao-ativa');

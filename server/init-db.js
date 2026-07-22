@@ -31,6 +31,11 @@ IF COL_LENGTH('dbo.EQUIPSTI_usuarios', 'unidade') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_usuarios', 'setor') IS NULL
   ALTER TABLE dbo.EQUIPSTI_usuarios ADD setor NVARCHAR(255) NULL;
 
+-- Permissões por usuário: JSON com SÓ os overrides sobre o padrão do papel
+-- (ver server/permissoes.js). NULL = usa o padrão do papel puro.
+IF COL_LENGTH('dbo.EQUIPSTI_usuarios', 'permissoes') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_usuarios ADD permissoes NVARCHAR(MAX) NULL;
+
 IF OBJECT_ID('dbo.EQUIPSTI_opcoes', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_opcoes (
   id     INT IDENTITY(1,1) PRIMARY KEY,
