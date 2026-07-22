@@ -28,7 +28,7 @@ Cada arquivo tem o dobro do tamanho de exibição, para não borrar em tela reti
 |---|---|---|---|
 | `topo-*.png` | 112px | 56px | tile ao lado da manchete |
 | `chamado.png` | 88px | 44px | tile do card do chamado |
-| `btn-*.png` | 32px | 16px | dentro dos botões de CTA (fundo laranja `P.cta` assado) |
+| `btn-*.png` | 48px | 24px | dentro dos botões de CTA (fundo laranja `P.cta` assado) |
 | demais | 44px | 22px | rótulos do grid, prazo, evento |
 
 ## Tiles do topo, um por evento
