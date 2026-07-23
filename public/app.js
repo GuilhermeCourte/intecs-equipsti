@@ -4495,6 +4495,9 @@ function podeAtenderCI() {
 // ============================================================
 let _crAgentes = [];
 let _crCarregando = false;
+let _cxScriptsFavoritos = null; // cache da sessão (carrega no 1º clique da estrela)
+let _cxAgenteAtual = null;      // agent_id da máquina aberta no modal
+let _cxScriptRodando = false;   // trava contra execução dupla
 
 async function carregarConexaoRemota() {
   if (_crCarregando) return;
@@ -4612,6 +4615,12 @@ function abrirModalConexao(agentId) {
       + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', 'Terminal', online, 'flex-fill', false)
       + crBtn(a.tactical_agent_id, 'file', 'Arquivos remotos', 'ph-folder-open', 'Arquivos', online, 'flex-fill', false)
     : '';
+  // Estrela de scripts favoritos: mesma regra dos botões + máquina online.
+  _cxAgenteAtual = a.tactical_agent_id;
+  $('cxBtnScripts').style.display = (podeAtenderCI() && online) ? '' : 'none';
+  $('cxScriptsPainel').classList.remove('aberto');
+  $('cxScriptSaida').style.display = 'none';
+  $('cxScriptSaidaPre').textContent = '';
   _modalConexao = _modalConexao || new bootstrap.Modal($('modalConexao'));
   _modalConexao.show();
 }
@@ -4642,6 +4651,66 @@ async function conectarViaBotao(btn) {
   }
 }
 
+// Painel de scripts favoritos (estrela do header do modal). A lista vem do
+// Tactical RMM sob demanda no primeiro clique e fica cacheada para a sessão.
+async function alternarPainelScripts() {
+  const painel = $('cxScriptsPainel');
+  if (painel.classList.contains('aberto')) { painel.classList.remove('aberto'); return; }
+  painel.classList.add('aberto');
+  if (!_cxScriptsFavoritos) {
+    $('cxScriptsLista').innerHTML =
+      '<div class="list-group-item text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Carregando scripts...</div>';
+    try {
+      _cxScriptsFavoritos = await api('GET', '/api/tactical-scripts/favoritos');
+    } catch (err) {
+      $('cxScriptsLista').innerHTML =
+        '<div class="list-group-item text-danger small">' + escapeHtml(err.message) + '</div>';
+      return;
+    }
+  }
+  $('cxScriptsLista').innerHTML = _cxScriptsFavoritos.length
+    ? _cxScriptsFavoritos.map((s) =>
+        '<button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2 cx-script"'
+        + ' data-script-id="' + s.id + '" data-script-name="' + escapeHtml(s.name) + '">'
+        + '<i class="ph ph-play-circle text-primary"></i>'
+        + '<span class="flex-fill text-start">' + escapeHtml(s.name) + '</span>'
+        + (s.shell ? '<span class="badge text-bg-secondary">' + escapeHtml(s.shell) + '</span>' : '')
+        + '</button>').join('')
+    : '<div class="list-group-item text-muted small">Nenhum script favorito no Tactical RMM.</div>';
+}
+
+// Confirma, roda o script na máquina do modal e mostra a saída no <pre>.
+async function rodarScriptFavorito(btn) {
+  if (_cxScriptRodando) return;
+  const nome = btn.dataset.scriptName;
+  const ok = await uiAsk({
+    title: 'Executar script',
+    message: 'Executar "' + nome + '" nesta máquina agora?',
+    okText: 'Executar',
+    danger: true
+  });
+  if (!ok) return;
+  _cxScriptRodando = true;
+  $('cxScriptsPainel').classList.remove('aberto');
+  $('cxScriptSaida').style.display = '';
+  $('cxScriptSaidaTitulo').innerHTML =
+    '<span class="spinner-border spinner-border-sm me-2"></span>Executando "' + escapeHtml(nome) + '"...';
+  $('cxScriptSaidaPre').textContent = '';
+  try {
+    const r = await api('POST', '/api/tactical-agents/' + encodeURIComponent(_cxAgenteAtual)
+      + '/rodar-script', { script_id: Number(btn.dataset.scriptId) });
+    $('cxScriptSaidaTitulo').innerHTML =
+      '<i class="ph ph-check-circle text-success me-1"></i>Saída de "' + escapeHtml(nome) + '"';
+    $('cxScriptSaidaPre').textContent = r.output || '(sem saída)';
+  } catch (err) {
+    $('cxScriptSaidaTitulo').innerHTML =
+      '<i class="ph ph-x-circle text-danger me-1"></i>Falha em "' + escapeHtml(nome) + '"';
+    $('cxScriptSaidaPre').textContent = err.message;
+  } finally {
+    _cxScriptRodando = false;
+  }
+}
+
 function configurarConexaoRemota() {
   // Cabeçalho com funil por coluna (mesmo componente das outras tabelas).
   $('crThead').innerHTML = thFiltravel(CR_COLS) + '<th></th>';
@@ -4665,6 +4734,11 @@ function configurarConexaoRemota() {
   $('cxBotoes').addEventListener('click', (ev) => {
     const btn = ev.target.closest('.btn-cr');
     if (btn && !btn.disabled) conectarViaBotao(btn);
+  });
+  $('cxBtnScripts').addEventListener('click', alternarPainelScripts);
+  $('cxScriptsLista').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.cx-script');
+    if (btn) rodarScriptFavorito(btn);
   });
 }
 

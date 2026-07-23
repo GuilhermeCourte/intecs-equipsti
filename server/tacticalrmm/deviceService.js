@@ -160,6 +160,41 @@ export async function getConexaoRemota(tacticalAgentId) {
   };
 }
 
+// Scripts favoritos do Tactical RMM (estrela do modal Conexão Remota).
+// Cache leve em memória: a lista muda raramente e o painel pode ser aberto
+// várias vezes seguidas.
+let _scriptsFavCache = { ts: 0, data: null };
+
+export async function listarScriptsFavoritos() {
+  if (_scriptsFavCache.data && Date.now() - _scriptsFavCache.ts < 60_000) {
+    return _scriptsFavCache.data;
+  }
+  const scripts = await client.getScripts();
+  const lista = (Array.isArray(scripts) ? scripts : (scripts?.results || []))
+    .filter((s) => s.favorite === true)
+    .map((s) => ({ id: s.id, name: s.name, shell: s.shell || null, category: s.category || null }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  _scriptsFavCache = { ts: Date.now(), data: lista };
+  return lista;
+}
+
+// Roda um script favorito no agente e espera a saída (output: "wait").
+const RUNSCRIPT_TIMEOUT_SEG = 90; // timeout do script no próprio agente
+
+export async function rodarScriptFavorito(tacticalAgentId, scriptId) {
+  const payload = {
+    script: scriptId,
+    output: 'wait',
+    args: [],
+    timeout: RUNSCRIPT_TIMEOUT_SEG,
+    run_as_user: false,
+    env_vars: []
+  };
+  // O HTTP espera o script inteiro rodar + 30s de folga de rede.
+  const saida = await client.runScript(tacticalAgentId, payload, (RUNSCRIPT_TIMEOUT_SEG + 30) * 1000);
+  return { output: typeof saida === 'string' ? saida : JSON.stringify(saida, null, 2) };
+}
+
 // Detecção da máquina do usuário no momento da abertura do chamado — pelo IP
 // de origem da requisição, cruzado com os agentes já sincronizados. Fallback
 // para quem não tem AgentID (celular, navegador novo, máquina sem agente):
