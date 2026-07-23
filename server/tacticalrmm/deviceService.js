@@ -116,9 +116,14 @@ export async function listarAgentesDisponiveis() {
       public_ip: agent.public_ip || null,
       local_ips: agent.local_ips || null,
       // Usuário logado (ou o último, se ninguém está na máquina agora).
-      logged_username: agent.logged_username || null
+      logged_username: agent.logged_username || null,
+      // Plataforma ('windows' | 'linux' | 'darwin') — decide o tipo de conexão remota.
+      plat: agent.plat || null
     });
   }
+  // A resposta do RMM é a lista completa: quem não veio foi removido de lá.
+  const removidos = await repo.deleteTacticalAgentsAusentes(lista.map((a) => a.agent_id));
+  if (removidos) console.log(`[tacticalrmm] ${removidos} agente(s) removido(s) do cache (não existem mais no RMM)`);
   return repo.listTacticalAgents();
 }
 
@@ -149,6 +154,21 @@ export async function getResumoAgente(tacticalAgentId) {
 // quando o agente não resolve, para a rota responder 404 em vez de estourar.
 export async function getConexaoRemota(tacticalAgentId) {
   if (!tacticalAgentId) return null;
+  // Agente Linux não tem MeshCentral — a única conexão que funciona é o
+  // Remote Background (terminal) do próprio painel do RMM. Sem token efêmero:
+  // a URL exige o técnico logado no painel (rmm.intecsbr.org).
+  const cache = await repo.getAgenteCache(tacticalAgentId);
+  if (cache?.plat === 'linux') {
+    const webUrl = (process.env.TACTICALRMM_WEB_URL || '').replace(/\/+$/, '');
+    if (!webUrl) throw new Error('TACTICALRMM_WEB_URL não configurado no .env');
+    return {
+      hostname: cache.hostname,
+      control: null,
+      terminal: `${webUrl}/remotebackground/${encodeURIComponent(tacticalAgentId)}?agentPlatform=linux`,
+      file: null,
+      status: cache.status_online ? 'online' : 'offline'
+    };
+  }
   const mesh = await client.getMeshCentralUrls(tacticalAgentId);
   if (!mesh || !mesh.control) return null;
   return {

@@ -2218,7 +2218,9 @@ app.get('/api/chamados-intecs/:id/equipamento', exigirAuth, carregarPerfilChamad
     maquina: {
       hostname: agente?.hostname || device?.nome_amigavel || null,
       status_online: agente ? !!agente.status_online : !!resumo.status_online,
-      site_name: agente?.site_name || null
+      site_name: agente?.site_name || null,
+      // Linux só conecta pelo terminal (Remote Background) — o front esconde o resto.
+      plat: agente?.plat || null
     }
   });
 }));

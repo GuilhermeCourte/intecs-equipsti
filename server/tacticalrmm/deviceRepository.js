@@ -17,7 +17,7 @@ export async function upsertTacticalAgent(agent) {
          hostname = @hostname, client_name = @client_name, site_name = @site_name,
          status_online = @status_online, last_seen = @last_seen,
          public_ip = @publicIp, local_ips = @localIps, logged_username = @loggedUsername,
-         atualizado_em = SYSUTCDATETIME()
+         plat = @plat, atualizado_em = SYSUTCDATETIME()
        WHERE tactical_agent_id = @id`,
       {
         id: S(agent.tactical_agent_id), hostname: S(agent.hostname),
@@ -25,26 +25,41 @@ export async function upsertTacticalAgent(agent) {
         status_online: { type: sql.Bit, value: !!agent.status_online },
         last_seen: { type: sql.DateTime2, value: agent.last_seen || null },
         publicIp: S(agent.public_ip), localIps: S(agent.local_ips),
-        loggedUsername: S(agent.logged_username)
+        loggedUsername: S(agent.logged_username), plat: S(agent.plat)
       }
     );
     return existe.recordset[0].id;
   }
   const inserted = await query(
     `INSERT INTO dbo.EQUIPSTI_tactical_agents
-       (tactical_agent_id, hostname, client_name, site_name, status_online, last_seen, public_ip, local_ips, logged_username)
+       (tactical_agent_id, hostname, client_name, site_name, status_online, last_seen, public_ip, local_ips, logged_username, plat)
      OUTPUT INSERTED.id
-     VALUES (@id, @hostname, @client_name, @site_name, @status_online, @last_seen, @publicIp, @localIps, @loggedUsername)`,
+     VALUES (@id, @hostname, @client_name, @site_name, @status_online, @last_seen, @publicIp, @localIps, @loggedUsername, @plat)`,
     {
       id: S(agent.tactical_agent_id), hostname: S(agent.hostname),
       client_name: S(agent.client_name), site_name: S(agent.site_name),
       status_online: { type: sql.Bit, value: !!agent.status_online },
       last_seen: { type: sql.DateTime2, value: agent.last_seen || null },
       publicIp: S(agent.public_ip), localIps: S(agent.local_ips),
-      loggedUsername: S(agent.logged_username)
+      loggedUsername: S(agent.logged_username), plat: S(agent.plat)
     }
   );
   return inserted.recordset[0].id;
+}
+
+// Agente que sumiu do RMM (desinstalado/máquina descartada) sai também do
+// cache — senão vira linha fantasma na Conexão Remota e na detecção por IP.
+// Seguro apagar: snapshots/devices de chamados antigos não dependem desta
+// tabela (o detalhe do chamado já tem fallback quando o agente não existe).
+// Lista vazia não apaga nada: resposta suspeita do RMM não pode zerar o cache.
+export async function deleteTacticalAgentsAusentes(idsAtuais) {
+  if (!Array.isArray(idsAtuais) || !idsAtuais.length) return 0;
+  const result = await query(
+    `DELETE FROM dbo.EQUIPSTI_tactical_agents
+      WHERE tactical_agent_id NOT IN (SELECT value FROM STRING_SPLIT(@ids, ','))`,
+    { ids: { type: sql.NVarChar(sql.MAX), value: idsAtuais.join(',') } }
+  );
+  return result.rowsAffected?.[0] || 0;
 }
 
 // Detecção por IP: fallback da abertura do chamado, para quem não tem AgentID.
@@ -124,7 +139,7 @@ export async function getDeviceById(deviceId) {
 // Usada no detalhe do chamado para mostrar hostname/status da máquina vinculada.
 export async function getAgenteCache(tacticalAgentId) {
   const result = await query(
-    `SELECT hostname, status_online, logged_username, site_name
+    `SELECT hostname, status_online, logged_username, site_name, plat
        FROM dbo.EQUIPSTI_tactical_agents WHERE tactical_agent_id = @id`,
     { id: S(tacticalAgentId) }
   );

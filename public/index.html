@@ -893,6 +893,10 @@
       gap: .3rem; padding: .85rem .5rem;
     }
     #cxBotoes .btn-cr .ph { font-size: 1.9rem; }
+    /* Bootstrap põe pointer-events:none em .btn:disabled, o que esconde o
+       tooltip nativo (title) — ex.: "Indisponível no Linux". Devolve o hover;
+       o clique continua bloqueado pelo atributo disabled. */
+    .btn-cr:disabled { pointer-events: auto; cursor: not-allowed; }
     /* Valores (hostname/usuário/unidade) maiores, proporcionais aos botões. */
     #cxHostname, #cxUsuario, #cxUnidade { font-size: 1.25rem; }
     /* Painel de scripts favoritos: anima abrindo/fechando (altura + fade). */
