@@ -2,6 +2,7 @@
 //  Acesso a dados: chamados INTECS, categorias, comentários, histórico.
 // ============================================================
 import { query, sql } from './db.js';
+import { registrarLog } from './logs.js';
 
 const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
 const N = (v) => ({ type: sql.Int, value: v == null ? null : Number(v) });
@@ -215,25 +216,28 @@ export async function atualizarCamposChamado(id, campos) {
   await query(`UPDATE dbo.EQUIPSTI_chamados_intecs SET ${sets.join(', ')} WHERE id = @id`, params);
 }
 
-export async function registrarHistorico(chamadoId, usuarioId, acao, campo, valorAnterior, valorNovo) {
-  await query(
-    `INSERT INTO dbo.EQUIPSTI_chamados_intecs_historico
-       (chamado_id, usuario_id, acao, campo, valor_anterior, valor_novo)
-     VALUES (@chamadoId, @usuarioId, @acao, @campo, @valorAnterior, @valorNovo)`,
-    {
-      chamadoId: N(chamadoId), usuarioId: N(usuarioId), acao: S(acao), campo: S(campo),
-      valorAnterior: S(valorAnterior), valorNovo: S(valorNovo)
-    }
-  );
+// Histórico do chamado agora vive na auditoria unificada (EQUIPSTI_logs,
+// modulo='CHAMADOS_INTECS'). O e-mail de quem agiu vem congelado no log; o
+// título deixa o item legível também na aba "Logs" global.
+export async function registrarHistorico(chamadoId, usuarioId, acao, campo, valorAnterior, valorNovo, email, tituloChamado) {
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS',
+    entidadeId: String(chamadoId),
+    entidadeRotulo: 'Chamado #' + chamadoId + (tituloChamado ? ' · ' + tituloChamado : ''),
+    acao, campo, valorAnterior, valorNovo,
+    usuario: email, usuarioId
+  });
 }
 
 export async function listarHistorico(chamadoId) {
+  // Mesmas chaves que a tela do detalhe consome (criado_em, usuario_email...).
   const result = await query(`
-    SELECT h.*, u.email AS usuario_email
-    FROM dbo.EQUIPSTI_chamados_intecs_historico h
-    LEFT JOIN dbo.EQUIPSTI_usuarios u ON u.id = h.usuario_id
-    WHERE h.chamado_id = @chamadoId ORDER BY h.criado_em`,
-    { chamadoId: N(chamadoId) }
+    SELECT id, entidade_id AS chamado_id, usuario_id, acao, campo,
+           valor_anterior, valor_novo, data_hora AS criado_em, usuario AS usuario_email
+      FROM dbo.EQUIPSTI_logs
+     WHERE modulo = 'CHAMADOS_INTECS' AND entidade_id = @chamadoId
+     ORDER BY id`,
+    { chamadoId: S(String(chamadoId)) }
   );
   return result.recordset;
 }

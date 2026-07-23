@@ -16,7 +16,8 @@ const ABAS = [
   'aba_internet',
   'aba_calendario',
   'aba_gerenciar',
-  'aba_usuarios'
+  'aba_usuarios',
+  'aba_logs'
 ];
 
 // Permissões funcionais (não são abas).
@@ -34,6 +35,7 @@ export const ROTULOS = {
   aba_calendario: 'Calendário',
   aba_gerenciar: 'Opções',
   aba_usuarios: 'Usuários',
+  aba_logs: 'Logs',
   chamados_ver_todas_maquinas: 'Ver todas as máquinas no portal de chamados'
 };
 
@@ -46,12 +48,14 @@ function conjunto(abasLigadas, funcionaisLigadas = []) {
   return p;
 }
 
-// MASTER/TECNICO: todas as abas. GESTOR/BASICO: só GTI - Chamados.
+// MASTER: todas as abas. TECNICO: todas MENOS Logs (auditoria é sensível —
+// altera usuários/permissões; libera-se por usuário, virando "TECNICO+").
+// GESTOR/BASICO: só GTI - Chamados.
 // Ver todas as máquinas no portal: só TECNICO por padrão (MASTER liga por usuário).
 export const PADROES_POR_PAPEL = {
   BASICO: conjunto(['aba_chamados']),
   GESTOR: conjunto(['aba_chamados']),
-  TECNICO: conjunto(ABAS, ['chamados_ver_todas_maquinas']),
+  TECNICO: conjunto(ABAS.filter((k) => k !== 'aba_logs'), ['chamados_ver_todas_maquinas']),
   MASTER: conjunto(ABAS)
 };
 

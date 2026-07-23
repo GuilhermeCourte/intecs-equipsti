@@ -17,6 +17,10 @@ npm-debug.log*
 REF_DESIGN.png
 plan.md
 
+# Artefatos de verificação com playwright-cli
+.playwright-cli/
+output/
+
 # Sistema operacional / editores
 Thumbs.db
 Desktop.ini

@@ -3209,6 +3209,164 @@ async function abrirLog(registroId) {
 }
 
 // ============================================================
+//  Logs (auditoria unificada) — aba global + modal por módulo
+// ============================================================
+const LOG_MODULOS = [
+  ['REGISTROS', 'Registros'], ['EMPRESTIMOS', 'Empréstimos'],
+  ['CHAMADOS_INTECS', 'Chamados INTECS'], ['CHAMADOS_MSA', 'Chamados MSA'],
+  ['CONEXAO_REMOTA', 'Conexão Remota'], ['INTERNET', 'Internet'],
+  ['CALENDARIO', 'Calendário'], ['OPCOES', 'Opções'], ['USUARIOS', 'Usuários']
+];
+const LOG_MODULO_LABEL = Object.fromEntries(LOG_MODULOS);
+const LOG_PAGE = 50;
+
+let _lgOffset = 0, _lgLoading = false, _lgAllLoaded = false, _lgBuscaTimer = null;   // aba global
+let _lmModulo = null, _lmOffset = 0, _lmLoading = false, _lmAllLoaded = false, _lmBuscaTimer = null; // modal
+let modalLogsModulo = null;
+
+// Badge colorido pela ação.
+function logBadge(acao) {
+  const a = String(acao || '');
+  let cls = 'bg-secondary';
+  if (['CRIADO', 'EMPRESTADO', 'CATEGORIA_CRIADA', 'SUBCATEGORIA_CRIADA', 'PRIORIDADE_CRIADA', 'STATUS_CRIADO', 'BIOMETRIA_CADASTRADA'].includes(a)) cls = 'bg-success';
+  else if (a.includes('ATUALIZAD') || a === 'RENOMEADO' || a === 'INTERACAO') cls = 'bg-warning text-dark';
+  else if (a.includes('EXCLUID')) cls = 'bg-danger';
+  else if (a === 'CONEXAO' || a === 'SCRIPT_EXECUTADO') cls = 'bg-info text-dark';
+  else if (['DEVOLVIDO', 'TRANSFERIDO', 'SENHA_REDEFINIDA'].includes(a)) cls = 'bg-primary';
+  return '<span class="badge ' + cls + '">' + escapeHtml(a) + '</span>';
+}
+
+// Trunca valor longo na exibição (NVARCHAR(MAX)), com title completo.
+function logTrunc(v) {
+  const s = String(v ?? '');
+  if (s.length <= 120) return escapeHtml(s);
+  return '<span title="' + escapeHtml(s) + '">' + escapeHtml(s.slice(0, 120)) + '…</span>';
+}
+
+// Célula ALTERAÇÃO: campo + valor anterior riscado → valor novo.
+function logAlteracao(l) {
+  const partes = [];
+  if (l.campo) partes.push('<span class="text-muted small">' + escapeHtml(l.campo) + '</span>');
+  const temAntes = l.valorAnterior != null && l.valorAnterior !== '';
+  const temNovo = l.valorNovo != null && l.valorNovo !== '';
+  if (temAntes || temNovo) {
+    let alt = '';
+    if (temAntes) alt += '<span class="text-danger text-decoration-line-through">' + logTrunc(l.valorAnterior) + '</span>';
+    if (temAntes && temNovo) alt += ' <i class="ph ph-arrow-right"></i> ';
+    if (temNovo) alt += '<span class="text-success">' + logTrunc(l.valorNovo) + '</span>';
+    partes.push(alt);
+  }
+  return partes.join('<br>') || '<span class="text-muted">—</span>';
+}
+
+// Uma linha <tr> do log. comModulo = inclui a coluna MÓDULO (aba global).
+function renderLinhaLog(l, comModulo) {
+  const tip = l.justificativa
+    ? ' data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="' + escapeHtml(l.justificativa) + '" style="cursor:help"'
+    : '';
+  const badge = l.justificativa
+    ? '<span' + tip + '>' + logBadge(l.acao) + ' <i class="ph ph-chat-text text-muted"></i></span>'
+    : logBadge(l.acao);
+  return '<tr>' +
+    '<td class="text-nowrap">' + escapeHtml(fmtDataHora(l.dataHora)) + '</td>' +
+    (comModulo ? '<td><span class="badge bg-light text-dark border">' + escapeHtml(LOG_MODULO_LABEL[l.modulo] || l.modulo) + '</span></td>' : '') +
+    '<td>' + badge + '</td>' +
+    '<td>' + escapeHtml(l.entidadeRotulo || l.entidadeId || '—') + '</td>' +
+    '<td>' + logAlteracao(l) + '</td>' +
+    '<td>' + escapeHtml(l.usuario || '—') + '</td>' +
+    '</tr>';
+}
+
+function ativarTooltipsLog(container) {
+  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el, { trigger: 'hover' }));
+}
+
+// Querystring de /api/logs. O input date é dia LOCAL; "até" é exclusivo (+1 dia).
+function montarQueryLogs({ modulo, q, de, ate, offset }) {
+  const p = new URLSearchParams();
+  if (modulo) p.set('modulo', modulo);
+  if (q) p.set('q', q);
+  if (de) { const d = new Date(de + 'T00:00:00'); if (!isNaN(d)) p.set('de', d.toISOString()); }
+  if (ate) { const d = new Date(ate + 'T00:00:00'); if (!isNaN(d)) { d.setDate(d.getDate() + 1); p.set('ate', d.toISOString()); } }
+  p.set('limit', LOG_PAGE);
+  p.set('offset', offset);
+  return '/api/logs?' + p.toString();
+}
+
+// ---- Aba Logs global (infinite scroll, filtros server-side) ----
+async function loadLogs(reset = true) {
+  if (_lgLoading) return;
+  if (!reset && _lgAllLoaded) return;
+  if (reset) {
+    _lgOffset = 0; _lgAllLoaded = false;
+    $('lgTbody').innerHTML = '<tr><td colspan="6" class="text-muted">Carregando...</td></tr>';
+    $('lgSentinel').classList.add('d-none');
+  }
+  _lgLoading = true;
+  try {
+    const url = montarQueryLogs({
+      modulo: $('lgModulo').value, q: $('lgBusca').value.trim(),
+      de: $('lgDe').value, ate: $('lgAte').value, offset: _lgOffset
+    });
+    const novos = await api('GET', url);
+    const html = novos.map((l) => renderLinhaLog(l, true)).join('');
+    if (reset) {
+      $('lgTbody').innerHTML = novos.length ? html : '<tr><td colspan="6" class="text-muted">Nenhum log encontrado.</td></tr>';
+    } else if (html) {
+      $('lgTbody').insertAdjacentHTML('beforeend', html);
+    }
+    ativarTooltipsLog($('lgTbody'));
+    _lgOffset += novos.length;
+    _lgAllLoaded = novos.length < LOG_PAGE;
+    $('lgSentinel').classList.toggle('d-none', _lgAllLoaded);
+  } catch (err) {
+    showAlert('alertLogs', 'danger', 'Erro ao carregar logs: ' + err.message);
+    if (reset) $('lgTbody').innerHTML = '<tr><td colspan="6" class="text-danger">Falha ao carregar.</td></tr>';
+  } finally {
+    _lgLoading = false;
+  }
+}
+
+// ---- Modal Logs de um módulo (ícone de histórico das abas) ----
+function abrirLogsModulo(modulo) {
+  _lmModulo = modulo;
+  _lmOffset = 0; _lmAllLoaded = false;
+  $('lmBusca').value = '';
+  $('lmTitulo').textContent = 'Logs — ' + (LOG_MODULO_LABEL[modulo] || modulo);
+  $('lmCorpo').innerHTML = '<span class="text-muted">Carregando...</span>';
+  $('lmSentinel').classList.add('d-none');
+  modalLogsModulo.show();
+  loadLogsModulo(true);
+}
+
+async function loadLogsModulo(reset = true) {
+  if (_lmLoading) return;
+  if (!reset && _lmAllLoaded) return;
+  if (reset) { _lmOffset = 0; _lmAllLoaded = false; }
+  _lmLoading = true;
+  try {
+    const url = montarQueryLogs({ modulo: _lmModulo, q: $('lmBusca').value.trim(), de: '', ate: '', offset: _lmOffset });
+    const novos = await api('GET', url);
+    const linhas = novos.map((l) => renderLinhaLog(l, false)).join('');
+    if (reset) {
+      $('lmCorpo').innerHTML = novos.length
+        ? '<table class="table table-sm align-middle mb-0"><thead><tr><th>DATA/HORA</th><th>AÇÃO</th><th>ITEM</th><th>ALTERAÇÃO</th><th>USUÁRIO</th></tr></thead><tbody id="lmTbody">' + linhas + '</tbody></table>'
+        : '<span class="text-muted">Nenhum log registrado para este módulo.</span>';
+    } else if (linhas && $('lmTbody')) {
+      $('lmTbody').insertAdjacentHTML('beforeend', linhas);
+    }
+    ativarTooltipsLog($('lmCorpo'));
+    _lmOffset += novos.length;
+    _lmAllLoaded = novos.length < LOG_PAGE;
+    $('lmSentinel').classList.toggle('d-none', _lmAllLoaded);
+  } catch (err) {
+    $('lmCorpo').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+  } finally {
+    _lmLoading = false;
+  }
+}
+
+// ============================================================
 //  Detalhe + Interação do Chamado
 // ============================================================
 function renderDetalheChamado(data) {
@@ -4351,8 +4509,9 @@ async function processarDeepLinkChamado() {
       else if (!equipamento?.tactical_agent_id) motivo = 'sem-maquina';
       else if (!equipamento.maquina?.status_online) motivo = 'offline';
       else {
+        const tipo = equipamento.maquina?.plat === 'linux' ? 'terminal' : 'control';
         const conexao = await api('GET', '/api/tactical-agents/'
-          + encodeURIComponent(equipamento.tactical_agent_id) + '/conexao-remota');
+          + encodeURIComponent(equipamento.tactical_agent_id) + '/conexao-remota?tipo=' + tipo);
         // Agente Linux não tem control (MeshCentral) — cai no terminal do RMM.
         location.href = conexao.control || conexao.terminal;
         return;
@@ -4464,7 +4623,8 @@ const ABA_PERMISSAO = {
   'tab-internet': 'aba_internet',
   'tab-calendario': 'aba_calendario',
   'tab-gerenciar': 'aba_gerenciar',
-  'tab-usuarios': 'aba_usuarios'
+  'tab-usuarios': 'aba_usuarios',
+  'tab-logs': 'aba_logs'
 };
 
 function permiteAba(abaId) {
@@ -4483,6 +4643,9 @@ function aplicarPermissoesAbas() {
     const item = document.querySelector('.mm-item[data-tab="' + abaId + '"]');
     if (item) item.classList.toggle('d-none', !ok);
   }
+  // Ícones de histórico das toolbars: mesma régua da aba Logs global (aba_logs).
+  const podeLogs = permiteAba('tab-logs');
+  document.querySelectorAll('.btn-log-modulo').forEach((b) => b.classList.toggle('d-none', !podeLogs));
 }
 
 function primeiraAbaPermitida() {
@@ -4646,7 +4809,7 @@ async function conectarViaBotao(btn) {
   btn.disabled = true;
   try {
     const conexao = await api('GET', '/api/tactical-agents/'
-      + encodeURIComponent(btn.dataset.agentId) + '/conexao-remota');
+      + encodeURIComponent(btn.dataset.agentId) + '/conexao-remota?tipo=' + encodeURIComponent(btn.dataset.crTipo || ''));
     // Agente Linux só devolve terminal — control/file vêm null.
     if (!conexao[btn.dataset.crTipo]) throw new Error('tipo de conexão indisponível para esta máquina');
     win.location = conexao[btn.dataset.crTipo];
@@ -5758,6 +5921,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   $('tab-usuarios').addEventListener('shown.bs.tab', loadUsuarios);
   $('btnAtualizarUsuarios').addEventListener('click', loadUsuarios);
+
+  // ---- Aba Logs (auditoria unificada) ----
+  modalLogsModulo = new bootstrap.Modal($('modalLogsModulo'));
+  LOG_MODULOS.forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = label;
+    $('lgModulo').appendChild(opt);
+  });
+  $('tab-logs').addEventListener('shown.bs.tab', () => loadLogs(true));
+  ['lgModulo', 'lgDe', 'lgAte'].forEach((id) => $(id).addEventListener('change', () => loadLogs(true)));
+  $('lgBusca').addEventListener('input', () => { clearTimeout(_lgBuscaTimer); _lgBuscaTimer = setTimeout(() => loadLogs(true), 300); });
+  $('btnAtualizarLogs').addEventListener('click', () => loadLogs(true));
+  $('btnLimparFiltrosLogs').addEventListener('click', () => {
+    $('lgModulo').value = ''; $('lgDe').value = ''; $('lgAte').value = ''; $('lgBusca').value = '';
+    loadLogs(true);
+  });
+  $('lmBusca').addEventListener('input', () => { clearTimeout(_lmBuscaTimer); _lmBuscaTimer = setTimeout(() => loadLogsModulo(true), 300); });
+  $('btnLimparFiltrosLm').addEventListener('click', () => { $('lmBusca').value = ''; loadLogsModulo(true); });
+  document.querySelectorAll('.btn-log-modulo').forEach((b) =>
+    b.addEventListener('click', () => abrirLogsModulo(b.dataset.logmodulo)));
+  new IntersectionObserver((e) => { if (e[0].isIntersecting) loadLogs(false); },
+    { root: $('lgScroll'), threshold: 0.1 }).observe($('lgSentinel'));
+  new IntersectionObserver((e) => { if (e[0].isIntersecting) loadLogsModulo(false); },
+    { root: $('lmScroll'), threshold: 0.1 }).observe($('lmSentinel'));
+
   $('tab-internet').addEventListener('shown.bs.tab', carregarInternet);
   $('tab-calendario').addEventListener('shown.bs.tab', carregarCalendario);
   $('btnAtualizarInternet').addEventListener('click', carregarInternet);

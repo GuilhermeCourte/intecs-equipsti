@@ -426,6 +426,39 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_ci_historico_
   CREATE INDEX IX_EQUIPSTI_ci_historico_chamado
     ON dbo.EQUIPSTI_chamados_intecs_historico (chamado_id, criado_em);
 
+-- Auditoria unificada: uma linha por ação HUMANA que toca o banco (ou, na
+-- Conexão Remota, por acesso a uma máquina). Alimentada por server/logs.js;
+-- lida pela aba "Logs" e pelos ícones de histórico de cada aba. As tabelas de
+-- log antigas (EQUIPSTI_registros_log, EQUIPSTI_chamados_intecs_historico)
+-- ficam INTACTAS como backup — a cópia para cá roda uma vez em main().
+IF OBJECT_ID('dbo.EQUIPSTI_logs', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_logs (
+  id              INT IDENTITY(1,1) PRIMARY KEY,
+  modulo          NVARCHAR(30)  NOT NULL,   -- REGISTROS|EMPRESTIMOS|CHAMADOS_INTECS|CHAMADOS_MSA|CONEXAO_REMOTA|INTERNET|CALENDARIO|OPCOES|USUARIOS
+  entidade_id     NVARCHAR(100) NULL,       -- id do item (int, agentId, código MSA) — string p/ caber todos
+  entidade_rotulo NVARCHAR(255) NULL,       -- rótulo legível ("PAT 1234 · Notebook", hostname, "Chamado #57")
+  acao            NVARCHAR(40)  NOT NULL,   -- CRIADO|ATUALIZADO|EXCLUIDO|CONEXAO|SCRIPT_EXECUTADO|...
+  campo           NVARCHAR(150) NULL,
+  valor_anterior  NVARCHAR(MAX) NULL,
+  valor_novo      NVARCHAR(MAX) NULL,
+  justificativa   NVARCHAR(500) NULL,
+  usuario         NVARCHAR(255) NOT NULL,   -- email de quem executou
+  usuario_id      INT NULL,
+  data_hora       DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- Índice único que serve os dois padrões de leitura: por item
+-- (modulo+entidade_id, ícone de histórico) e por módulo (aba). A PK cobre o
+-- ORDER BY id DESC da aba global.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_logs_modulo_entidade')
+  CREATE INDEX IX_EQUIPSTI_logs_modulo_entidade
+    ON dbo.EQUIPSTI_logs (modulo, entidade_id, id);
+
+-- Pré-requisito da migração dos logs de registros (em bancos onde
+-- migrate-add-justificativa.js nunca rodou): garante a coluna antes do SELECT.
+IF COL_LENGTH('dbo.EQUIPSTI_registros_log', 'justificativa') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_registros_log ADD justificativa NVARCHAR(500) NULL;
+
 -- Seed inicial de categorias.
 INSERT INTO dbo.EQUIPSTI_chamados_intecs_categorias (nome)
 SELECT v FROM (VALUES
@@ -560,6 +593,36 @@ async function main() {
   await getPool();
   console.log('Criando tabelas (se necessário)...');
   await query(DDL);
+
+  // Migração idempotente: copia os logs antigos (registros + histórico de
+  // chamados INTECS) para a tabela unificada EQUIPSTI_logs. Roda uma única vez
+  // (gate por existência). Fica FORA do batch do DDL porque faz SELECT em
+  // colunas de tabelas existentes — o SQL Server valida o batch inteiro no
+  // parse. O ORDER BY no INSERT faz o IDENTITY seguir a cronologia, então as
+  // duas fontes ficam intercaladas e o "ORDER BY id DESC" da aba Logs fica certo.
+  await query(`
+    IF NOT EXISTS (SELECT 1 FROM dbo.EQUIPSTI_logs WHERE modulo IN ('REGISTROS','CHAMADOS_INTECS'))
+    INSERT INTO dbo.EQUIPSTI_logs
+      (modulo, entidade_id, entidade_rotulo, acao, campo, valor_anterior, valor_novo, justificativa, usuario, usuario_id, data_hora)
+    SELECT m, eid, rot, acao, campo, va, vn, jus, usu, uid, dh FROM (
+      SELECT N'REGISTROS' AS m, CAST(l.registro_id AS NVARCHAR(100)) AS eid,
+             CASE WHEN r.id IS NULL THEN N'Registro #' + CAST(l.registro_id AS NVARCHAR(20))
+                  ELSE N'PAT ' + COALESCE(NULLIF(LTRIM(RTRIM(r.pat)), N''), N'—') + N' · ' + COALESCE(r.equipamento, N'—') END AS rot,
+             l.acao, l.campo, l.valor_anterior AS va, l.valor_novo AS vn,
+             l.justificativa AS jus, l.usuario AS usu, CAST(NULL AS INT) AS uid, l.data_hora AS dh
+        FROM dbo.EQUIPSTI_registros_log l
+        LEFT JOIN dbo.EQUIPSTI_registros r ON r.id = l.registro_id
+      UNION ALL
+      SELECT N'CHAMADOS_INTECS', CAST(h.chamado_id AS NVARCHAR(100)),
+             N'Chamado #' + CAST(h.chamado_id AS NVARCHAR(20)) + COALESCE(N' · ' + c.titulo, N''),
+             h.acao, h.campo, h.valor_anterior, h.valor_novo,
+             NULL, COALESCE(u.email, N'desconhecido'), h.usuario_id, h.criado_em
+        FROM dbo.EQUIPSTI_chamados_intecs_historico h
+        LEFT JOIN dbo.EQUIPSTI_usuarios u ON u.id = h.usuario_id
+        LEFT JOIN dbo.EQUIPSTI_chamados_intecs c ON c.id = h.chamado_id
+    ) x ORDER BY dh, eid;
+  `);
+  console.log('Migração: logs antigos (registros + chamados INTECS) espelhados em EQUIPSTI_logs (se ainda não estavam).');
 
   const temColunaAnual = await query(
     "SELECT COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'anual') AS existe"
