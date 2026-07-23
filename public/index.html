@@ -895,6 +895,15 @@
     #cxBotoes .btn-cr .ph { font-size: 1.9rem; }
     /* Valores (hostname/usuário/unidade) maiores, proporcionais aos botões. */
     #cxHostname, #cxUsuario, #cxUnidade { font-size: 1.25rem; }
+    /* Painel de scripts favoritos: anima abrindo/fechando (altura + fade). */
+    #cxScriptsPainel {
+      max-height: 0; opacity: 0; margin-bottom: 0 !important; border-width: 0;
+      transition: max-height .25s ease, opacity .2s ease,
+                  margin-bottom .25s ease, border-width .25s ease;
+    }
+    #cxScriptsPainel.aberto {
+      max-height: 300px; opacity: 1; margin-bottom: 1rem !important; border-width: 1px;
+    }
 
     .ci-secao-colapsavel .ph-caret-down { transition: transform .2s; }
     .ci-secao-colapsavel button[data-bs-toggle="collapse"]:not(.collapsed) .ph-caret-down { transform: rotate(180deg); }
@@ -3064,7 +3073,11 @@
           <h5 class="modal-title"><i class="ph ph-screencast me-2"></i>Conexão Remota</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body position-relative">
+          <button type="button" class="btn p-0 position-absolute lh-1 text-secondary" id="cxBtnScripts"
+                  title="Scripts favoritos" style="display:none;top:.9rem;right:1rem">
+            <i class="ph ph-file-code" style="font-size:1.35rem"></i>
+          </button>
           <div class="row g-2 mb-3">
             <div class="col-12 col-sm-4">
               <div class="text-muted small">Hostname</div>
@@ -3079,8 +3092,19 @@
               <div id="cxUnidade" class="fw-semibold"></div>
             </div>
           </div>
+          <div id="cxScriptsPainel" class="border rounded bg-light overflow-hidden">
+            <div class="px-3 py-2 text-muted small d-flex align-items-center gap-2 border-bottom">
+              <i class="ph ph-file-code"></i>Scripts favoritos
+            </div>
+            <div id="cxScriptsLista" class="list-group list-group-flush" style="max-height:220px;overflow-y:auto"></div>
+          </div>
           <div id="cxAlerta"></div>
           <div class="d-flex gap-2 flex-wrap" id="cxBotoes"></div>
+          <div id="cxScriptSaida" class="mt-3" style="display:none">
+            <div class="text-muted small mb-1" id="cxScriptSaidaTitulo"></div>
+            <pre id="cxScriptSaidaPre" class="bg-dark text-light p-2 rounded small mb-0"
+                 style="max-height:240px;overflow:auto;white-space:pre-wrap"></pre>
+          </div>
         </div>
       </div>
     </div>

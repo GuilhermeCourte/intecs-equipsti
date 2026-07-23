@@ -11,7 +11,7 @@ dotenv.config();
 const BASE_URL = (process.env.TACTICALRMM_API_URL || '').replace(/\/+$/, '');
 const API_KEY = process.env.TACTICALRMM_API_KEY || '';
 
-async function tacticalRequest(path, { method = 'GET', body = null, retry = true } = {}) {
+async function tacticalRequest(path, { method = 'GET', body = null, retry = true, timeoutMs = 30000 } = {}) {
   if (!BASE_URL || !API_KEY) {
     throw new Error('TACTICALRMM_API_URL/TACTICALRMM_API_KEY não configurados no .env');
   }
@@ -19,11 +19,12 @@ async function tacticalRequest(path, { method = 'GET', body = null, retry = true
   const res = await fetch(BASE_URL + path, {
     method,
     headers: { 'X-API-KEY': API_KEY, 'Content-Type': 'application/json' },
-    body: body == null ? undefined : JSON.stringify(body)
+    body: body == null ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs)
   });
 
   if (res.status >= 500 && retry) {
-    return tacticalRequest(path, { method, body, retry: false });
+    return tacticalRequest(path, { method, body, retry: false, timeoutMs });
   }
 
   const text = await res.text();
@@ -51,4 +52,18 @@ export function getAgentDetail(agentId) {
 // O token de login embutido é efêmero — gerar a cada clique, nunca cachear.
 export function getMeshCentralUrls(agentId) {
   return tacticalRequest(`/agents/${encodeURIComponent(agentId)}/meshcentral/`);
+}
+
+// Lista de scripts cadastrados no Tactical RMM (o filtro de favoritos fica
+// no service).
+export function getScripts() {
+  return tacticalRequest('/scripts/');
+}
+
+// Roda um script no agente. Com output "wait" a resposta é a saída do script,
+// então o timeout HTTP precisa cobrir o timeout do próprio script + folga.
+// Sem retry: re-executar um script após um 5xx tardio é pior que falhar.
+export function runScript(agentId, payload, timeoutMs) {
+  return tacticalRequest(`/agents/${encodeURIComponent(agentId)}/runscript/`,
+    { method: 'POST', body: payload, retry: false, timeoutMs });
 }

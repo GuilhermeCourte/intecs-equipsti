@@ -1636,6 +1636,35 @@ app.get('/api/tactical-agents/:agentId/conexao-remota', exigirAuth, carregarPerf
   }
 }));
 
+// Scripts favoritos do Tactical RMM (estrela do modal Conexão Remota).
+// Mesma régua da conexão remota: só TECNICO/MASTER.
+app.get('/api/tactical-scripts/favoritos', exigirAuth, carregarPerfilChamados, exigirPermissao('aba_conexao'), exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  try {
+    res.json(await deviceService.listarScriptsFavoritos());
+  } catch (err) {
+    res.status(502).json({ error: 'Tactical RMM indisponível: ' + err.message });
+  }
+}));
+
+// Roda um script favorito na máquina — é executar código na máquina de
+// alguém, então só TECNICO/MASTER e só scripts marcados como favoritos.
+app.post('/api/tactical-agents/:agentId/rodar-script', exigirAuth, carregarPerfilChamados, exigirPermissao('aba_conexao'), exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const agentId = trim(req.params.agentId || '');
+  const scriptId = Number(req.body?.script_id);
+  if (!agentId || !Number.isInteger(scriptId) || scriptId <= 0) {
+    return res.status(400).json({ error: 'Informe o agente e o script.' });
+  }
+  try {
+    const favoritos = await deviceService.listarScriptsFavoritos();
+    if (!favoritos.some((s) => s.id === scriptId)) {
+      return res.status(400).json({ error: 'Script não está entre os favoritos do Tactical RMM.' });
+    }
+    res.json(await deviceService.rodarScriptFavorito(agentId, scriptId));
+  } catch (err) {
+    res.status(502).json({ error: 'Falha ao executar o script: ' + err.message });
+  }
+}));
+
 // Máquinas que o portal /chamados oferece no select "Selecione a máquina...".
 // A unidade da máquina é o SITE do Tactical RMM (client INTECS → SEDE e
 // servidores; client UNIDADES → um site por loja). A regra fica aqui no
