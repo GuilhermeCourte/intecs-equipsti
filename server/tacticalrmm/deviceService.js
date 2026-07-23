@@ -172,7 +172,15 @@ export async function listarScriptsFavoritos() {
   const scripts = await client.getScripts();
   const lista = (Array.isArray(scripts) ? scripts : (scripts?.results || []))
     .filter((s) => s.favorite === true)
-    .map((s) => ({ id: s.id, name: s.name, shell: s.shell || null, category: s.category || null }))
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      shell: s.shell || null,
+      category: s.category || null,
+      // Dica de uso cadastrada no RMM (ex.: "SET-HOSTNAME <novo nome>") —
+      // aparece no diálogo de confirmação junto do campo de argumentos.
+      syntax: s.syntax || null
+    }))
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   _scriptsFavCache = { ts: Date.now(), data: lista };
   return lista;
@@ -181,11 +189,11 @@ export async function listarScriptsFavoritos() {
 // Roda um script favorito no agente e espera a saída (output: "wait").
 const RUNSCRIPT_TIMEOUT_SEG = 90; // timeout do script no próprio agente
 
-export async function rodarScriptFavorito(tacticalAgentId, scriptId) {
+export async function rodarScriptFavorito(tacticalAgentId, scriptId, args = []) {
   const payload = {
     script: scriptId,
     output: 'wait',
-    args: [],
+    args,
     timeout: RUNSCRIPT_TIMEOUT_SEG,
     run_as_user: false,
     env_vars: []
