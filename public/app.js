@@ -4498,6 +4498,7 @@ let _crCarregando = false;
 let _cxScriptsFavoritos = null; // cache da sessão (carrega no 1º clique da estrela)
 let _cxAgenteAtual = null;      // agent_id da máquina aberta no modal
 let _cxScriptRodando = false;   // trava contra execução dupla
+let _cxSaidaTimer = null;       // some com a saída do script após 10s
 
 async function carregarConexaoRemota() {
   if (_crCarregando) return;
@@ -4619,6 +4620,7 @@ function abrirModalConexao(agentId) {
   _cxAgenteAtual = a.tactical_agent_id;
   $('cxBtnScripts').style.display = (podeAtenderCI() && online) ? '' : 'none';
   $('cxScriptsPainel').classList.remove('aberto');
+  clearTimeout(_cxSaidaTimer);
   $('cxScriptSaida').style.display = 'none';
   $('cxScriptSaidaPre').textContent = '';
   _modalConexao = _modalConexao || new bootstrap.Modal($('modalConexao'));
@@ -4692,6 +4694,7 @@ async function rodarScriptFavorito(btn) {
   if (!ok) return;
   _cxScriptRodando = true;
   $('cxScriptsPainel').classList.remove('aberto');
+  clearTimeout(_cxSaidaTimer);
   $('cxScriptSaida').style.display = '';
   $('cxScriptSaidaTitulo').innerHTML =
     '<span class="spinner-border spinner-border-sm me-2"></span>Executando "' + escapeHtml(nome) + '"...';
@@ -4708,6 +4711,8 @@ async function rodarScriptFavorito(btn) {
     $('cxScriptSaidaPre').textContent = err.message;
   } finally {
     _cxScriptRodando = false;
+    // A saída fica visível por 10s e some sozinha.
+    _cxSaidaTimer = setTimeout(() => { $('cxScriptSaida').style.display = 'none'; }, 10000);
   }
 }
 
