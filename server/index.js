@@ -13,6 +13,7 @@ import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 import { notificar, notificarTeste, notificarSolicitante } from './notificacoes.js';
+import { registrarLog, listarLogs, MODULOS_LOG } from './logs.js';
 import { emailParaEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
@@ -43,6 +44,18 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((err) => {
   console.error(err);
   res.status(500).json({ error: err.message || 'Erro interno.' });
 });
+
+// Compara valor antigo x novo para o log de auditoria. numeric=true compara por
+// número (ignora formatação "1500.00" vs "1500"); senão compara texto, tratando
+// null e '' como iguais (evita "diferença" fantasma de campo vazio).
+const logMudou = (de, para, numeric = false) => {
+  if (numeric) {
+    const a = de == null || de === '' ? null : parseFloat(String(de).replace(',', '.'));
+    const b = para == null || para === '' ? null : parseFloat(String(para).replace(',', '.'));
+    return a !== b;
+  }
+  return String(de ?? '') !== String(para ?? '');
+};
 
 // ===================== AUTH =====================
 app.post('/api/auth/login', wrap(async (req, res) => {
@@ -151,6 +164,11 @@ app.post('/api/biometric/register/verify', exigirAuth, wrap(async (req, res) => 
       rotulo: S(rotulo)
     }
   );
+  await registrarLog({
+    modulo: 'USUARIOS', entidadeId: String(req.user.sub), entidadeRotulo: req.user.email,
+    acao: 'BIOMETRIA_CADASTRADA', valorNovo: rotulo,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json({ ok: true });
 }));
 
@@ -208,7 +226,12 @@ app.post('/api/users', exigirAuth, exigirPermissao('aba_usuarios'), wrap(async (
     'INSERT INTO dbo.EQUIPSTI_usuarios (email, senha_hash) OUTPUT INSERTED.id VALUES (@email, @hash)',
     { email: S(email), hash: S(hash) }
   );
-  res.status(201).json({ ok: true, id: inserted.recordset[0].id });
+  const novoId = inserted.recordset[0].id;
+  await registrarLog({
+    modulo: 'USUARIOS', entidadeId: String(novoId), entidadeRotulo: email,
+    acao: 'CRIADO', valorNovo: email, usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.status(201).json({ ok: true, id: novoId });
 }));
 
 app.put('/api/users/:id', exigirAuth, exigirPermissao('aba_usuarios'), wrap(async (req, res) => {
@@ -216,16 +239,31 @@ app.put('/api/users/:id', exigirAuth, exigirPermissao('aba_usuarios'), wrap(asyn
   const novoEmail = req.body.email !== undefined ? trim(req.body.email).toLowerCase() : null;
   const novaSenha = req.body.senha !== undefined ? String(req.body.senha) : null;
 
+  const antesU = (await query('SELECT email, ativo FROM dbo.EQUIPSTI_usuarios WHERE id = @id', { id })).recordset[0] || {};
+  const rotuloU = antesU.email || `Usuário #${id}`;   // e-mail ANTERIOR identifica mesmo com troca
+
   if (novoEmail) {
     const dup = await query('SELECT id FROM dbo.EQUIPSTI_usuarios WHERE email = @email AND id <> @id',
       { email: S(novoEmail), id });
     if (dup.recordset.length) return res.status(409).json({ error: 'Este e-mail já está em uso.' });
     await query('UPDATE dbo.EQUIPSTI_usuarios SET email = @email WHERE id = @id', { email: S(novoEmail), id });
+    if (logMudou(antesU.email, novoEmail)) {
+      await registrarLog({
+        modulo: 'USUARIOS', entidadeId: String(id), entidadeRotulo: rotuloU,
+        acao: 'ATUALIZADO', campo: 'E-MAIL', valorAnterior: antesU.email, valorNovo: novoEmail,
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
   }
   if (novaSenha) {
     if (novaSenha.length < 6) return res.status(400).json({ error: 'A senha deve ter ao menos 6 caracteres.' });
     const hash = await bcrypt.hash(novaSenha, 10);
     await query('UPDATE dbo.EQUIPSTI_usuarios SET senha_hash = @hash WHERE id = @id', { hash: S(hash), id });
+    // Reset de senha: registra o EVENTO, nunca o valor (hash ou texto).
+    await registrarLog({
+      modulo: 'USUARIOS', entidadeId: String(id), entidadeRotulo: rotuloU,
+      acao: 'SENHA_REDEFINIDA', usuario: req.user.email, usuarioId: req.user.sub
+    });
   }
   if (req.body.ativo !== undefined) {
     const ativo = req.body.ativo ? 1 : 0;
@@ -233,6 +271,15 @@ app.put('/api/users/:id', exigirAuth, exigirPermissao('aba_usuarios'), wrap(asyn
       return res.status(400).json({ error: 'Você não pode inativar o próprio usuário.' });
     }
     await query('UPDATE dbo.EQUIPSTI_usuarios SET ativo = @ativo WHERE id = @id', { ativo, id });
+    const ativoAntes = antesU.ativo ? 1 : 0;
+    if (ativoAntes !== ativo) {
+      await registrarLog({
+        modulo: 'USUARIOS', entidadeId: String(id), entidadeRotulo: rotuloU,
+        acao: 'ATUALIZADO', campo: 'ATIVO',
+        valorAnterior: ativoAntes ? 'SIM' : 'NÃO', valorNovo: ativo ? 'SIM' : 'NÃO',
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
   }
   res.json({ ok: true });
 }));
@@ -269,8 +316,19 @@ app.put('/api/options/quantidade', exigirAuth, exigirPermissao('aba_gerenciar'),
   const valor = trim(req.body.valor);
   const qtd = parseInt(req.body.quantidade, 10);
   if (isNaN(qtd) || qtd < 0) return res.status(400).json({ error: 'Quantidade inválida.' });
+  const antesQ = await query('SELECT quantidade FROM dbo.EQUIPSTI_opcoes WHERE lista = @lista AND valor = @valor',
+    { lista: S('INSUMOS'), valor: S(valor) });
   await query('UPDATE dbo.EQUIPSTI_opcoes SET quantidade = @qtd WHERE lista = @lista AND valor = @valor',
     { qtd: { type: sql.Int, value: qtd }, lista: S('INSUMOS'), valor: S(valor) });
+  const qAntes = antesQ.recordset[0]?.quantidade;
+  if (logMudou(qAntes, qtd, true)) {
+    await registrarLog({
+      modulo: 'OPCOES', entidadeRotulo: `INSUMOS · ${valor}`,
+      acao: 'ATUALIZADO', campo: 'QUANTIDADE',
+      valorAnterior: qAntes == null ? null : String(qAntes), valorNovo: String(qtd),
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
   res.json({ ok: true });
 }));
 
@@ -293,6 +351,11 @@ app.post('/api/options', exigirAuth, exigirPermissao('aba_gerenciar'), wrap(asyn
     { lista: S(lista), valor: S(valor), detalhe: { type: sql.NVarChar, value: detalhe },
       preco: preco != null ? { type: sql.Decimal(15,2), value: preco } : S(null),
       tipoAquisicao: S(tipoAquisicao) });
+  await registrarLog({
+    modulo: 'OPCOES', entidadeRotulo: `${lista} · ${valor}`,
+    acao: 'CRIADO', valorNovo: detalhe ? `${valor} · ${detalhe}` : valor,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json({ ok: true });
 }));
 
@@ -310,6 +373,11 @@ app.put('/api/options/rename', exigirAuth, exigirPermissao('aba_gerenciar'), wra
 
   await query('UPDATE dbo.EQUIPSTI_opcoes SET valor = @novo WHERE lista = @lista AND valor = @valor',
     { novo: S(novoValor), lista: S(lista), valor: S(valor) });
+  await registrarLog({
+    modulo: 'OPCOES', entidadeRotulo: `${lista} · ${novoValor}`,
+    acao: 'RENOMEADO', campo: 'VALOR', valorAnterior: valor, valorNovo: novoValor,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.json({ ok: true });
 }));
 
@@ -330,6 +398,8 @@ app.put('/api/options/detalhe', exigirAuth, exigirPermissao('aba_gerenciar'), wr
   }
   const endereco = trim(req.body.endereco || '') || null;
   if (!OPTION_LISTS.includes(lista)) return res.status(400).json({ error: 'Lista inválida.' });
+  const antesD = await query('SELECT detalhe, CAST(preco AS NVARCHAR) AS preco, tipo_aquisicao, cnpj, endereco FROM dbo.EQUIPSTI_opcoes WHERE lista = @lista AND valor = @valor',
+    { lista: S(lista), valor: S(valor) });
   await query('UPDATE dbo.EQUIPSTI_opcoes SET detalhe = @detalhe, preco = @preco, tipo_aquisicao = @tipoAquisicao, cnpj = @cnpj, endereco = @endereco WHERE lista = @lista AND valor = @valor',
     { detalhe: { type: sql.NVarChar, value: detalhe },
       preco: preco != null ? { type: sql.Decimal(15,2), value: preco } : S(null),
@@ -337,6 +407,23 @@ app.put('/api/options/detalhe', exigirAuth, exigirPermissao('aba_gerenciar'), wr
       cnpj: S(cnpj),
       endereco: S(endereco),
       lista: S(lista), valor: S(valor) });
+  const oa = antesD.recordset[0] || {};
+  const paresOpc = [
+    ['DETALHE', oa.detalhe, detalhe, false],
+    ['PREÇO', oa.preco, preco == null ? null : String(preco), true],
+    ['TIPO AQUISIÇÃO', oa.tipo_aquisicao, tipoAquisicao, false],
+    ['CNPJ', oa.cnpj, cnpj, false],
+    ['ENDEREÇO', oa.endereco, endereco, false]
+  ];
+  for (const [campo, de, para, num] of paresOpc) {
+    if (logMudou(de, para, num)) {
+      await registrarLog({
+        modulo: 'OPCOES', entidadeRotulo: `${lista} · ${valor}`,
+        acao: 'ATUALIZADO', campo, valorAnterior: de, valorNovo: para,
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
+  }
   res.json({ ok: true });
 }));
 
@@ -345,8 +432,19 @@ app.put('/api/options/hidden', exigirAuth, exigirPermissao('aba_gerenciar'), wra
   const lista = trim(req.body.lista).toUpperCase();
   const valor = trim(req.body.valor);
   const oculto = req.body.oculto ? 1 : 0;
+  const antesH = await query('SELECT oculto FROM dbo.EQUIPSTI_opcoes WHERE lista = @lista AND valor = @valor',
+    { lista: S(lista), valor: S(valor) });
   await query('UPDATE dbo.EQUIPSTI_opcoes SET oculto = @oculto WHERE lista = @lista AND valor = @valor',
     { oculto, lista: S(lista), valor: S(valor) });
+  const ocAntes = antesH.recordset[0]?.oculto ? 1 : 0;
+  if (ocAntes !== oculto) {
+    await registrarLog({
+      modulo: 'OPCOES', entidadeRotulo: `${lista} · ${valor}`,
+      acao: 'ATUALIZADO', campo: 'OCULTO',
+      valorAnterior: ocAntes ? 'SIM' : 'NÃO', valorNovo: oculto ? 'SIM' : 'NÃO',
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
   res.json({ ok: true });
 }));
 
@@ -439,8 +537,8 @@ app.get('/api/records/:id/log', exigirAuth, exigirPermissao('aba_registros'), wr
   const id = Number(req.params.id);
   const r = await query(`SELECT acao, campo, valor_anterior AS valorAnterior, valor_novo AS valorNovo,
     justificativa, usuario, CONVERT(varchar(19), data_hora, 120) AS dataHora
-    FROM dbo.EQUIPSTI_registros_log WHERE registro_id = @id ORDER BY id DESC`,
-    { id });
+    FROM dbo.EQUIPSTI_logs WHERE modulo = 'REGISTROS' AND entidade_id = @id ORDER BY id DESC`,
+    { id: S(String(id)) });
   res.json(r.recordset);
 }));
 
@@ -460,8 +558,11 @@ app.post('/api/records', exigirAuth, exigirPermissao('aba_registros'), wrap(asyn
       imagemBase64: S(d.imagem_base64), imagem2Base64: S(d.imagem2_base64), imagem3Base64: S(d.imagem3_base64),
       criadoPor: S(usuario) });
   const novoId = ins.recordset[0].id;
-  await query(`INSERT INTO dbo.EQUIPSTI_registros_log (registro_id, acao, usuario) VALUES (@id, 'CRIADO', @usuario)`,
-    { id: novoId, usuario: S(usuario) });
+  await registrarLog({
+    modulo: 'REGISTROS', entidadeId: String(novoId),
+    entidadeRotulo: `PAT ${d.pat || '—'} · ${d.equipamento || '—'}`,
+    acao: 'CRIADO', usuario, usuarioId: req.user.sub
+  });
   await notificar({
     tipo: 'REGISTRO', acao: 'CRIADO', link: 'tab-registros', refId: novoId,
     ator: { id: req.user.sub, email: usuario },
@@ -513,6 +614,7 @@ app.put('/api/records/:id', exigirAuth, exigirPermissao('aba_registros'), wrap(a
       imagemBase64: S(d.imagem_base64), imagem2Base64: S(d.imagem2_base64), imagem3Base64: S(d.imagem3_base64),
       atualizadoPor: S(usuario) });
 
+  const rotuloReg = `PAT ${d.pat || '—'} · ${d.equipamento || '—'}`;
   const camposAlterados = [];
   for (const [key, label] of CAMPOS_LOG) {
     const vAntes = String(old[key] ?? '');
@@ -522,10 +624,11 @@ app.put('/api/records/:id', exigirAuth, exigirPermissao('aba_registros'), wrap(a
       : vAntes === vDepois;
     if (!igual) {
       camposAlterados.push(label);
-      await query(`INSERT INTO dbo.EQUIPSTI_registros_log
-        (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
-        VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
-        { id, campo: S(label), antes: S(vAntes), depois: S(vDepois), justificativa: S(justificativa), usuario: S(usuario) });
+      await registrarLog({
+        modulo: 'REGISTROS', entidadeId: String(id), entidadeRotulo: rotuloReg,
+        acao: 'ATUALIZADO', campo: label, valorAnterior: vAntes, valorNovo: vDepois,
+        justificativa, usuario, usuarioId: req.user.sub
+      });
     }
   }
 
@@ -536,10 +639,11 @@ app.put('/api/records/:id', exigirAuth, exigirPermissao('aba_registros'), wrap(a
     if ((old[col] || '') !== (d[col] || '')) {
       const nomeLog = antes === depois ? label + ' (substituída)' : label;
       camposAlterados.push(nomeLog);
-      await query(`INSERT INTO dbo.EQUIPSTI_registros_log
-        (registro_id, acao, campo, valor_anterior, valor_novo, justificativa, usuario)
-        VALUES (@id, 'ATUALIZADO', @campo, @antes, @depois, @justificativa, @usuario)`,
-        { id, campo: S(nomeLog), antes: S(antes), depois: S(depois), justificativa: S(justificativa), usuario: S(usuario) });
+      await registrarLog({
+        modulo: 'REGISTROS', entidadeId: String(id), entidadeRotulo: rotuloReg,
+        acao: 'ATUALIZADO', campo: nomeLog, valorAnterior: antes, valorNovo: depois,
+        justificativa, usuario, usuarioId: req.user.sub
+      });
     }
   }
 
@@ -560,6 +664,13 @@ app.delete('/api/records/:id', exigirAuth, exigirPermissao('aba_registros'), wra
   await query('DELETE FROM dbo.EQUIPSTI_registros WHERE id = @id', { id });
   const r = prev.recordset[0];
   if (r) {
+    await registrarLog({
+      modulo: 'REGISTROS', entidadeId: String(id),
+      entidadeRotulo: `PAT ${r.pat || '—'} · ${r.equipamento || '—'}`,
+      acao: 'EXCLUIDO',
+      valorAnterior: `${r.equipamento || '—'} · PAT ${r.pat || '—'} · N/S ${r.ns || '—'}`,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
     await notificar({
       tipo: 'REGISTRO', acao: 'EXCLUIDO', link: 'tab-registros', refId: id,
       ator: { id: req.user.sub, email: req.user.email },
@@ -611,6 +722,16 @@ function paramsInternet(d) {
   };
 }
 
+// Campos auditados da Internet (chave do shape → rótulo; 3º = comparar como número).
+const CAMPOS_LOG_INTERNET = [
+  ['unidade', 'UNIDADE'], ['empresa', 'EMPRESA'], ['contratoCnpj', 'CONTRATO/CNPJ'],
+  ['ipInternet', 'IP INTERNET'], ['upDown', 'UP/DOWN'], ['valor', 'VALOR', true],
+  ['vencimentoDia', 'VENCIMENTO (DIA)'], ['telefoneSuporte', 'TELEFONE SUPORTE'],
+  ['linhaAcesso', 'LINHA DE ACESSO'], ['linkAcesso', 'LINK DE ACESSO'],
+  ['emailContas', 'E-MAIL CONTAS'], ['observacao', 'OBSERVAÇÃO']
+];
+const rotuloInternet = (d) => `${d.unidade || '—'} · ${d.empresa || '—'}`;
+
 app.get('/api/internet', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   const r = await query(`${INTERNET_SELECT} ORDER BY unidade, id DESC`);
   res.json(r.recordset);
@@ -619,10 +740,16 @@ app.get('/api/internet', exigirAuth, exigirPermissao('aba_internet'), wrap(async
 app.post('/api/internet', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   const d = lerInternet(req.body);
   if (!d.unidade) return res.status(400).json({ error: 'Selecione a unidade.' });
-  await query(`INSERT INTO dbo.EQUIPSTI_internet
+  const insI = await query(`INSERT INTO dbo.EQUIPSTI_internet
     (unidade, empresa, contrato_cnpj, ip_internet, up_down, valor, vencimento_dia, telefone_suporte, linha_acesso, link_acesso, email_contas, observacao, criado_por, atualizado_por)
+    OUTPUT INSERTED.id
     VALUES (@unidade, @empresa, @contratoCnpj, @ipInternet, @upDown, @valor, @vencimentoDia, @telefoneSuporte, @linhaAcesso, @linkAcesso, @emailContas, @observacao, @criadoPor, @criadoPor)`,
     { ...paramsInternet(d), criadoPor: S(req.user.email) });
+  await registrarLog({
+    modulo: 'INTERNET', entidadeId: String(insI.recordset[0].id), entidadeRotulo: rotuloInternet(d),
+    acao: 'CRIADO', valorNovo: `${d.empresa || '—'} · ${d.ipInternet || '—'}`,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json({ ok: true });
 }));
 
@@ -630,6 +757,7 @@ app.put('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(a
   const id = Number(req.params.id);
   const d = lerInternet(req.body);
   if (!d.unidade) return res.status(400).json({ error: 'Selecione a unidade.' });
+  const antesRow = (await query(`${INTERNET_SELECT} WHERE id = @id`, { id })).recordset[0] || {};
   await query(`UPDATE dbo.EQUIPSTI_internet SET
     unidade=@unidade, empresa=@empresa, contrato_cnpj=@contratoCnpj, ip_internet=@ipInternet, up_down=@upDown,
     valor=@valor, vencimento_dia=@vencimentoDia, telefone_suporte=@telefoneSuporte, linha_acesso=@linhaAcesso,
@@ -637,11 +765,32 @@ app.put('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(a
     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { ...paramsInternet(d), id, atualizadoPor: S(req.user.email) });
+  for (const [key, label, num] of CAMPOS_LOG_INTERNET) {
+    if (logMudou(antesRow[key], d[key], num)) {
+      await registrarLog({
+        modulo: 'INTERNET', entidadeId: String(id), entidadeRotulo: rotuloInternet(d),
+        acao: 'ATUALIZADO', campo: label,
+        valorAnterior: antesRow[key] == null ? null : String(antesRow[key]),
+        valorNovo: d[key] == null ? null : String(d[key]),
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
+  }
   res.json({ ok: true });
 }));
 
 app.delete('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
-  await query('DELETE FROM dbo.EQUIPSTI_internet WHERE id = @id', { id: Number(req.params.id) });
+  const id = Number(req.params.id);
+  const prev = (await query(`${INTERNET_SELECT} WHERE id = @id`, { id })).recordset[0];
+  await query('DELETE FROM dbo.EQUIPSTI_internet WHERE id = @id', { id });
+  if (prev) {
+    await registrarLog({
+      modulo: 'INTERNET', entidadeId: String(id), entidadeRotulo: rotuloInternet(prev),
+      acao: 'EXCLUIDO',
+      valorAnterior: `${prev.unidade || '—'} · ${prev.empresa || '—'} · ${prev.ipInternet || '—'}`,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
   res.json({ ok: true });
 }));
 
@@ -683,6 +832,12 @@ function validarEventoCalendario(d, res) {
   return true;
 }
 
+// Campos auditados do Calendário (chave do shape → rótulo; 3º = comparar como número).
+const CAMPOS_LOG_CALENDARIO = [
+  ['titulo', 'TÍTULO'], ['tipo', 'TIPO'], ['data', 'DATA'],
+  ['recorrencia', 'REPETIÇÃO'], ['valor', 'VALOR', true], ['observacao', 'OBSERVAÇÃO']
+];
+
 app.get('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const r = await query(`${CALENDARIO_SELECT} ORDER BY data`);
   res.json(r.recordset);
@@ -691,10 +846,16 @@ app.get('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario')
 app.post('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
-  await query(`INSERT INTO dbo.EQUIPSTI_calendario_eventos
+  const insC = await query(`INSERT INTO dbo.EQUIPSTI_calendario_eventos
     (titulo, tipo, data, recorrencia, valor, observacao, criado_por, atualizado_por)
+    OUTPUT INSERTED.id
     VALUES (@titulo, @tipo, @data, @recorrencia, @valor, @observacao, @criadoPor, @criadoPor)`,
     { ...paramsEventoCalendario(d), criadoPor: S(req.user.email) });
+  await registrarLog({
+    modulo: 'CALENDARIO', entidadeId: String(insC.recordset[0].id), entidadeRotulo: d.titulo,
+    acao: 'CRIADO', valorNovo: `${d.tipo || '—'} · ${d.data || '—'}`,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json({ ok: true });
 }));
 
@@ -702,16 +863,38 @@ app.put('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendar
   const id = Number(req.params.id);
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
+  const antesEv = (await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0] || {};
   await query(`UPDATE dbo.EQUIPSTI_calendario_eventos SET
     titulo=@titulo, tipo=@tipo, data=@data, recorrencia=@recorrencia, valor=@valor, observacao=@observacao,
     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { ...paramsEventoCalendario(d), id, atualizadoPor: S(req.user.email) });
+  for (const [key, label, num] of CAMPOS_LOG_CALENDARIO) {
+    if (logMudou(antesEv[key], d[key], num)) {
+      await registrarLog({
+        modulo: 'CALENDARIO', entidadeId: String(id), entidadeRotulo: d.titulo,
+        acao: 'ATUALIZADO', campo: label,
+        valorAnterior: antesEv[key] == null ? null : String(antesEv[key]),
+        valorNovo: d[key] == null ? null : String(d[key]),
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
+  }
   res.json({ ok: true });
 }));
 
 app.delete('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
-  await query('DELETE FROM dbo.EQUIPSTI_calendario_eventos WHERE id = @id', { id: Number(req.params.id) });
+  const id = Number(req.params.id);
+  const prev = (await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0];
+  await query('DELETE FROM dbo.EQUIPSTI_calendario_eventos WHERE id = @id', { id });
+  if (prev) {
+    await registrarLog({
+      modulo: 'CALENDARIO', entidadeId: String(id), entidadeRotulo: prev.titulo,
+      acao: 'EXCLUIDO',
+      valorAnterior: `${prev.titulo || '—'} · ${prev.tipo || '—'} · ${prev.data || '—'}`,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
   res.json({ ok: true });
 }));
 
@@ -826,6 +1009,11 @@ app.post('/api/loans', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(asyn
        WHERE pat = @pat AND status = 'EMPRESTADO'
          ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
       ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
+    await registrarLog({
+      modulo: 'EMPRESTIMOS', entidadeRotulo: `PAT ${pat}${equipamento ? ' · ' + equipamento : ''}`,
+      acao: 'DEVOLVIDO', campo: 'UNIDADE', valorNovo: unidade,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
     await notificar({
       tipo: 'EMPRESTIMO', acao: 'DEVOLVIDO', link: 'tab-emprestimos', email: true,
       ator: { id: req.user.sub, email: req.user.email },
@@ -835,22 +1023,37 @@ app.post('/api/loans', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(asyn
     return res.status(201).json({ ok: true, devolvido: true });
   }
 
+  const rotuloEmp = `PAT ${pat}${equipamento ? ' · ' + equipamento : ''}`;
+
   // Fecha empréstimo aberto anterior como TRANSFERIDO (suporta cadeia 1→2→3→1).
-  await query(
+  const transf = await query(
     `UPDATE dbo.EQUIPSTI_emprestimos
        SET status = 'TRANSFERIDO', data_devolucao = CAST(GETDATE() AS date)
      WHERE pat = @pat AND status = 'EMPRESTADO'
        ${ns ? 'AND (ns = @ns OR ns IS NULL)' : ''}`,
     ns ? { pat: S(pat), ns: S(ns) } : { pat: S(pat) });
+  if (transf.rowsAffected[0] > 0) {
+    await registrarLog({
+      modulo: 'EMPRESTIMOS', entidadeRotulo: rotuloEmp,
+      acao: 'TRANSFERIDO', campo: 'UNIDADE', valorAnterior: unidadeOriginal, valorNovo: unidade,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
 
   const insLoan = await query(
     `INSERT INTO dbo.EQUIPSTI_emprestimos (pat, ns, unidade, data_emprestimo, status, obs)
       OUTPUT INSERTED.id
       VALUES (@pat, @ns, @unidade, @data, 'EMPRESTADO', @obs)`,
     { pat: S(pat), ns: S(ns || null), unidade: S(unidade), data: S(data || null), obs: S(obs) });
+  const loanId = insLoan.recordset[0]?.id;
+  await registrarLog({
+    modulo: 'EMPRESTIMOS', entidadeId: loanId != null ? String(loanId) : null, entidadeRotulo: rotuloEmp,
+    acao: 'EMPRESTADO', campo: 'UNIDADE', valorAnterior: unidadeOriginal, valorNovo: unidade,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   await notificar({
     tipo: 'EMPRESTIMO', acao: 'CRIADO', link: 'tab-emprestimos', email: true,
-    refId: insLoan.recordset[0]?.id,
+    refId: loanId,
     ator: { id: req.user.sub, email: req.user.email },
     titulo: 'Novo empréstimo',
     mensagem: `${equipamento || 'Equipamento'} — PAT ${pat} → ${unidade}`
@@ -890,6 +1093,14 @@ app.put('/api/loans/:id/status', exigirAuth, exigirPermissao('aba_emprestimos'),
   const eq = await lookupEquip(aPat, aNs);
   const mudancasEmp = statusAntigo && statusAntigo !== status
     ? [{ campo: 'Status', de: statusAntigo, para: status }] : [];
+  if (statusAntigo && statusAntigo !== status) {
+    await registrarLog({
+      modulo: 'EMPRESTIMOS', entidadeId: String(id),
+      entidadeRotulo: `PAT ${aPat}${eq.equipamento ? ' · ' + eq.equipamento : ''}`,
+      acao: status, campo: 'STATUS', valorAnterior: statusAntigo, valorNovo: status,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
   await notificar({
     tipo: 'EMPRESTIMO', acao: 'ATUALIZADO', link: 'tab-emprestimos', refId: id, email: true,
     ator: { id: req.user.sub, email: req.user.email },
@@ -1080,14 +1291,21 @@ app.get('/api/intecs-msa', exigirAuth, exigirPermissao('aba_chamados'), wrap(asy
 
 app.post('/api/intecs-msa', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const d = lerIntecsMsa(req.body);
-  await query(`INSERT INTO dbo.EQUIPSTI_chamados_intecsmsa
+  const insM = await query(`INSERT INTO dbo.EQUIPSTI_chamados_intecsmsa
     (data_solicitacao, numero_chamado_msa, problema, unidade, glpi, status_intecs,
      patrimonio_msa, ns, ponto_instalacao, descricao_equip, data_retirada_equip, data_entrega_equip,
      patrimonio_bkp_intecs, bkp_unidade, observacao, criado_por)
+    OUTPUT INSERTED.id
     VALUES (@data_solicitacao, @numero_chamado_msa, @problema, @unidade, @glpi, @status_intecs,
      @patrimonio_msa, @ns, @ponto_instalacao, @descricao_equip, @data_retirada_equip, @data_entrega_equip,
      @patrimonio_bkp_intecs, @bkp_unidade, @observacao, @criado_por)`,
     { ...paramsIntecsMsa(d), criado_por: S(req.user.email) });
+  await registrarLog({
+    modulo: 'CHAMADOS_MSA', entidadeId: String(insM.recordset[0].id),
+    entidadeRotulo: `Nº MSA ${d.numero_chamado_msa || '—'} · PAT ${d.patrimonio_msa || '—'}`,
+    acao: 'CRIADO', valorNovo: d.problema,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json({ ok: true });
 }));
 
@@ -1121,6 +1339,15 @@ app.put('/api/intecs-msa/:id', exigirAuth, exigirPermissao('aba_chamados'), wrap
     }
   }
 
+  const rotuloMsa = `Nº MSA ${d.numero_chamado_msa || '—'} · PAT ${d.patrimonio_msa || '—'}`;
+  for (const m of mudancasCh) {
+    await registrarLog({
+      modulo: 'CHAMADOS_MSA', entidadeId: String(id), entidadeRotulo: rotuloMsa,
+      acao: 'ATUALIZADO', campo: m.campo, valorAnterior: m.de, valorNovo: m.para,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+
   const eqUpd = await lookupEquip(d.patrimonio_msa, d.ns);
   await notificar({
     tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', refId: id, email: true,
@@ -1140,6 +1367,13 @@ app.delete('/api/intecs-msa/:id', exigirAuth, exigirPermissao('aba_chamados'), w
   await query('DELETE FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE id = @id', { id });
   const c = prev.recordset[0];
   if (c) {
+    await registrarLog({
+      modulo: 'CHAMADOS_MSA', entidadeId: String(id),
+      entidadeRotulo: `Nº MSA ${c.numero_chamado_msa || '—'} · PAT ${c.patrimonio_msa || '—'}`,
+      acao: 'EXCLUIDO',
+      valorAnterior: `Nº MSA ${c.numero_chamado_msa || '—'} · PAT ${c.patrimonio_msa || '—'} · N/S ${c.ns || '—'}`,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
     const eqDel = await lookupEquip(c.patrimonio_msa, c.ns);
     await notificar({
       tipo: 'CHAMADO', acao: 'EXCLUIDO', link: 'tab-chamados', refId: id, email: true,
@@ -1438,6 +1672,13 @@ app.post('/api/chamados/:chave/interacao', exigirAuth, exigirPermissao('aba_cham
   console.log('[interacao] status:', result.status, JSON.stringify(result.data).slice(0, 200));
   if (result.status >= 400) throw new Error('Eurosa retornou ' + result.status + ': ' + JSON.stringify(result.data));
 
+  await registrarLog({
+    modulo: 'CHAMADOS_MSA', entidadeId: codigo || chave,
+    entidadeRotulo: `Chamado MSA ${codigo || chave}`,
+    acao: 'INTERACAO', valorNovo: descricao,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+
   let mensagemInt = `nº ${codigo || chave}`;
   try {
     const ch = await query(
@@ -1544,6 +1785,13 @@ app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(asyn
     });
   } catch (e) { console.warn('[intecs-msa enrich] falhou:', e.message); }
 
+  await registrarLog({
+    modulo: 'CHAMADOS_MSA', entidadeId: codigo || null,
+    entidadeRotulo: `Chamado MSA ${codigo || 'novo'}`,
+    acao: 'CRIADO', valorNovo: assuntoText || descricao,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+
   await notificar({
     tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', email: true,
     ator: { id: req.user.sub, email: req.user.email },
@@ -1627,9 +1875,21 @@ app.get('/api/tactical-agents', exigirAuth, exigirPermissao('aba_conexao'), wrap
 app.get('/api/tactical-agents/:agentId/conexao-remota', exigirAuth, carregarPerfilChamados, exigirPermissao('aba_conexao'), exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
   const agentId = trim(req.params.agentId || '');
   if (!agentId) return res.status(400).json({ error: 'Informe o agente.' });
+  // Tipo de acesso escolhido no front (?tipo=control|terminal|file). Sem isso
+  // (HTML antigo em cache) loga com tipo nulo — nunca vira erro.
+  const tipoConexao = ['control', 'terminal', 'file'].includes(req.query.tipo) ? req.query.tipo : null;
   try {
     const conexao = await deviceService.getConexaoRemota(agentId);
     if (!conexao) return res.status(404).json({ error: 'Agente não encontrado no Tactical RMM.' });
+    const cache = await deviceIntecsRepo.getAgenteCache(agentId).catch(() => null);
+    await registrarLog({
+      modulo: 'CONEXAO_REMOTA', entidadeId: agentId,
+      entidadeRotulo: cache?.hostname
+        ? cache.hostname + (cache.site_name ? ` (${cache.site_name})` : '')
+        : (conexao.hostname || agentId),
+      acao: 'CONEXAO', campo: 'TIPO', valorNovo: tipoConexao,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
     res.json(conexao);
   } catch (err) {
     res.status(502).json({ error: 'Tactical RMM indisponível: ' + err.message });
@@ -1660,9 +1920,21 @@ app.post('/api/tactical-agents/:agentId/rodar-script', exigirAuth, carregarPerfi
     : [];
   try {
     const favoritos = await deviceService.listarScriptsFavoritos();
-    if (!favoritos.some((s) => s.id === scriptId)) {
+    const script = favoritos.find((s) => s.id === scriptId);
+    if (!script) {
       return res.status(400).json({ error: 'Script não está entre os favoritos do Tactical RMM.' });
     }
+    // Registra ANTES de rodar — fica auditado mesmo se o script estourar timeout.
+    const cache = await deviceIntecsRepo.getAgenteCache(agentId).catch(() => null);
+    await registrarLog({
+      modulo: 'CONEXAO_REMOTA', entidadeId: agentId,
+      entidadeRotulo: cache?.hostname
+        ? cache.hostname + (cache.site_name ? ` (${cache.site_name})` : '')
+        : agentId,
+      acao: 'SCRIPT_EXECUTADO', campo: script.name || `Script #${scriptId}`,
+      valorNovo: args.join(' ') || null,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
     res.json(await deviceService.rodarScriptFavorito(agentId, scriptId, args));
   } catch (err) {
     res.status(502).json({ error: 'Falha ao executar o script: ' + err.message });
@@ -1797,6 +2069,11 @@ app.post('/api/chamados-intecs/categorias', exigirAuth, carregarPerfilChamados, 
   const nome = trim(req.body.nome || '');
   if (!nome) return res.status(400).json({ error: 'Informe o nome da categoria.' });
   const categoria = await chamadosIntecsRepo.criarCategoria(nome);
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'CATEGORIA_CRIADA',
+    entidadeRotulo: `Categoria "${nome}"`, valorNovo: nome,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json(categoria);
 }));
 
@@ -1805,16 +2082,35 @@ app.post('/api/chamados-intecs/subcategorias', exigirAuth, carregarPerfilChamado
   const categoriaId = Number(req.body.categoria_id);
   if (!nome || !categoriaId) return res.status(400).json({ error: 'Informe categoria e nome da subcategoria.' });
   const subcategoria = await chamadosIntecsRepo.criarSubcategoria(categoriaId, nome);
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'SUBCATEGORIA_CRIADA',
+    entidadeRotulo: `Subcategoria "${nome}"`, valorNovo: nome,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json(subcategoria);
 }));
 
 app.delete('/api/chamados-intecs/categorias/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const nomeCat = (await query('SELECT nome FROM dbo.EQUIPSTI_chamados_intecs_categorias WHERE id = @id', { id })).recordset[0]?.nome;
   await chamadosIntecsRepo.removerCategoria(req.params.id);
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'CATEGORIA_EXCLUIDA',
+    entidadeRotulo: `Categoria "${nomeCat || id}"`, valorAnterior: nomeCat || String(id),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.json({ ok: true });
 }));
 
 app.delete('/api/chamados-intecs/subcategorias/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const nomeSub = (await query('SELECT nome FROM dbo.EQUIPSTI_chamados_intecs_subcategorias WHERE id = @id', { id })).recordset[0]?.nome;
   await chamadosIntecsRepo.removerSubcategoria(req.params.id);
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'SUBCATEGORIA_EXCLUIDA',
+    entidadeRotulo: `Subcategoria "${nomeSub || id}"`, valorAnterior: nomeSub || String(id),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.json({ ok: true });
 }));
 
@@ -1835,22 +2131,45 @@ app.post('/api/chamados-intecs/prioridades', exigirAuth, carregarPerfilChamados,
     nome, sla_resposta_horas: slaResposta, sla_conclusao_horas: slaConclusao,
     cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
   });
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'PRIORIDADE_CRIADA',
+    entidadeRotulo: `Prioridade "${nome}"`,
+    valorNovo: `resposta ${slaResposta}h · conclusão ${slaConclusao}h`,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json(prioridade);
 }));
 
 app.put('/api/chamados-intecs/prioridades/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
   const slaResposta = Number(req.body.sla_resposta_horas);
   const slaConclusao = Number(req.body.sla_conclusao_horas);
   if (!slaResposta || !slaConclusao) return res.status(400).json({ error: 'Informe horas de resposta e conclusão.' });
+  const antesP = (await query('SELECT nome, sla_resposta_horas, sla_conclusao_horas, ordem FROM dbo.EQUIPSTI_chamados_intecs_prioridades WHERE id = @id', { id })).recordset[0] || {};
   await chamadosIntecsRepo.atualizarPrioridade(req.params.id, {
     sla_resposta_horas: slaResposta, sla_conclusao_horas: slaConclusao,
     cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0
+  });
+  const resumoP = (r) => `resposta ${r.sla_resposta_horas ?? '—'}h · conclusão ${r.sla_conclusao_horas ?? '—'}h · ordem ${r.ordem ?? '—'}`;
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'PRIORIDADE_ATUALIZADA',
+    entidadeRotulo: `Prioridade "${antesP.nome || id}"`,
+    valorAnterior: resumoP(antesP),
+    valorNovo: resumoP({ sla_resposta_horas: slaResposta, sla_conclusao_horas: slaConclusao, ordem: Number(req.body.ordem) || 0 }),
+    usuario: req.user.email, usuarioId: req.user.sub
   });
   res.json({ ok: true });
 }));
 
 app.delete('/api/chamados-intecs/prioridades/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const nomeP = (await query('SELECT nome FROM dbo.EQUIPSTI_chamados_intecs_prioridades WHERE id = @id', { id })).recordset[0]?.nome;
   await chamadosIntecsRepo.removerPrioridade(req.params.id);
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'PRIORIDADE_EXCLUIDA',
+    entidadeRotulo: `Prioridade "${nomeP || id}"`, valorAnterior: nomeP || String(id),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.json({ ok: true });
 }));
 
@@ -1871,22 +2190,44 @@ app.post('/api/chamados-intecs/status-config', exigirAuth, carregarPerfilChamado
     nome, tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0,
     notifica_solicitante: req.body.notifica_solicitante === true
   });
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'STATUS_CRIADO',
+    entidadeRotulo: `Status "${nome}"`, valorNovo: `${nome} (${tipoSistema})`,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.status(201).json(status);
 }));
 
 app.put('/api/chamados-intecs/status-config/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
   const tipoSistema = trim(req.body.tipo_sistema || '');
   const tiposValidos = ['ABERTO', 'ANDAMENTO', 'RESOLVIDO', 'FECHADO', 'CANCELADO'];
   if (!tiposValidos.includes(tipoSistema)) return res.status(400).json({ error: 'Tipo de sistema inválido.' });
+  const antesS = (await query('SELECT nome, tipo_sistema, ordem FROM dbo.EQUIPSTI_chamados_intecs_status WHERE id = @id', { id })).recordset[0] || {};
   await chamadosIntecsRepo.atualizarStatus(req.params.id, {
     tipo_sistema: tipoSistema, cor: trim(req.body.cor || ''), ordem: Number(req.body.ordem) || 0,
     notifica_solicitante: req.body.notifica_solicitante // undefined = preserva o valor atual
+  });
+  const resumoS = (r) => `${r.tipo_sistema || '—'} · ordem ${r.ordem ?? '—'}`;
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'STATUS_ATUALIZADO',
+    entidadeRotulo: `Status "${antesS.nome || id}"`,
+    valorAnterior: resumoS(antesS),
+    valorNovo: resumoS({ tipo_sistema: tipoSistema, ordem: Number(req.body.ordem) || 0 }),
+    usuario: req.user.email, usuarioId: req.user.sub
   });
   res.json({ ok: true });
 }));
 
 app.delete('/api/chamados-intecs/status-config/:id', exigirAuth, carregarPerfilChamados, exigirPapel('TECNICO', 'MASTER'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const nomeS = (await query('SELECT nome FROM dbo.EQUIPSTI_chamados_intecs_status WHERE id = @id', { id })).recordset[0]?.nome;
   await chamadosIntecsRepo.removerStatus(req.params.id);
+  await registrarLog({
+    modulo: 'CHAMADOS_INTECS', acao: 'STATUS_EXCLUIDO',
+    entidadeRotulo: `Status "${nomeS || id}"`, valorAnterior: nomeS || String(id),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
   res.json({ ok: true });
 }));
 
@@ -1915,7 +2256,7 @@ app.put('/api/chamados-intecs/usuarios/:id', exigirAuth, carregarPerfilChamados,
   const setor = trim(req.body.setor || '') || null;
 
   const atual = (await query(
-    'SELECT role, permissoes FROM dbo.EQUIPSTI_usuarios WHERE id = @id',
+    'SELECT email, role, unidade, setor, permissoes FROM dbo.EQUIPSTI_usuarios WHERE id = @id',
     { id: { type: sql.Int, value: Number(req.params.id) } }
   )).recordset[0];
   if (!atual) return res.status(404).json({ error: 'Usuário não encontrado.' });
@@ -1935,6 +2276,36 @@ app.put('/api/chamados-intecs/usuarios/:id', exigirAuth, carregarPerfilChamados,
   }
 
   await chamadosIntecsRepo.atualizarPapelUsuario(req.params.id, { role, unidade, setor, permissoesJson });
+
+  // Auditoria: papel, unidade, setor e o diff de permissões efetivas (que cobre
+  // o toggle "ver todas as máquinas"). Rótulo = e-mail do usuário afetado.
+  const idAlvo = String(Number(req.params.id));
+  const rotuloAlvo = atual.email || `Usuário #${idAlvo}`;
+  const logCampoUser = async (campo, de, para) => {
+    if (logMudou(de, para)) {
+      await registrarLog({
+        modulo: 'USUARIOS', entidadeId: idAlvo, entidadeRotulo: rotuloAlvo,
+        acao: 'ATUALIZADO', campo, valorAnterior: de, valorNovo: para,
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
+  };
+  await logCampoUser('PAPEL', atual.role, role);
+  await logCampoUser('UNIDADE', atual.unidade, unidade);
+  await logCampoUser('SETOR', atual.setor, setor);
+
+  const efAntes = permissoesEfetivas(atual.role, atual.permissoes);
+  const efDepois = permissoesEfetivas(role, permissoesJson);
+  const chavesMud = Object.keys(efDepois).filter((k) => efAntes[k] !== efDepois[k]);
+  if (chavesMud.length) {
+    const fmt = (ef) => chavesMud.map((k) => `${ROTULOS[k] || k}: ${ef[k] ? 'SIM' : 'NÃO'}`).join('; ');
+    await registrarLog({
+      modulo: 'USUARIOS', entidadeId: idAlvo, entidadeRotulo: rotuloAlvo,
+      acao: 'ATUALIZADO', campo: 'PERMISSÕES',
+      valorAnterior: fmt(efAntes), valorNovo: fmt(efDepois),
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
   res.json({ ok: true });
 }));
 
@@ -1983,7 +2354,7 @@ app.post('/api/chamados-intecs', exigirAuth, carregarPerfilChamados, wrap(async 
     sla_resposta_prazo, sla_conclusao_prazo, criado_por: req.user.email
   });
 
-  await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, 'CRIADO', null, null, titulo);
+  await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, 'CRIADO', null, null, titulo, req.user.email, titulo);
 
   const ator = { id: req.user.sub, email: req.user.email };
   const chamadoCompleto = await chamadosIntecsRepo.getChamadoIntecs(chamado.id);
@@ -2073,7 +2444,7 @@ app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigir
   if (Object.keys(campos).length) {
     await chamadosIntecsRepo.atualizarCamposChamado(chamado.id, campos);
     for (const [acao, campo, antes, depois] of historicoEntradas) {
-      await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, acao, campo, antes, depois);
+      await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, acao, campo, antes, depois, req.user.email, chamado.titulo);
     }
   }
 
@@ -2158,7 +2529,7 @@ app.post('/api/chamados-intecs/:id/comentarios', exigirAuth, carregarPerfilChama
   if (!texto) return res.status(400).json({ error: 'Escreva um comentário.' });
 
   const comentario = await chamadosIntecsRepo.criarComentario(chamado.id, req.user.sub, texto);
-  await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, 'COMENTARIO', null, null, texto.slice(0, 200));
+  await chamadosIntecsRepo.registrarHistorico(chamado.id, req.user.sub, 'COMENTARIO', null, null, texto.slice(0, 200), req.user.email, chamado.titulo);
   if (!chamado.sla_respondido_em) {
     await chamadosIntecsRepo.atualizarCamposChamado(chamado.id, { sla_respondido_em: new Date() });
   }
@@ -2237,6 +2608,24 @@ app.post('/api/chamados-intecs/:id/equipamento/atualizar', exigirAuth, carregarP
   await deviceService.takeSnapshot(chamado.device_id, tacticalAgentId, chamado.id, req.user.sub);
   const resumo = await deviceService.getDeviceSummary(chamado.device_id);
   res.json(resumo);
+}));
+
+// ===================== LOGS (auditoria unificada) =====================
+// Aba "Logs" global + ícones de histórico por aba. Só quem tem aba_logs (MASTER
+// por padrão; liberável por usuário). exigirPermissao carrega o perfil sozinho.
+app.get('/api/logs', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, res) => {
+  const modulo = MODULOS_LOG.includes(req.query.modulo) ? req.query.modulo : null;
+  const q = trim(req.query.q || '') || null;
+  const de = req.query.de ? new Date(req.query.de) : null;
+  const ate = req.query.ate ? new Date(req.query.ate) : null;
+  const linhas = await listarLogs({
+    modulo, q,
+    de: de && !isNaN(de) ? de : null,
+    ate: ate && !isNaN(ate) ? ate : null,
+    limit: parseInt(req.query.limit, 10) || 50,
+    offset: parseInt(req.query.offset, 10) || 0
+  });
+  res.json(linhas);
 }));
 
 // ===================== ESTÁTICO (front-end vanilla) =====================

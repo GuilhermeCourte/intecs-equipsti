@@ -11,6 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
+  <!-- Só para o ícone de Logs (globo + lupa) — Phosphor não tem esse combo. -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Gestão TI</title>
@@ -485,6 +487,9 @@
     .col-filter-item input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: var(--ink); }
     .fd-spin { display: inline-block; animation: fd-rot .9s linear infinite; }
     @keyframes fd-rot { to { transform: rotate(360deg); } }
+
+    /* ---------- Ícone de Logs (Material Icons: travel_explore = globo + lupa) ---------- */
+    .ic-logs.material-icons { font-size: 1em; vertical-align: -0.2em; line-height: 1; }
 
     /* ---------- Busca de tabela (lupa: filtra qualquer coluna) ---------- */
     .busca-tabela { width: 160px; max-width: 100%; flex-wrap: nowrap; }
@@ -1343,6 +1348,7 @@
           <button type="button" class="mm-item" data-tab="tab-calendario"><i class="ph ph-calendar-blank"></i> Calendário</button>
           <button type="button" class="mm-item" data-tab="tab-gerenciar"><i class="ph ph-sliders-horizontal"></i> Opções</button>
           <button type="button" class="mm-item" data-tab="tab-usuarios"><i class="ph ph-users"></i> Usuários</button>
+          <button type="button" class="mm-item" data-tab="tab-logs"><i class="material-icons ic-logs">travel_explore</i> Logs</button>
         </div>
       </nav>
 
@@ -1384,6 +1390,10 @@
           <button class="nav-link" id="tab-usuarios" data-bs-toggle="tab"
             data-bs-target="#pane-usuarios" type="button" role="tab">
             <i class="ph ph-users"></i> Usuários
+          </button>
+          <button class="nav-link" id="tab-logs" data-bs-toggle="tab"
+            data-bs-target="#pane-logs" type="button" role="tab">
+            <i class="material-icons ic-logs">travel_explore</i> Logs
           </button>
           <div class="liquid-slider"></div>
         </div>
@@ -1516,6 +1526,9 @@
                 <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarLista" title="Atualizar">
                   <i class="ph ph-arrow-clockwise fs-5"></i>
                 </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="REGISTROS" title="Ver logs deste módulo">
+                  <i class="material-icons ic-logs fs-5">travel_explore</i>
+                </button>
               </div>
               <span id="regContador" class="text-muted small text-nowrap order-1 order-sm-2 ms-sm-auto" aria-live="polite"></span>
               <div class="btn-group btn-group-sm flex-shrink-0 ms-auto ms-sm-0 order-2 order-sm-1" role="group" aria-label="Visão da tabela">
@@ -1574,6 +1587,9 @@
                 <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarEmprestimos" title="Atualizar">
                   <i class="ph ph-arrow-clockwise fs-5"></i>
                 </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="EMPRESTIMOS" title="Ver logs deste módulo">
+                  <i class="material-icons ic-logs fs-5">travel_explore</i>
+                </button>
               </div>
             </div>
             <div id="listaEmprestimos">
@@ -1616,6 +1632,9 @@
                 </button>
                 <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarOpcoes" title="Atualizar">
                   <i class="ph ph-arrow-clockwise fs-5"></i>
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="OPCOES" title="Ver logs deste módulo">
+                  <i class="material-icons ic-logs fs-5">travel_explore</i>
                 </button>
               </div>
               <div id="listaOpcoes">
@@ -1775,6 +1794,9 @@
               <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarUsuarios" title="Atualizar">
                 <i class="ph ph-arrow-clockwise fs-5"></i>
               </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="USUARIOS" title="Ver logs deste módulo">
+                <i class="material-icons ic-logs fs-5">travel_explore</i>
+              </button>
             </div>
             <div id="listaUsuarios">
               <span class="text-muted">Carregando...</span>
@@ -1801,6 +1823,9 @@
               </button>
               <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarInternet" title="Atualizar">
                 <i class="ph ph-arrow-clockwise fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="INTERNET" title="Ver logs deste módulo">
+                <i class="material-icons ic-logs fs-5">travel_explore</i>
               </button>
             </div>
             <div class="table-scroll-x table-sticky">
@@ -1834,6 +1859,9 @@
                 </button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnNovoEventoCal">
                   <i class="ph ph-plus"></i> Novo
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="CALENDARIO" title="Ver logs deste módulo">
+                  <i class="material-icons ic-logs fs-5">travel_explore</i>
                 </button>
               </div>
             </div>
@@ -1941,6 +1969,9 @@
                     <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshIntecsMsa" title="Atualizar">
                       <i class="ph ph-arrow-clockwise fs-5"></i>
                     </button>
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="CHAMADOS_MSA" title="Ver logs deste módulo">
+                      <i class="material-icons ic-logs fs-5">travel_explore</i>
+                    </button>
                   </div>
                 </div>
                 <div id="imStatus" class="text-muted small mb-2"></div>
@@ -1980,6 +2011,9 @@
                     </button>
                     <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshChamados" title="Atualizar">
                       <i class="ph ph-arrow-clockwise fs-5"></i>
+                    </button>
+                    <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="CHAMADOS_MSA" title="Ver logs deste módulo">
+                      <i class="material-icons ic-logs fs-5">travel_explore</i>
                     </button>
                   </div>
                 </div>
@@ -2116,6 +2150,9 @@
                       <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshChamadosIntecs" title="Atualizar">
                         <i class="ph ph-arrow-clockwise fs-5"></i>
                       </button>
+                      <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="CHAMADOS_INTECS" title="Ver logs deste módulo">
+                        <i class="material-icons ic-logs fs-5">travel_explore</i>
+                      </button>
                     </div>
                   </div>
                   <div class="col-6 col-md-2">
@@ -2200,6 +2237,9 @@
               <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshConexao" title="Atualizar">
                 <i class="ph ph-arrow-clockwise fs-5"></i>
               </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="CONEXAO_REMOTA" title="Ver logs deste módulo">
+                <i class="material-icons ic-logs fs-5">travel_explore</i>
+              </button>
             </div>
             <div class="table-responsive table-sticky">
               <table class="table table-sm table-striped table-hover align-middle" id="tabelaConexao">
@@ -2209,6 +2249,54 @@
                 </thead>
                 <tbody id="crTbody"></tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- ABA LOGS -->
+          <div class="tab-pane fade" id="pane-logs" role="tabpanel">
+            <h2 class="pane-titulo-mobile">Logs</h2>
+            <div class="d-flex align-items-center mb-3 gap-2">
+              <p class="text-muted mb-0">Auditoria de ações em todos os módulos do sistema.</p>
+            </div>
+            <div id="alertLogs"></div>
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+              <select class="form-select form-select-sm w-auto" id="lgModulo" title="Filtrar por módulo">
+                <option value="">Todos os módulos</option>
+              </select>
+              <input type="date" class="form-control form-control-sm w-auto" id="lgDe" title="De (data inicial)">
+              <input type="date" class="form-control form-control-sm w-auto" id="lgAte" title="Até (data final)">
+              <div class="d-flex align-items-center gap-1 ms-sm-auto">
+                <div class="input-group input-group-sm busca-tabela">
+                  <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                  <input type="search" class="form-control" id="lgBusca" placeholder="Buscar..." title="Buscar em ação, item, alteração ou usuário">
+                </div>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosLogs" title="Limpar filtros">
+                  <i class="ph ph-funnel-x fs-5"></i>
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarLogs" title="Atualizar">
+                  <i class="ph ph-arrow-clockwise fs-5"></i>
+                </button>
+              </div>
+            </div>
+            <div class="table-scroll-x table-sticky" id="lgScroll">
+              <table class="table table-sm table-striped table-hover align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th>DATA/HORA</th>
+                    <th>MÓDULO</th>
+                    <th>AÇÃO</th>
+                    <th>ITEM</th>
+                    <th>ALTERAÇÃO</th>
+                    <th>USUÁRIO</th>
+                  </tr>
+                </thead>
+                <tbody id="lgTbody">
+                  <tr><td colspan="6" class="text-muted">Carregando...</td></tr>
+                </tbody>
+              </table>
+              <div id="lgSentinel" class="d-none text-center py-3 text-muted small">
+                <div class="spinner-border spinner-border-sm me-1"></div> Carregando mais...
+              </div>
             </div>
           </div>
 
@@ -2795,6 +2883,33 @@
             </button>
           </div>
           <div id="logCorpo" class="p-3"><span class="text-muted">Carregando...</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL LOGS DO MÓDULO (genérico) ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalLogsModulo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="material-icons ic-logs me-2">travel_explore</i><span id="lmTitulo">Logs</span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-0" id="lmScroll">
+          <div class="log-busca-bar px-3 pt-3 pb-2 d-flex align-items-center gap-1">
+            <div class="input-group input-group-sm busca-tabela">
+              <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+              <input type="search" class="form-control" id="lmBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+            </div>
+            <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosLm" title="Limpar filtros">
+              <i class="ph ph-funnel-x fs-5"></i>
+            </button>
+          </div>
+          <div id="lmCorpo" class="p-3"><span class="text-muted">Carregando...</span></div>
+          <div id="lmSentinel" class="d-none text-center py-3 text-muted small">
+            <div class="spinner-border spinner-border-sm me-1"></div> Carregando mais...
+          </div>
         </div>
       </div>
     </div>
