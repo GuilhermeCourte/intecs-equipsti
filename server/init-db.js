@@ -253,6 +253,10 @@ IF COL_LENGTH('dbo.EQUIPSTI_tactical_agents', 'local_ips') IS NULL
 -- com a máquina ociosa/desligada, o último que entrou.
 IF COL_LENGTH('dbo.EQUIPSTI_tactical_agents', 'logged_username') IS NULL
   ALTER TABLE dbo.EQUIPSTI_tactical_agents ADD logged_username NVARCHAR(255) NULL;
+-- Plataforma do agente ('windows' | 'linux' | 'darwin'). Agente Linux não tem
+-- MeshCentral — conecta só pelo Remote Background do painel do RMM.
+IF COL_LENGTH('dbo.EQUIPSTI_tactical_agents', 'plat') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_tactical_agents ADD plat NVARCHAR(32) NULL;
 
 -- Equipamento (entidade de negócio) — referencia um agente do Tactical RMM,
 -- com enriquecimento manual por cima (patrimônio, apelido, etc.).
