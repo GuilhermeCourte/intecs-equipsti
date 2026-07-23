@@ -125,7 +125,7 @@ function showAlert(_containerId, type, message) {
 // ---------- Confirmar / perguntar via modal (substitui confirm/prompt) ----------
 let askOnOk = null; // async handler — quando definido, OK não fecha o dialog direto
 
-function uiAsk({ title, message, input, value, input2Label, value2, input2Select, input3Label, value3, input3Mask, input4Label, value4, input5Label, value5, okText, danger, transfer, onOk, semCancelar }) {
+function uiAsk({ title, message, input, value, placeholder, input2Label, value2, input2Select, input3Label, value3, input3Mask, input4Label, value4, input5Label, value5, okText, danger, transfer, onOk, semCancelar }) {
   return new Promise((resolve) => {
     askResolve = resolve;
     askOnOk = onOk || null;
@@ -142,6 +142,7 @@ function uiAsk({ title, message, input, value, input2Label, value2, input2Select
       trans.classList.add('hidden');
     }
     const inp = $('askInput');
+    inp.placeholder = placeholder || '';
     if (input) { inp.classList.remove('hidden'); inp.value = value || ''; }
     else { inp.classList.add('hidden'); }
     const wrap2 = $('askInput2Wrap');
@@ -4673,7 +4674,8 @@ async function alternarPainelScripts() {
   $('cxScriptsLista').innerHTML = _cxScriptsFavoritos.length
     ? _cxScriptsFavoritos.map((s) =>
         '<button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2 cx-script"'
-        + ' data-script-id="' + s.id + '" data-script-name="' + escapeHtml(s.name) + '">'
+        + ' data-script-id="' + s.id + '" data-script-name="' + escapeHtml(s.name) + '"'
+        + ' data-script-syntax="' + escapeHtml(s.syntax || '') + '">'
         + '<i class="ph ph-play-circle text-primary"></i>'
         + '<span class="flex-fill text-start">' + escapeHtml(s.name) + '</span>'
         + (s.shell ? '<span class="badge text-bg-secondary">' + escapeHtml(s.shell) + '</span>' : '')
@@ -4685,13 +4687,21 @@ async function alternarPainelScripts() {
 async function rodarScriptFavorito(btn) {
   if (_cxScriptRodando) return;
   const nome = btn.dataset.scriptName;
-  const ok = await uiAsk({
+  const sintaxe = btn.dataset.scriptSyntax || '';
+  const resp = await uiAsk({
     title: 'Executar script',
-    message: 'Executar "' + nome + '" nesta máquina agora?',
+    message: 'Executar "' + nome + '" nesta máquina agora?'
+      + (sintaxe ? '\nSintaxe: ' + sintaxe : ''),
+    input: true,
+    placeholder: 'Argumentos (opcional)',
     okText: 'Executar',
     danger: true
   });
-  if (!ok) return;
+  if (resp === null || resp === false) return;
+  // Mesma regra do campo do RMM: um argumento por "palavra"; aspas agrupam
+  // (ex.: NOVO-NOME ou "nome com espaco").
+  const args = (String(resp).match(/"[^"]*"|'[^']*'|\S+/g) || [])
+    .map((a) => a.replace(/^["']|["']$/g, ''));
   _cxScriptRodando = true;
   $('cxScriptsPainel').classList.remove('aberto');
   clearTimeout(_cxSaidaTimer);
@@ -4701,7 +4711,7 @@ async function rodarScriptFavorito(btn) {
   $('cxScriptSaidaPre').textContent = '';
   try {
     const r = await api('POST', '/api/tactical-agents/' + encodeURIComponent(_cxAgenteAtual)
-      + '/rodar-script', { script_id: Number(btn.dataset.scriptId) });
+      + '/rodar-script', { script_id: Number(btn.dataset.scriptId), args });
     $('cxScriptSaidaTitulo').innerHTML =
       '<i class="ph ph-check-circle text-success me-1"></i>Saída de "' + escapeHtml(nome) + '"';
     $('cxScriptSaidaPre').textContent = r.output || '(sem saída)';

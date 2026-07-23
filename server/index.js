@@ -1654,12 +1654,16 @@ app.post('/api/tactical-agents/:agentId/rodar-script', exigirAuth, carregarPerfi
   if (!agentId || !Number.isInteger(scriptId) || scriptId <= 0) {
     return res.status(400).json({ error: 'Informe o agente e o script.' });
   }
+  // Argumentos opcionais digitados na confirmação (ex.: o novo hostname).
+  const args = Array.isArray(req.body?.args)
+    ? req.body.args.map((a) => trim(String(a))).filter(Boolean).slice(0, 32)
+    : [];
   try {
     const favoritos = await deviceService.listarScriptsFavoritos();
     if (!favoritos.some((s) => s.id === scriptId)) {
       return res.status(400).json({ error: 'Script não está entre os favoritos do Tactical RMM.' });
     }
-    res.json(await deviceService.rodarScriptFavorito(agentId, scriptId));
+    res.json(await deviceService.rodarScriptFavorito(agentId, scriptId, args));
   } catch (err) {
     res.status(502).json({ error: 'Falha ao executar o script: ' + err.message });
   }
