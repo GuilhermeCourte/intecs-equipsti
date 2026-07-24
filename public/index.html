@@ -557,6 +557,27 @@
       .app-tabs .nav-link { flex: 0 0 auto; padding: .55rem .85rem; }
     }
 
+    /* Com o dropdown aberto, libera o overflow da barra pra o menu não ficar
+       cortado (a barra rola no eixo X pra caber os botões; sem isso, o
+       dropdown-menu aparecia escondido atrás do conteúdo). */
+    .app-tabs.dropdown-aberto { overflow: visible; }
+
+    /* ---------- Grupos de abas (Equipamentos / Suporte / Opções) ---------- */
+    .app-tabs .app-tabs-group { position: relative; z-index: 2; flex: 1 0 auto; display: flex; }
+    .app-tabs .app-tabs-group .dropdown-toggle { width: 100%; }
+    .app-tabs .app-tabs-group .dropdown-toggle::after { margin-left: .4rem; }
+    .app-tabs .app-tabs-group .dropdown-menu {
+      border-radius: 12px; border: 1px solid var(--line); padding: 6px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.12);
+    }
+    .app-tabs .app-tabs-group .dropdown-item {
+      border-radius: 8px; padding: .55rem .75rem; font-weight: 600; color: var(--ink);
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .app-tabs .app-tabs-group .dropdown-item i { font-size: 1.1rem; }
+    .app-tabs .app-tabs-group .dropdown-item:hover { background: var(--bg-soft); color: var(--ink); }
+    .app-tabs .app-tabs-group .dropdown-item.active { background: var(--ink); color: #fff; }
+
     /* =====================================================================
        === LAYOUT OFICIAL: TOPBAR FIXO ===
        Página full-width (sem o card flutuante), cabeçalho + menu grudam
@@ -635,18 +656,29 @@
     .mm-item .ph { font-size: 1.25rem; }
     .mm-item:active { transform: scale(.98); }
     .mm-item.active { background: var(--ink); color: #fff; box-shadow: 0 6px 16px rgba(0,0,0,.18); }
-    /* Nome da seção no topo de cada aba — só no mobile, onde a barra
-       de abas fica oculta e o usuário perde a referência de onde está. */
+    /* Grupos expansíveis (Equipamentos / Suporte / Opções) na gaveta mobile */
+    .mm-group-toggle {
+      display: flex; align-items: center; gap: 12px; width: 100%;
+      border: none; border-radius: 12px; background: transparent;
+      padding: 12px 14px; text-align: left;
+      color: var(--muted); font-weight: 600; font-size: .95rem;
+    }
+    .mm-group-toggle .ph:first-child { font-size: 1.25rem; }
+    .mm-group-toggle .mm-chev { margin-left: auto; font-size: 1rem; transition: transform .2s ease; }
+    .mm-group-toggle[aria-expanded="true"] .mm-chev { transform: rotate(180deg); }
+    .mm-sub { display: flex; flex-direction: column; gap: 4px; padding-left: 14px; }
+    .mm-sub .mm-item { font-size: .9rem; padding: 10px 14px; }
+    /* Nome da seção no topo de cada aba */
     .pane-titulo-mobile {
-      display: none;
+      display: flex; align-items: center; gap: .5rem;
       font-size: 1.35rem; font-weight: 800; letter-spacing: -.5px;
       line-height: 1.1; margin: 0 0 .6rem;
     }
+    .pane-titulo-mobile .ph, .pane-titulo-mobile .material-icons { font-size: 1.15em; }
     @media (max-width: 767.98px) {
       /* No celular a gaveta assume a navegação; a barra de abas some */
       #appView .app-tabs { display: none; }
       .menu-hamb-btn { display: inline-flex; }
-      .pane-titulo-mobile { display: block; }
     }
     /* === FIM MENU HAMBÚRGUER === */
 
@@ -1340,14 +1372,40 @@
         </div>
         <div class="mm-itens">
           <button type="button" class="mm-item" data-tab="tab-dashboard"><i class="ph ph-squares-four"></i> Dashboard</button>
-          <button type="button" class="mm-item" data-tab="tab-registros"><i class="ph ph-table"></i> Registros</button>
-          <button type="button" class="mm-item" data-tab="tab-emprestimos"><i class="ph ph-hand-arrow-up"></i> Empréstimos</button>
-          <button type="button" class="mm-item" data-tab="tab-chamados"><i class="ph ph-headset"></i> Chamados</button>
-          <button type="button" class="mm-item" data-tab="tab-conexao"><i class="ph ph-screencast"></i> Conexão Remota</button>
-          <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
+
+          <div class="mm-group">
+            <button type="button" class="mm-group-toggle" data-bs-toggle="collapse" data-bs-target="#mmGrupoEquipamentos" aria-expanded="false">
+              <i class="ph ph-desktop-tower"></i> Equipamentos <i class="ph ph-caret-down mm-chev"></i>
+            </button>
+            <div class="collapse mm-sub" id="mmGrupoEquipamentos">
+              <button type="button" class="mm-item" data-tab="tab-registros"><i class="ph ph-table"></i> Registros</button>
+              <button type="button" class="mm-item" data-tab="tab-emprestimos"><i class="ph ph-hand-arrow-up"></i> Empréstimos</button>
+            </div>
+          </div>
+
+          <div class="mm-group">
+            <button type="button" class="mm-group-toggle" data-bs-toggle="collapse" data-bs-target="#mmGrupoSuporte" aria-expanded="false">
+              <i class="ph ph-headset"></i> Suporte <i class="ph ph-caret-down mm-chev"></i>
+            </button>
+            <div class="collapse mm-sub" id="mmGrupoSuporte">
+              <button type="button" class="mm-item" data-tab="tab-chamados"><i class="ph ph-headset"></i> Chamados</button>
+              <button type="button" class="mm-item" data-tab="tab-conexao"><i class="ph ph-screencast"></i> Conexão Remota</button>
+              <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
+            </div>
+          </div>
+
           <button type="button" class="mm-item" data-tab="tab-calendario"><i class="ph ph-calendar-blank"></i> Calendário</button>
-          <button type="button" class="mm-item" data-tab="tab-gerenciar"><i class="ph ph-sliders-horizontal"></i> Opções</button>
-          <button type="button" class="mm-item" data-tab="tab-usuarios"><i class="ph ph-users"></i> Usuários</button>
+
+          <div class="mm-group">
+            <button type="button" class="mm-group-toggle" data-bs-toggle="collapse" data-bs-target="#mmGrupoOpcoes" aria-expanded="false">
+              <i class="ph ph-sliders-horizontal"></i> Opções <i class="ph ph-caret-down mm-chev"></i>
+            </button>
+            <div class="collapse mm-sub" id="mmGrupoOpcoes">
+              <button type="button" class="mm-item" data-tab="tab-gerenciar"><i class="ph ph-sliders-horizontal"></i> Opções gerais</button>
+              <button type="button" class="mm-item" data-tab="tab-usuarios"><i class="ph ph-users"></i> Usuários</button>
+            </div>
+          </div>
+
           <button type="button" class="mm-item" data-tab="tab-logs"><i class="material-icons ic-logs">travel_explore</i> Logs</button>
         </div>
       </nav>
@@ -1359,38 +1417,78 @@
             data-bs-target="#pane-dashboard" type="button" role="tab">
             <i class="ph ph-squares-four"></i> Dashboard
           </button>
-          <button class="nav-link" id="tab-registros" data-bs-toggle="tab"
-            data-bs-target="#pane-registros" type="button" role="tab">
-            <i class="ph ph-table"></i> Registros
-          </button>
-          <button class="nav-link" id="tab-emprestimos" data-bs-toggle="tab"
-            data-bs-target="#pane-emprestimos" type="button" role="tab">
-            <i class="ph ph-hand-arrow-up"></i> Empréstimos
-          </button>
-          <button class="nav-link" id="tab-chamados" data-bs-toggle="tab"
-            data-bs-target="#pane-chamados" type="button" role="tab">
-            <i class="ph ph-headset"></i> Chamados
-          </button>
-          <button class="nav-link" id="tab-conexao" data-bs-toggle="tab"
-            data-bs-target="#pane-conexao" type="button" role="tab">
-            <i class="ph ph-screencast"></i> Conexão Remota
-          </button>
-          <button class="nav-link" id="tab-internet" data-bs-toggle="tab"
-            data-bs-target="#pane-internet" type="button" role="tab">
-            <i class="ph ph-wifi-high"></i> Internet
-          </button>
+
+          <div class="dropdown app-tabs-group" id="grupo-equipamentos">
+            <button class="nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="ph ph-desktop-tower"></i> Equipamentos
+            </button>
+            <ul class="dropdown-menu">
+              <li>
+                <button class="dropdown-item" id="tab-registros" data-bs-toggle="tab"
+                  data-bs-target="#pane-registros" type="button" role="tab">
+                  <i class="ph ph-table"></i> Registros
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-emprestimos" data-bs-toggle="tab"
+                  data-bs-target="#pane-emprestimos" type="button" role="tab">
+                  <i class="ph ph-hand-arrow-up"></i> Empréstimos
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <div class="dropdown app-tabs-group" id="grupo-suporte">
+            <button class="nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="ph ph-headset"></i> Suporte
+            </button>
+            <ul class="dropdown-menu">
+              <li>
+                <button class="dropdown-item" id="tab-chamados" data-bs-toggle="tab"
+                  data-bs-target="#pane-chamados" type="button" role="tab">
+                  <i class="ph ph-headset"></i> Chamados
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-conexao" data-bs-toggle="tab"
+                  data-bs-target="#pane-conexao" type="button" role="tab">
+                  <i class="ph ph-screencast"></i> Conexão Remota
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-internet" data-bs-toggle="tab"
+                  data-bs-target="#pane-internet" type="button" role="tab">
+                  <i class="ph ph-wifi-high"></i> Internet
+                </button>
+              </li>
+            </ul>
+          </div>
+
           <button class="nav-link" id="tab-calendario" data-bs-toggle="tab"
             data-bs-target="#pane-calendario" type="button" role="tab">
             <i class="ph ph-calendar-blank"></i> Calendário
           </button>
-          <button class="nav-link" id="tab-gerenciar" data-bs-toggle="tab"
-            data-bs-target="#pane-gerenciar" type="button" role="tab">
-            <i class="ph ph-sliders-horizontal"></i> Opções
-          </button>
-          <button class="nav-link" id="tab-usuarios" data-bs-toggle="tab"
-            data-bs-target="#pane-usuarios" type="button" role="tab">
-            <i class="ph ph-users"></i> Usuários
-          </button>
+
+          <div class="dropdown app-tabs-group" id="grupo-opcoes">
+            <button class="nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="ph ph-sliders-horizontal"></i> Opções
+            </button>
+            <ul class="dropdown-menu">
+              <li>
+                <button class="dropdown-item" id="tab-gerenciar" data-bs-toggle="tab"
+                  data-bs-target="#pane-gerenciar" type="button" role="tab">
+                  <i class="ph ph-sliders-horizontal"></i> Opções gerais
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-usuarios" data-bs-toggle="tab"
+                  data-bs-target="#pane-usuarios" type="button" role="tab">
+                  <i class="ph ph-users"></i> Usuários
+                </button>
+              </li>
+            </ul>
+          </div>
+
           <button class="nav-link" id="tab-logs" data-bs-toggle="tab"
             data-bs-target="#pane-logs" type="button" role="tab">
             <i class="material-icons ic-logs">travel_explore</i> Logs
@@ -1499,7 +1597,7 @@
 
           <!-- ABA REGISTROS -->
           <div class="tab-pane fade" id="pane-registros" role="tabpanel">
-            <h2 class="pane-titulo-mobile">Registros</h2>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-table"></i> Registros</h2>
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Cadastre ou altere equipamentos.</p>
               <div class="d-flex gap-2">
@@ -1565,7 +1663,7 @@
 
           <!-- ABA EMPRÉSTIMOS -->
           <div class="tab-pane fade" id="pane-emprestimos" role="tabpanel">
-            <h2 class="pane-titulo-mobile">Empréstimos</h2>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-hand-arrow-up"></i> Empréstimos</h2>
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Empreste um equipamento.</p>
               <button type="button" class="btn btn-primary btn-sm d-inline-flex d-md-inline-block flex-column align-items-center" id="btnNovoEmprestimo">
@@ -1599,7 +1697,7 @@
 
           <!-- ABA GERENCIAR OPÇÕES -->
           <div class="tab-pane fade" id="pane-gerenciar" role="tabpanel">
-            <h2 class="pane-titulo-mobile">Opções</h2>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-sliders-horizontal"></i> Opções</h2>
             <p class="text-muted">
               opções para os menus suspensos.
             </p>
@@ -1773,7 +1871,7 @@
           <!-- ABA USUÁRIOS -->
           <div class="tab-pane fade" id="pane-usuarios" role="tabpanel">
 
-            <h2 class="pane-titulo-mobile">Usuários</h2>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-users"></i> Usuários</h2>
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Cadastre novos acessos.</p>
               <button type="button" class="btn btn-primary btn-sm d-inline-flex d-md-inline-block flex-column align-items-center" id="btnNovoUsuario">
@@ -1805,7 +1903,7 @@
 
           <!-- ABA INTERNET -->
           <div class="tab-pane fade" id="pane-internet" role="tabpanel">
-            <h2 class="pane-titulo-mobile">Internet</h2>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-wifi-high"></i> Internet</h2>
             <div class="d-flex align-items-center mb-3 gap-2">
               <p class="text-muted mb-0 flex-shrink-1 text-truncate">Contratos de internet.</p>
               <button type="button" class="btn btn-primary btn-sm flex-shrink-0 ms-auto" id="btnNovoInternet">
@@ -1848,6 +1946,7 @@
 
           <!-- ABA CALENDÁRIO -->
           <div class="tab-pane fade" id="pane-calendario" role="tabpanel">
+            <h2 class="pane-titulo-mobile"><i class="ph ph-calendar-blank"></i> Calendário</h2>
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
               <p class="text-muted mb-0">Vencimentos de licenças, contratos e pagamentos recorrentes.</p>
               <div class="d-flex gap-2">
@@ -1920,7 +2019,7 @@
           <!-- ABA CHAMADOS -->
           <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
 
-            <h2 class="pane-titulo-mobile">Chamados</h2>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-headset"></i> Chamados</h2>
             <!-- Sub-abas: INTECS vs MSA / MSA / INTECS -->
             <ul class="nav sub-tabs" role="tablist">
               <li class="nav-item" role="presentation">
@@ -2220,7 +2319,7 @@
 
           <!-- ABA CONEXÃO REMOTA -->
           <div class="tab-pane fade" id="pane-conexao" role="tabpanel">
-            <h2 class="pane-titulo-mobile">Conexão Remota</h2>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-screencast"></i> Conexão Remota</h2>
             <div class="d-flex align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Assuma o controle das máquinas.</p>
             </div>
@@ -2254,7 +2353,7 @@
 
           <!-- ABA LOGS -->
           <div class="tab-pane fade" id="pane-logs" role="tabpanel">
-            <h2 class="pane-titulo-mobile">Logs</h2>
+            <h2 class="pane-titulo-mobile"><i class="material-icons ic-logs">travel_explore</i> Logs</h2>
             <div class="d-flex align-items-center mb-3 gap-2">
               <p class="text-muted mb-0">Auditoria de ações em todos os módulos do sistema.</p>
             </div>
@@ -2896,8 +2995,8 @@
           <h5 class="modal-title"><i class="material-icons ic-logs me-2">travel_explore</i><span id="lmTitulo">Logs</span></h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
-        <div class="modal-body p-0" id="lmScroll">
-          <div class="log-busca-bar px-3 pt-3 pb-2 d-flex align-items-center gap-1">
+        <div class="modal-body p-0">
+          <div class="log-busca-bar px-3 pt-3 pb-2 d-flex align-items-center justify-content-end gap-1">
             <div class="input-group input-group-sm busca-tabela">
               <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
               <input type="search" class="form-control" id="lmBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
@@ -2906,9 +3005,14 @@
               <i class="ph ph-funnel-x fs-5"></i>
             </button>
           </div>
-          <div id="lmCorpo" class="p-3"><span class="text-muted">Carregando...</span></div>
-          <div id="lmSentinel" class="d-none text-center py-3 text-muted small">
-            <div class="spinner-border spinner-border-sm me-1"></div> Carregando mais...
+          <div class="table-scroll-x table-sticky px-3 pb-3" id="lmScroll">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr id="lmThead"></tr></thead>
+              <tbody id="lmTbody"><tr><td colspan="5" class="text-muted">Carregando...</td></tr></tbody>
+            </table>
+            <div id="lmSentinel" class="d-none text-center py-3 text-muted small">
+              <div class="spinner-border spinner-border-sm me-1"></div> Carregando mais...
+            </div>
           </div>
         </div>
       </div>
