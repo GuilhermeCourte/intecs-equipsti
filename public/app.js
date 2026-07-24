@@ -5421,8 +5421,10 @@ async function entrarNoApp(email, restaurarAba = false) {
   if (!_ciPerfil) await carregarMeuPerfilCI().catch(() => {});
   aplicarPermissoesAbas();
   carregarNotificacoes();
-  // Aba inicial: a salva, se permitida; senão a primeira aba permitida.
-  let abaInicial = (restaurarAba && localStorage.getItem('abaAtiva')) || 'tab-dashboard';
+  // Aba inicial: a salva, se permitida e salva há menos de 1h; senão a primeira aba permitida.
+  const abaAtivaTimestamp = Number(localStorage.getItem('abaAtivaTimestamp')) || 0;
+  const abaSalvaValida = restaurarAba && (Date.now() - abaAtivaTimestamp) < 3600000;
+  let abaInicial = (abaSalvaValida && localStorage.getItem('abaAtiva')) || 'tab-dashboard';
   if (!permiteAba(abaInicial)) abaInicial = primeiraAbaPermitida();
   // Compara com a ativa no DOM: logout/login na mesma página herda a aba do
   // usuário anterior (que pode até estar oculta pro novo).
@@ -6036,6 +6038,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       sincronizarGruposAbas();
       posicionarSlider();
       localStorage.setItem('abaAtiva', btn.id);
+      localStorage.setItem('abaAtivaTimestamp', String(Date.now()));
     });
   });
   // Redimensionar a janela muda a largura das abas (e o padding delas perto
