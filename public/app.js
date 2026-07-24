@@ -3222,7 +3222,37 @@ const LOG_PAGE = 50;
 
 let _lgOffset = 0, _lgLoading = false, _lgAllLoaded = false, _lgBuscaTimer = null;   // aba global
 let _lmModulo = null, _lmOffset = 0, _lmLoading = false, _lmAllLoaded = false, _lmBuscaTimer = null; // modal
+let _lmRows = []; // linhas carregadas do módulo atual (para o funil de coluna)
 let modalLogsModulo = null;
+
+// Colunas do modal de logs por módulo, com funil de filtro (igual ao resto do sistema).
+const LM_COLS = [
+  { label: 'DATA/HORA' },
+  { label: 'AÇÃO' },
+  { label: 'ITEM' },
+  { label: 'ALTERAÇÃO' },
+  { label: 'USUÁRIO' },
+];
+
+function lmColVal(l, col) {
+  if (col === 0) return fmtDataHora(l.dataHora);
+  if (col === 1) return l.acao || '';
+  if (col === 2) return l.entidadeRotulo || (l.entidadeId != null ? String(l.entidadeId) : '') || '';
+  if (col === 3) return l.campo || '';
+  if (col === 4) return l.usuario || '';
+  return '';
+}
+
+const lmFilterCtx = {
+  theadSel: '#lmThead th[data-col]',
+  getRows: () => _lmRows,
+  colVal: lmColVal,
+  filters: {},
+  maxItems: 6,
+  clearBtnId: 'btnLimparFiltrosLm',
+  buscaId: 'lmBusca',
+  onApply: () => renderLogsModuloTabela(),
+};
 
 // Badge colorido pela ação.
 function logBadge(acao) {
@@ -3331,36 +3361,42 @@ async function loadLogs(reset = true) {
 function abrirLogsModulo(modulo) {
   _lmModulo = modulo;
   _lmOffset = 0; _lmAllLoaded = false;
+  _lmRows = [];
+  Object.keys(lmFilterCtx.filters).forEach((k) => delete lmFilterCtx.filters[k]);
   $('lmBusca').value = '';
   $('lmTitulo').textContent = 'Logs — ' + (LOG_MODULO_LABEL[modulo] || modulo);
-  $('lmCorpo').innerHTML = '<span class="text-muted">Carregando...</span>';
+  $('lmTbody').innerHTML = '<tr><td colspan="5" class="text-muted">Carregando...</td></tr>';
   $('lmSentinel').classList.add('d-none');
+  ctxAtualizarTh(lmFilterCtx);
   modalLogsModulo.show();
   loadLogsModulo(true);
+}
+
+// Aplica o funil de coluna sobre as linhas já carregadas e re-renderiza o tbody.
+function renderLogsModuloTabela() {
+  const linhas = _lmRows.filter((l) => ctxPassa(lmFilterCtx, l));
+  $('lmTbody').innerHTML = linhas.length
+    ? linhas.map((l) => renderLinhaLog(l, false)).join('')
+    : '<tr><td colspan="5" class="text-muted">Nenhum log encontrado.</td></tr>';
+  ativarTooltipsLog($('lmTbody'));
+  ctxAtualizarTh(lmFilterCtx);
 }
 
 async function loadLogsModulo(reset = true) {
   if (_lmLoading) return;
   if (!reset && _lmAllLoaded) return;
-  if (reset) { _lmOffset = 0; _lmAllLoaded = false; }
+  if (reset) { _lmOffset = 0; _lmAllLoaded = false; _lmRows = []; }
   _lmLoading = true;
   try {
     const url = montarQueryLogs({ modulo: _lmModulo, q: $('lmBusca').value.trim(), de: '', ate: '', offset: _lmOffset });
     const novos = await api('GET', url);
-    const linhas = novos.map((l) => renderLinhaLog(l, false)).join('');
-    if (reset) {
-      $('lmCorpo').innerHTML = novos.length
-        ? '<table class="table table-sm align-middle mb-0"><thead><tr><th>DATA/HORA</th><th>AÇÃO</th><th>ITEM</th><th>ALTERAÇÃO</th><th>USUÁRIO</th></tr></thead><tbody id="lmTbody">' + linhas + '</tbody></table>'
-        : '<span class="text-muted">Nenhum log registrado para este módulo.</span>';
-    } else if (linhas && $('lmTbody')) {
-      $('lmTbody').insertAdjacentHTML('beforeend', linhas);
-    }
-    ativarTooltipsLog($('lmCorpo'));
+    _lmRows = reset ? novos : _lmRows.concat(novos);
+    renderLogsModuloTabela();
     _lmOffset += novos.length;
     _lmAllLoaded = novos.length < LOG_PAGE;
     $('lmSentinel').classList.toggle('d-none', _lmAllLoaded);
   } catch (err) {
-    $('lmCorpo').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+    $('lmTbody').innerHTML = '<tr><td colspan="5" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
   } finally {
     _lmLoading = false;
   }
@@ -4627,6 +4663,31 @@ const ABA_PERMISSAO = {
   'tab-logs': 'aba_logs'
 };
 
+// Agrupamento visual das abas na barra (dropdown) e na gaveta mobile
+// (seção expansível). As permissões continuam por aba individual acima —
+// o grupo inteiro só some quando nenhuma aba dele está liberada.
+const GRUPOS_ABAS = {
+  equipamentos: { abas: ['tab-registros', 'tab-emprestimos'], desktopId: 'grupo-equipamentos', mobileId: 'mmGrupoEquipamentos' },
+  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
+  opcoes: { abas: ['tab-gerenciar', 'tab-usuarios'], desktopId: 'grupo-opcoes', mobileId: 'mmGrupoOpcoes' }
+};
+
+function grupoDaAba(abaId) {
+  return Object.values(GRUPOS_ABAS).find((g) => g.abas.includes(abaId));
+}
+
+// Destaca (classe active) o botão do grupo na barra de abas quando a aba
+// ativa é uma das que ele contém — o item em si já é marcado pelo Bootstrap.
+function sincronizarGruposAbas() {
+  document.querySelectorAll('.app-tabs-group > .dropdown-toggle').forEach((btn) => btn.classList.remove('active'));
+  const ativo = document.querySelector('.app-tabs [data-bs-toggle="tab"].active');
+  const grupo = ativo && grupoDaAba(ativo.id);
+  if (grupo) {
+    const toggle = document.querySelector('#' + grupo.desktopId + ' > .dropdown-toggle');
+    if (toggle) toggle.classList.add('active');
+  }
+}
+
 function permiteAba(abaId) {
   const chave = ABA_PERMISSAO[abaId];
   if (!chave) return true;
@@ -4642,6 +4703,15 @@ function aplicarPermissoesAbas() {
     if (btn) btn.classList.toggle('d-none', !ok);
     const item = document.querySelector('.mm-item[data-tab="' + abaId + '"]');
     if (item) item.classList.toggle('d-none', !ok);
+  }
+  // Grupo some por inteiro (desktop dropdown + seção da gaveta) só quando
+  // nenhuma das abas que ele contém está liberada pro usuário.
+  for (const grupo of Object.values(GRUPOS_ABAS)) {
+    const algumaVisivel = grupo.abas.some(permiteAba);
+    const desktopEl = document.getElementById(grupo.desktopId);
+    if (desktopEl) desktopEl.classList.toggle('d-none', !algumaVisivel);
+    const mobileEl = document.getElementById(grupo.mobileId)?.closest('.mm-group');
+    if (mobileEl) mobileEl.classList.toggle('d-none', !algumaVisivel);
   }
   // Ícones de histórico das toolbars: mesma régua da aba Logs global (aba_logs).
   const podeLogs = permiteAba('tab-logs');
@@ -5308,11 +5378,12 @@ async function entrarNoApp(email, restaurarAba = false) {
   if (!permiteAba(abaInicial)) abaInicial = primeiraAbaPermitida();
   // Compara com a ativa no DOM: logout/login na mesma página herda a aba do
   // usuário anterior (que pode até estar oculta pro novo).
-  const ativaAgora = document.querySelector('.app-tabs .nav-link.active');
+  const ativaAgora = document.querySelector('.app-tabs [data-bs-toggle="tab"].active');
   if (!ativaAgora || ativaAgora.id !== abaInicial) {
     const abaEl = $(abaInicial);
     if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
   }
+  sincronizarGruposAbas();
   requestAnimationFrame(() => posicionarSlider(false));
   processarDeepLinkChamado(); // fire-and-forget: corre em paralelo com o resto
   if (dadosCarregados) return;
@@ -5705,6 +5776,30 @@ function configurarIntecsMsa() {
    cabeçalho abre a gaveta lateral com as abas (a barra de abas fica
    oculta no celular).
    ===================================================================== */
+// A barra de abas tem overflow-x:auto (rolagem horizontal), e isso corta o
+// dropdown-menu dos grupos (Equipamentos/Suporte/Opções) por baixo do
+// conteúdo. Não dá pra mover o <li>/botão do dropdown pro <body> — ele
+// continua sendo a aba real (data-bs-toggle="tab") e o Bootstrap Tab acha o
+// "pai" via closest('.nav, [role=tablist]'), que quebra se ele for
+// desanexado. Em vez disso só libera o overflow da barra enquanto o
+// dropdown está aberto.
+function configurarDropdownsAbas() {
+  const tabs = document.querySelector('.app-tabs');
+  if (!tabs) return;
+  const toggles = document.querySelectorAll('.app-tabs-group .dropdown-toggle');
+  // Ao trocar direto de um grupo aberto pro outro, o 'show' do novo dispara
+  // antes do 'hidden' do antigo — remover a classe no 'hidden' sem checar
+  // fechava a barra mesmo com o novo dropdown já aberto, cortando o menu
+  // pela metade (overflow-x:auto some a virar auto no eixo Y também).
+  const algumAberto = () => [...toggles].some((t) => t.classList.contains('show'));
+  toggles.forEach((toggle) => {
+    toggle.addEventListener('show.bs.dropdown', () => tabs.classList.add('dropdown-aberto'));
+    toggle.addEventListener('hidden.bs.dropdown', () => {
+      if (!algumAberto()) tabs.classList.remove('dropdown-aberto');
+    });
+  });
+}
+
 function configurarMenuMobile() {
   const painel = $('mobileMenu');
   if (!painel) return;
@@ -5712,9 +5807,17 @@ function configurarMenuMobile() {
   const gatilho = $('btnMenuMobile');
 
   const sincronizarAtivo = () => {
-    const ativo = document.querySelector('.app-tabs .nav-link.active');
-    painel.querySelectorAll('.mm-item').forEach((b) => {
-      b.classList.toggle('active', !!ativo && b.dataset.tab === ativo.id);
+    const ativo = document.querySelector('.app-tabs [data-bs-toggle="tab"].active');
+    let subAtivo = null;
+    painel.querySelectorAll('.mm-item[data-tab]').forEach((b) => {
+      const ehAtiva = !!ativo && b.dataset.tab === ativo.id;
+      b.classList.toggle('active', ehAtiva);
+      if (ehAtiva) subAtivo = b.closest('.collapse');
+    });
+    painel.querySelectorAll('.mm-group .collapse').forEach((sub) => {
+      const instancia = bootstrap.Collapse.getOrCreateInstance(sub, { toggle: false });
+      if (sub === subAtivo) instancia.show();
+      else instancia.hide();
     });
   };
   const abrir = () => {
@@ -5745,7 +5848,7 @@ function configurarMenuMobile() {
       if (alvo) bootstrap.Tab.getOrCreateInstance(alvo).show();
     });
   });
-  document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
+  document.querySelectorAll('.app-tabs [data-bs-toggle="tab"]').forEach((btn) => {
     btn.addEventListener('shown.bs.tab', sincronizarAtivo);
   });
   // Voltando ao desktop, fecha a gaveta e reposiciona o slider da barra
@@ -5870,10 +5973,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarVerificarMaquina();
   configurarConexaoRemota();
   configurarMenuMobile();
+  configurarDropdownsAbas();
   configurarCalendario();
 
-  document.querySelectorAll('.app-tabs .nav-link').forEach((btn) => {
+  document.querySelectorAll('.app-tabs [data-bs-toggle="tab"]').forEach((btn) => {
     btn.addEventListener('shown.bs.tab', () => {
+      sincronizarGruposAbas();
       posicionarSlider();
       localStorage.setItem('abaAtiva', btn.id);
     });
@@ -5937,8 +6042,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('lgModulo').value = ''; $('lgDe').value = ''; $('lgAte').value = ''; $('lgBusca').value = '';
     loadLogs(true);
   });
+  $('lmThead').innerHTML = thFiltravel(LM_COLS);
+  wireCtxFiltro(lmFilterCtx, $('lmThead'));
   $('lmBusca').addEventListener('input', () => { clearTimeout(_lmBuscaTimer); _lmBuscaTimer = setTimeout(() => loadLogsModulo(true), 300); });
-  $('btnLimparFiltrosLm').addEventListener('click', () => { $('lmBusca').value = ''; loadLogsModulo(true); });
+  $('btnLimparFiltrosLm').addEventListener('click', () => {
+    $('lmBusca').value = '';
+    Object.keys(lmFilterCtx.filters).forEach((k) => delete lmFilterCtx.filters[k]);
+    loadLogsModulo(true);
+  });
   document.querySelectorAll('.btn-log-modulo').forEach((b) =>
     b.addEventListener('click', () => abrirLogsModulo(b.dataset.logmodulo)));
   new IntersectionObserver((e) => { if (e[0].isIntersecting) loadLogs(false); },
