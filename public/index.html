@@ -761,7 +761,8 @@
     .choices:has(#ciFiltroPrioridade) .choices__inner,
     .choices:has(#ciFiltroStatus) .choices__inner,
     .choices:has(#ciFiltroResponsavel) .choices__inner,
-    .choices:has(#cal_recorrencia) .choices__inner {
+    .choices:has(#cal_recorrencia) .choices__inner,
+    .choices:has(#lgModulo) .choices__inner {
       min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px;
     }
     .choices:has(#imFiltroStatus) .choices__list--single .choices__item,
@@ -770,7 +771,8 @@
     .choices:has(#ciFiltroPrioridade) .choices__list--single .choices__item,
     .choices:has(#ciFiltroStatus) .choices__list--single .choices__item,
     .choices:has(#ciFiltroResponsavel) .choices__list--single .choices__item,
-    .choices:has(#cal_recorrencia) .choices__list--single .choices__item { font-size: .875rem; }
+    .choices:has(#cal_recorrencia) .choices__list--single .choices__item,
+    .choices:has(#lgModulo) .choices__list--single .choices__item { font-size: .875rem; }
     .choices:has(#imFiltroStatus) .choices__list--dropdown .choices__item,
     .choices:has(#imFiltroStatus) .choices__list[aria-expanded] .choices__item,
     .choices:has(#chamadosFiltroStatus) .choices__list--dropdown .choices__item,
@@ -780,7 +782,9 @@
     .choices:has(#ciFiltroStatus) .choices__list--dropdown .choices__item,
     .choices:has(#ciFiltroResponsavel) .choices__list--dropdown .choices__item,
     .choices:has(#cal_recorrencia) .choices__list--dropdown .choices__item,
-    .choices:has(#cal_recorrencia) .choices__list[aria-expanded] .choices__item {
+    .choices:has(#cal_recorrencia) .choices__list[aria-expanded] .choices__item,
+    .choices:has(#lgModulo) .choices__list--dropdown .choices__item,
+    .choices:has(#lgModulo) .choices__list[aria-expanded] .choices__item {
       padding: 7px 10px; font-size: .875rem;
     }
 
@@ -867,6 +871,9 @@
     .flatpickr-prev-month:hover i, .flatpickr-next-month:hover i { color: rgba(255,255,255,.65); }
     /* Altinput herda o estilo form-control */
     input.flatpickr-alt-input { border-radius: 10px !important; }
+    /* Logs: "De" fica dentro de um input-group com ícone de calendário — o
+       lado esquerdo do alt-input não pode ficar arredondado (coladinho no ícone). */
+    #pane-logs .input-group input.flatpickr-alt-input { border-radius: 0 8px 8px 0 !important; }
     .was-validated .flatpickr-input[required]:invalid + input.flatpickr-alt-input {
       border-color: #dc3545;
     }
@@ -2355,15 +2362,20 @@
           <div class="tab-pane fade" id="pane-logs" role="tabpanel">
             <h2 class="pane-titulo-mobile"><i class="material-icons ic-logs">travel_explore</i> Logs</h2>
             <div class="d-flex align-items-center mb-3 gap-2">
-              <p class="text-muted mb-0">Auditoria de ações em todos os módulos do sistema.</p>
+              <p class="text-muted mb-0">Auditoria de ações nos módulos do sistema.</p>
             </div>
             <div id="alertLogs"></div>
             <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
-              <select class="form-select form-select-sm w-auto" id="lgModulo" title="Filtrar por módulo">
-                <option value="">Todos os módulos</option>
-              </select>
-              <input type="date" class="form-control form-control-sm w-auto" id="lgDe" title="De (data inicial)">
-              <input type="date" class="form-control form-control-sm w-auto" id="lgAte" title="Até (data final)">
+              <div style="width:200px;flex-shrink:0;">
+                <select class="form-select form-select-sm w-auto" id="lgModulo" title="Filtrar por módulo">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              <div class="input-group input-group-sm" style="width:130px;flex-shrink:0;">
+                <span class="input-group-text"><i class="ph ph-calendar-blank"></i></span>
+                <input type="text" class="form-control form-control-sm" id="lgDe" title="De (data inicial)" placeholder="De" readonly autocomplete="off">
+              </div>
+              <input type="text" class="form-control form-control-sm w-auto" id="lgAte" title="Até (data final)" placeholder="Até" readonly autocomplete="off">
               <div class="d-flex align-items-center gap-1 ms-sm-auto">
                 <div class="input-group input-group-sm busca-tabela">
                   <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
@@ -2380,14 +2392,8 @@
             <div class="table-scroll-x table-sticky" id="lgScroll">
               <table class="table table-sm table-striped table-hover align-middle">
                 <thead class="table-light">
-                  <tr>
-                    <th>DATA/HORA</th>
-                    <th>MÓDULO</th>
-                    <th>AÇÃO</th>
-                    <th>ITEM</th>
-                    <th>ALTERAÇÃO</th>
-                    <th>USUÁRIO</th>
-                  </tr>
+                  <!-- Cabeçalho montado pelo JS (thFiltravel): colunas com funil. -->
+                  <tr id="lgThead"></tr>
                 </thead>
                 <tbody id="lgTbody">
                   <tr><td colspan="6" class="text-muted">Carregando...</td></tr>
@@ -2786,7 +2792,7 @@
                 <input type="number" min="1" class="form-control" id="cal_avisar_dias" placeholder="ex.: 10" autocomplete="off">
                 <span class="input-group-text">dias antes</span>
               </div>
-              <div class="form-text">Vazio = sem aviso. E-mail vai só para MASTER.</div>
+              <div class="form-text">Vazio = sem aviso.</div>
             </div>
             <div class="col-12">
               <label class="form-label" for="cal_observacao">OBSERVAÇÃO *</label>
