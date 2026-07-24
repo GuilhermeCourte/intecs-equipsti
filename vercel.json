@@ -9,5 +9,8 @@
     { "src": "/", "dest": "/public/index.html" },
     { "src": "/chamados", "dest": "/public/chamados.html" },
     { "src": "/(.*)", "dest": "/public/$1" }
+  ],
+  "crons": [
+    { "path": "/api/calendario/lembretes/run", "schedule": "0 11 * * *" }
   ]
 }

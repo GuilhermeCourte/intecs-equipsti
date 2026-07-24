@@ -569,6 +569,8 @@ CREATE TABLE dbo.EQUIPSTI_calendario_eventos (
   recorrencia    NVARCHAR(20) NOT NULL DEFAULT 'NENHUMA',
   valor          DECIMAL(15,2) NULL,
   observacao     NVARCHAR(MAX) NOT NULL,
+  avisar_dias_antes INT NULL,
+  ultimo_aviso_data DATE NULL,
   criado_em      DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   atualizado_em  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   criado_por     NVARCHAR(255) NULL,
@@ -586,6 +588,13 @@ IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'anual') IS NOT NULL
 ALTER TABLE dbo.EQUIPSTI_calendario_eventos ALTER COLUMN tipo NVARCHAR(100) NOT NULL;
 UPDATE dbo.EQUIPSTI_calendario_eventos SET observacao = '' WHERE observacao IS NULL;
 ALTER TABLE dbo.EQUIPSTI_calendario_eventos ALTER COLUMN observacao NVARCHAR(MAX) NOT NULL;
+
+-- Aviso por e-mail N dias antes do evento (opcional por evento). 'ultimo_aviso_data'
+-- guarda a data da ocorrência já avisada, evitando reenvio no mesmo ciclo.
+IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'avisar_dias_antes') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD avisar_dias_antes INT NULL;
+IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'ultimo_aviso_data') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD ultimo_aviso_data DATE NULL;
 `;
 
 async function main() {

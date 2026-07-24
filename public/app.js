@@ -843,6 +843,7 @@ function abrirCalendario(id, dataPreenchida) {
   $('cal_data').value = e ? e.data : (dataPreenchida || '');
   $('cal_valor').value = e && e.valor != null ? formatarMoeda(e.valor) : '';
   setSelectVal('cal_recorrencia', e ? e.recorrencia : '');
+  $('cal_avisar_dias').value = e && e.avisarDiasAntes != null ? e.avisarDiasAntes : '';
   $('cal_observacao').value = e ? (e.observacao || '') : '';
   $('btnExcluirCalendario').classList.toggle('d-none', !e);
   modalCalendario.show();
@@ -855,7 +856,8 @@ function dadosCalendario() {
     data: $('cal_data').value,
     recorrencia: $('cal_recorrencia').value,
     valor: parseMoeda($('cal_valor').value),
-    observacao: trim($('cal_observacao').value)
+    observacao: trim($('cal_observacao').value),
+    avisarDiasAntes: trim($('cal_avisar_dias').value) === '' ? null : Number(trim($('cal_avisar_dias').value))
   };
 }
 
@@ -5282,7 +5284,7 @@ async function carregarDashboard() {
 let dadosCarregados = false;
 
 // ---------- Notificações (sininho) ----------
-const NOTIF_ICONES = { REGISTRO: 'ph-table', EMPRESTIMO: 'ph-hand-arrow-up', CHAMADO: 'ph-headset', TESTE: 'ph-flask' };
+const NOTIF_ICONES = { REGISTRO: 'ph-table', EMPRESTIMO: 'ph-hand-arrow-up', CHAMADO: 'ph-headset', CALENDARIO: 'ph-calendar-blank', TESTE: 'ph-flask' };
 
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
