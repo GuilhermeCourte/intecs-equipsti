@@ -40,12 +40,13 @@ const CHOICES_IDS = [
   'ci_categoria', 'ci_subcategoria', 'ci_prioridade',
   'ci_unidade', 'ci_departamento', 'ciMaquinaSelect',
   'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
-  'cal_recorrencia'
+  'cal_recorrencia', 'lgModulo'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
 const FILTRO_STATUS_IDS = new Set([
   'imFiltroStatus', 'chamadosFiltroStatus',
-  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel'
+  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
+  'lgModulo'
 ]);
 
 // ---------- Estado em memória ----------
@@ -487,6 +488,14 @@ function initFlatpickr() {
   ['dataRecebimento', 'edit_dataRecebimento', 'emp_data'].forEach((id) => {
     const el = $(id);
     if (el && !fpMap[id]) fpMap[id] = flatpickr(el, cfg);
+  });
+  // Filtros De/Até dos Logs: mesmo padrão visual, mas sem minDate — o filtro
+  // é sobre eventos passados, diferente da data do empréstimo (futuro/hoje).
+  const cfgSemMinData = { ...cfg };
+  delete cfgSemMinData.minDate;
+  ['lgDe', 'lgAte'].forEach((id) => {
+    const el = $(id);
+    if (el && !fpMap[id]) fpMap[id] = flatpickr(el, cfgSemMinData);
   });
 }
 
@@ -3223,9 +3232,41 @@ const LOG_MODULO_LABEL = Object.fromEntries(LOG_MODULOS);
 const LOG_PAGE = 50;
 
 let _lgOffset = 0, _lgLoading = false, _lgAllLoaded = false, _lgBuscaTimer = null;   // aba global
+let _lgRows = []; // linhas carregadas da aba global (para o funil de coluna)
 let _lmModulo = null, _lmOffset = 0, _lmLoading = false, _lmAllLoaded = false, _lmBuscaTimer = null; // modal
 let _lmRows = []; // linhas carregadas do módulo atual (para o funil de coluna)
 let modalLogsModulo = null;
+
+// Colunas da aba Logs (global), com funil de filtro (igual ao resto do sistema).
+const LG_COLS = [
+  { label: 'DATA/HORA' },
+  { label: 'MÓDULO' },
+  { label: 'AÇÃO' },
+  { label: 'ITEM' },
+  { label: 'ALTERAÇÃO' },
+  { label: 'USUÁRIO' },
+];
+
+function lgColVal(l, col) {
+  if (col === 0) return fmtDataHora(l.dataHora);
+  if (col === 1) return LOG_MODULO_LABEL[l.modulo] || l.modulo || '';
+  if (col === 2) return l.acao || '';
+  if (col === 3) return l.entidadeRotulo || (l.entidadeId != null ? String(l.entidadeId) : '') || '';
+  if (col === 4) return l.campo || '';
+  if (col === 5) return l.usuario || '';
+  return '';
+}
+
+const lgFilterCtx = {
+  theadSel: '#lgThead th[data-col]',
+  getRows: () => _lgRows,
+  colVal: lgColVal,
+  filters: {},
+  maxItems: 6,
+  clearBtnId: 'btnLimparFiltrosLogs',
+  buscaId: 'lgBusca',
+  onApply: () => renderLogsTabela(),
+};
 
 // Colunas do modal de logs por módulo, com funil de filtro (igual ao resto do sistema).
 const LM_COLS = [
@@ -3325,12 +3366,22 @@ function montarQueryLogs({ modulo, q, de, ate, offset }) {
   return '/api/logs?' + p.toString();
 }
 
+// Aplica o funil de coluna sobre as linhas já carregadas e re-renderiza o tbody.
+function renderLogsTabela() {
+  const linhas = _lgRows.filter((l) => ctxPassa(lgFilterCtx, l));
+  $('lgTbody').innerHTML = linhas.length
+    ? linhas.map((l) => renderLinhaLog(l, true)).join('')
+    : '<tr><td colspan="6" class="text-muted">Nenhum log encontrado.</td></tr>';
+  ativarTooltipsLog($('lgTbody'));
+  ctxAtualizarTh(lgFilterCtx);
+}
+
 // ---- Aba Logs global (infinite scroll, filtros server-side) ----
 async function loadLogs(reset = true) {
   if (_lgLoading) return;
   if (!reset && _lgAllLoaded) return;
   if (reset) {
-    _lgOffset = 0; _lgAllLoaded = false;
+    _lgOffset = 0; _lgAllLoaded = false; _lgRows = [];
     $('lgTbody').innerHTML = '<tr><td colspan="6" class="text-muted">Carregando...</td></tr>';
     $('lgSentinel').classList.add('d-none');
   }
@@ -3341,13 +3392,8 @@ async function loadLogs(reset = true) {
       de: $('lgDe').value, ate: $('lgAte').value, offset: _lgOffset
     });
     const novos = await api('GET', url);
-    const html = novos.map((l) => renderLinhaLog(l, true)).join('');
-    if (reset) {
-      $('lgTbody').innerHTML = novos.length ? html : '<tr><td colspan="6" class="text-muted">Nenhum log encontrado.</td></tr>';
-    } else if (html) {
-      $('lgTbody').insertAdjacentHTML('beforeend', html);
-    }
-    ativarTooltipsLog($('lgTbody'));
+    _lgRows = reset ? novos : _lgRows.concat(novos);
+    renderLogsTabela();
     _lgOffset += novos.length;
     _lgAllLoaded = novos.length < LOG_PAGE;
     $('lgSentinel').classList.toggle('d-none', _lgAllLoaded);
@@ -5951,6 +5997,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   $('askInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); finishAsk(true); } });
   $('askInput3').addEventListener('input', (ev) => { if (askInput3Mask === 'cnpj') ev.target.value = maskCNPJ(ev.target.value); });
+  // Opções do select de módulo dos Logs: precisa existir antes do initChoices()
+  // (Choices.js tira um retrato das <option> no momento em que envolve o select).
+  LOG_MODULOS.forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = label;
+    $('lgModulo').appendChild(opt);
+  });
   initChoices();
   initFlatpickr();
   initIntecsMsaDatas();
@@ -6031,19 +6084,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ---- Aba Logs (auditoria unificada) ----
   modalLogsModulo = new bootstrap.Modal($('modalLogsModulo'));
-  LOG_MODULOS.forEach(([val, label]) => {
-    const opt = document.createElement('option');
-    opt.value = val; opt.textContent = label;
-    $('lgModulo').appendChild(opt);
-  });
   $('tab-logs').addEventListener('shown.bs.tab', () => loadLogs(true));
   ['lgModulo', 'lgDe', 'lgAte'].forEach((id) => $(id).addEventListener('change', () => loadLogs(true)));
   $('lgBusca').addEventListener('input', () => { clearTimeout(_lgBuscaTimer); _lgBuscaTimer = setTimeout(() => loadLogs(true), 300); });
   $('btnAtualizarLogs').addEventListener('click', () => loadLogs(true));
   $('btnLimparFiltrosLogs').addEventListener('click', () => {
-    $('lgModulo').value = ''; $('lgDe').value = ''; $('lgAte').value = ''; $('lgBusca').value = '';
+    setSelectVal('lgModulo', '');
+    if (fpMap['lgDe']) fpMap['lgDe'].clear(); else $('lgDe').value = '';
+    if (fpMap['lgAte']) fpMap['lgAte'].clear(); else $('lgAte').value = '';
+    $('lgBusca').value = '';
+    Object.keys(lgFilterCtx.filters).forEach((k) => delete lgFilterCtx.filters[k]);
     loadLogs(true);
   });
+  $('lgThead').innerHTML = thFiltravel(LG_COLS);
+  wireCtxFiltro(lgFilterCtx, $('lgThead'));
   $('lmThead').innerHTML = thFiltravel(LM_COLS);
   wireCtxFiltro(lmFilterCtx, $('lmThead'));
   $('lmBusca').addEventListener('input', () => { clearTimeout(_lmBuscaTimer); _lmBuscaTimer = setTimeout(() => loadLogsModulo(true), 300); });
