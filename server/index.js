@@ -797,6 +797,7 @@ app.delete('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wra
 // ===================== Calendário (vencimentos) =====================
 const CALENDARIO_SELECT = `SELECT id, titulo, tipo,
   CONVERT(varchar(10), data, 120) AS data, recorrencia, valor, observacao,
+  avisar_dias_antes AS avisarDiasAntes,
   criado_por AS criadoPor, atualizado_por AS atualizadoPor,
   CONVERT(varchar(19), criado_em, 120) AS criadoEm,
   CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
@@ -809,7 +810,11 @@ function lerEventoCalendario(body) {
     data: trim(body.data),
     recorrencia: ['MENSAL', 'ANUAL', 'NENHUMA'].includes(body.recorrencia) ? body.recorrencia : null,
     valor: body.valor !== null && body.valor !== '' && body.valor !== undefined ? Number(body.valor) : null,
-    observacao: trim(body.observacao)
+    observacao: trim(body.observacao),
+    avisarDiasAntes: (() => {
+      const n = Math.trunc(Number(body.avisarDiasAntes));
+      return Number.isFinite(n) && n >= 1 ? n : null;
+    })()
   };
 }
 
@@ -819,7 +824,8 @@ function paramsEventoCalendario(d) {
     data: { type: sql.Date, value: d.data },
     recorrencia: S(d.recorrencia),
     valor: d.valor != null && !isNaN(d.valor) ? { type: sql.Decimal(15, 2), value: d.valor } : S(null),
-    observacao: S(d.observacao)
+    observacao: S(d.observacao),
+    avisarDias: d.avisarDiasAntes != null ? { type: sql.Int, value: d.avisarDiasAntes } : S(null)
   };
 }
 
@@ -835,7 +841,8 @@ function validarEventoCalendario(d, res) {
 // Campos auditados do Calendário (chave do shape → rótulo; 3º = comparar como número).
 const CAMPOS_LOG_CALENDARIO = [
   ['titulo', 'TÍTULO'], ['tipo', 'TIPO'], ['data', 'DATA'],
-  ['recorrencia', 'REPETIÇÃO'], ['valor', 'VALOR', true], ['observacao', 'OBSERVAÇÃO']
+  ['recorrencia', 'REPETIÇÃO'], ['valor', 'VALOR', true], ['observacao', 'OBSERVAÇÃO'],
+  ['avisarDiasAntes', 'AVISO (DIAS)', true]
 ];
 
 app.get('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
@@ -847,9 +854,9 @@ app.post('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
   const insC = await query(`INSERT INTO dbo.EQUIPSTI_calendario_eventos
-    (titulo, tipo, data, recorrencia, valor, observacao, criado_por, atualizado_por)
+    (titulo, tipo, data, recorrencia, valor, observacao, avisar_dias_antes, criado_por, atualizado_por)
     OUTPUT INSERTED.id
-    VALUES (@titulo, @tipo, @data, @recorrencia, @valor, @observacao, @criadoPor, @criadoPor)`,
+    VALUES (@titulo, @tipo, @data, @recorrencia, @valor, @observacao, @avisarDias, @criadoPor, @criadoPor)`,
     { ...paramsEventoCalendario(d), criadoPor: S(req.user.email) });
   await registrarLog({
     modulo: 'CALENDARIO', entidadeId: String(insC.recordset[0].id), entidadeRotulo: d.titulo,
@@ -866,6 +873,7 @@ app.put('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendar
   const antesEv = (await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0] || {};
   await query(`UPDATE dbo.EQUIPSTI_calendario_eventos SET
     titulo=@titulo, tipo=@tipo, data=@data, recorrencia=@recorrencia, valor=@valor, observacao=@observacao,
+    avisar_dias_antes=@avisarDias,
     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { ...paramsEventoCalendario(d), id, atualizadoPor: S(req.user.email) });
@@ -896,6 +904,110 @@ app.delete('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calen
     });
   }
   res.json({ ok: true });
+}));
+
+// ---- Avisos por e-mail antes do vencimento -----------------------------
+// Toda a aritmética de datas é feita em UTC "puro" (Date.UTC) sobre strings
+// YYYY-MM-DD, para não sofrer com o fuso do servidor. O "hoje" de referência
+// é o de São Paulo, para a janela bater com o calendário brasileiro tanto
+// local quanto na Vercel (onde o processo roda em UTC).
+const UM_DIA_MS = 86400000;
+const ymdParaUTC = (s) => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+const utcParaYmd = (ms) => {
+  const dt = new Date(ms);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+};
+const ymdParaBR = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+
+function hojeEmSaoPaulo() {
+  // en-CA formata como YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+}
+
+// Próxima ocorrência >= hoje (ms UTC), respeitando a recorrência. Dia clampeado
+// ao fim do mês (ex.: dia 31 em fevereiro, ou 29/02 em ano não bissexto).
+function proximaOcorrencia(dataStr, recorrencia, hojeMs) {
+  const [y, m, d] = dataStr.split('-').map(Number);
+  const mes0 = m - 1;
+  if (recorrencia === 'MENSAL') {
+    const h = new Date(hojeMs);
+    let yy = h.getUTCFullYear(), mm = h.getUTCMonth();
+    for (let i = 0; i < 13; i++) {
+      const ultimoDia = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
+      const cand = Date.UTC(yy, mm, Math.min(d, ultimoDia));
+      if (cand >= hojeMs) return cand;
+      if (++mm > 11) { mm = 0; yy++; }
+    }
+    return null;
+  }
+  if (recorrencia === 'ANUAL') {
+    let yy = new Date(hojeMs).getUTCFullYear();
+    for (let i = 0; i < 3; i++) {
+      const ultimoDia = new Date(Date.UTC(yy, mes0 + 1, 0)).getUTCDate();
+      const cand = Date.UTC(yy, mes0, Math.min(d, ultimoDia));
+      if (cand >= hojeMs) return cand;
+      yy++;
+    }
+    return null;
+  }
+  return Date.UTC(y, mes0, d); // NENHUMA: data fixa (pode ser passada → filtrada pela janela)
+}
+
+// Percorre os eventos com aviso configurado e envia e-mail (+ sininho) para os
+// MASTER quando "hoje" cai na janela [ocorrência - N dias, ocorrência] e essa
+// ocorrência ainda não foi avisada. Idempotente via ultimo_aviso_data.
+async function rodarLembretesCalendario() {
+  const hojeMs = ymdParaUTC(hojeEmSaoPaulo());
+  const evs = (await query(`SELECT id, titulo, tipo,
+      CONVERT(varchar(10), data, 120) AS data, recorrencia, valor, observacao,
+      avisar_dias_antes AS avisarDiasAntes,
+      CONVERT(varchar(10), ultimo_aviso_data, 120) AS ultimoAvisoData
+    FROM dbo.EQUIPSTI_calendario_eventos
+    WHERE avisar_dias_antes IS NOT NULL AND avisar_dias_antes > 0`)).recordset;
+  let enviados = 0;
+  for (const ev of evs) {
+    try {
+      const occMs = proximaOcorrencia(ev.data, ev.recorrencia, hojeMs);
+      if (occMs == null) continue;
+      const occStr = utcParaYmd(occMs);
+      if (hojeMs < occMs - ev.avisarDiasAntes * UM_DIA_MS || hojeMs > occMs) continue;
+      if (ev.ultimoAvisoData === occStr) continue;
+      const faltam = Math.round((occMs - hojeMs) / UM_DIA_MS);
+      const quando = faltam <= 0 ? 'hoje' : faltam === 1 ? 'amanhã' : `em ${faltam} dias`;
+      const partes = [ev.tipo, ymdParaBR(occStr)];
+      if (ev.valor != null) partes.push('R$ ' + Number(ev.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      const mensagem = partes.join(' · ') + (ev.observacao ? `\n${ev.observacao}` : '');
+      await notificar({
+        tipo: 'CALENDARIO', acao: 'AVISO',
+        titulo: `Vence ${quando}: ${ev.titulo}`,
+        mensagem,
+        link: 'tab-calendario', refId: ev.id,
+        ator: { id: 0, email: 'sistema' },
+        email: true, papeis: ['MASTER'], emailPapeis: ['MASTER']
+      });
+      await query('UPDATE dbo.EQUIPSTI_calendario_eventos SET ultimo_aviso_data = @occ WHERE id = @id',
+        { occ: { type: sql.Date, value: occStr }, id: ev.id });
+      enviados++;
+    } catch (e) {
+      console.error('Falha ao avisar evento do calendário', ev.id, e.message);
+    }
+  }
+  return enviados;
+}
+
+// Gatilho do agendador. Na Vercel é chamado pelo Vercel Cron (header
+// Authorization: Bearer <CRON_SECRET>); localmente, pelo timer interno abaixo.
+// Sem CRON_SECRET definido, a rota fica desligada (404).
+app.get('/api/calendario/lembretes/run', wrap(async (req, res) => {
+  const segredo = (process.env.CRON_SECRET || '').trim();
+  if (!segredo) return res.status(404).json({ error: 'Não encontrado.' });
+  const auth = String(req.headers.authorization || '');
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : String(req.query.token || '');
+  if (token !== segredo) return res.status(401).json({ error: 'Não autorizado.' });
+  const enviados = await rodarLembretesCalendario();
+  res.json({ ok: true, enviados });
 }));
 
 // ===================== PATs (origem dos empréstimos) =====================
@@ -2642,4 +2754,12 @@ if (!process.env.VERCEL) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`API + app em http://localhost:${PORT}`);
   });
+
+  // Avisos do calendário: só rodam com processo vivo (local/self-hosted). Na
+  // Vercel o mesmo trabalho é feito pelo Vercel Cron chamando o endpoint acima.
+  const dispararLembretes = () => rodarLembretesCalendario()
+    .then((n) => { if (n) console.log(`Calendário: ${n} aviso(s) enviado(s).`); })
+    .catch((e) => console.error('Lembretes calendário:', e.message));
+  setTimeout(dispararLembretes, 30_000);
+  setInterval(dispararLembretes, 6 * 60 * 60 * 1000);
 }
