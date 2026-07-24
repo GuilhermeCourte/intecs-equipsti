@@ -1418,6 +1418,16 @@ app.post('/api/intecs-msa', exigirAuth, exigirPermissao('aba_chamados'), wrap(as
     acao: 'CRIADO', valorNovo: d.problema,
     usuario: req.user.email, usuarioId: req.user.sub
   });
+
+  const eqNovo = await lookupEquip(d.patrimonio_msa, d.ns);
+  await notificar({
+    tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', refId: insM.recordset[0].id, email: true,
+    ator: { id: req.user.sub, email: req.user.email },
+    titulo: d.numero_chamado_msa ? `Chamado criado — nº MSA ${d.numero_chamado_msa}` : 'Chamado criado',
+    mensagem: (d.numero_chamado_msa ? `nº ${d.numero_chamado_msa} · ` : '')
+            + `${eqNovo.equipamento || 'Equipamento'} — PAT ${d.patrimonio_msa || '—'}`
+  });
+
   res.status(201).json({ ok: true });
 }));
 
@@ -1464,7 +1474,7 @@ app.put('/api/intecs-msa/:id', exigirAuth, exigirPermissao('aba_chamados'), wrap
   await notificar({
     tipo: 'CHAMADO', acao: 'ATUALIZADO', link: 'tab-chamados', refId: id, email: true,
     ator: { id: req.user.sub, email: req.user.email },
-    titulo: 'Chamado atualizado',
+    titulo: d.numero_chamado_msa ? `Chamado atualizado — nº MSA ${d.numero_chamado_msa}` : 'Chamado atualizado',
     mensagem: `${eqUpd.equipamento || 'Equipamento'} — PAT ${d.patrimonio_msa || '—'}`
             + (d.numero_chamado_msa ? ` · nº ${d.numero_chamado_msa}` : ''),
     mudancas: mudancasCh
@@ -1490,7 +1500,7 @@ app.delete('/api/intecs-msa/:id', exigirAuth, exigirPermissao('aba_chamados'), w
     await notificar({
       tipo: 'CHAMADO', acao: 'EXCLUIDO', link: 'tab-chamados', refId: id, email: true,
       ator: { id: req.user.sub, email: req.user.email },
-      titulo: 'Chamado excluído',
+      titulo: c.numero_chamado_msa ? `Chamado excluído — nº MSA ${c.numero_chamado_msa}` : 'Chamado excluído',
       mensagem: (c.numero_chamado_msa ? `nº ${c.numero_chamado_msa} · ` : '')
               + `${eqDel.equipamento || 'Equipamento'} — PAT ${c.patrimonio_msa || '—'}`
     });
