@@ -17,6 +17,7 @@ import { registrarLog, listarLogs, MODULOS_LOG } from './logs.js';
 import { emailParaEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
+import * as uptimeRobot from './uptimerobot/service.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
 import { calcularPrazosSla } from './chamadosIntecsSla.js';
 import { carregarPerfilChamados, exigirPapel, exigirPermissao, podeVerChamado } from './chamadosIntecsAuth.js';
@@ -788,6 +789,116 @@ app.delete('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wra
       modulo: 'INTERNET', entidadeId: String(id), entidadeRotulo: rotuloInternet(prev),
       acao: 'EXCLUIDO',
       valorAnterior: `${prev.unidade || '—'} · ${prev.empresa || '—'} · ${prev.ipInternet || '—'}`,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  res.json({ ok: true });
+}));
+
+// ===================== CONEXÕES (UptimeRobot) =====================
+// Somente leitura do monitoramento: o painel da sub-aba "Conexão" casa cada
+// UNIDADE cadastrada em Opções com um monitor do UptimeRobot. Nenhum aviso é
+// enviado daqui — os alertas por e-mail continuam sendo do painel do próprio
+// UptimeRobot. Mesma permissão da aba Internet, onde o painel vive.
+
+// Unidades visíveis + o monitor vinculado a cada uma.
+// SEDE fica de fora: é o escritório, não uma loja com link monitorado.
+async function unidadesComMonitor() {
+  const r = await query(`SELECT valor, uptimerobot_monitor_id AS monitorId
+    FROM dbo.EQUIPSTI_opcoes
+    WHERE lista = 'UNIDADE' AND oculto = 0 AND valor <> 'SEDE'
+    ORDER BY valor`);
+  return r.recordset;
+}
+
+app.get('/api/conexoes', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  const unidades = await unidadesComMonitor();
+  let monitores;
+  try {
+    monitores = await uptimeRobot.listarMonitores();
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+  const porId = new Map(monitores.map((m) => [String(m.id), m]));
+  res.json({
+    atualizadoEm: uptimeRobot.dataUtc(Math.floor(Date.now() / 1000)),
+    unidades: unidades.map((u) => {
+      const m = u.monitorId == null ? null : porId.get(String(u.monitorId));
+      // Vínculo apontando para monitor que não existe mais no UptimeRobot
+      // (apagado lá) aparece como não vinculado, sem quebrar o painel.
+      if (!m) return { unidade: u.valor, monitorId: null, monitor: null, status: 'SEM_MONITOR', desde: null };
+      return { unidade: u.valor, monitorId: m.id, monitor: m.nome, status: m.status, desde: m.desde };
+    })
+  });
+}));
+
+// Uptime de 30 dias das unidades já vinculadas (a lista de barrinhas embaixo
+// dos cards). Rota separada de propósito: essa consulta é lenta e tem cache
+// longo, então os cards de status não podem depender dela para aparecer.
+app.get('/api/conexoes/uptime', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  const unidades = (await unidadesComMonitor()).filter((u) => u.monitorId != null);
+  let uptime;
+  try {
+    uptime = await uptimeRobot.listarUptime();
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+  const porId = new Map(uptime.map((u) => [String(u.id), u]));
+  res.json({
+    // Monitor sem histórico aqui (apagado, ou não publicado na página de
+    // status) entra com dias vazio: a unidade some da lista seria pior.
+    unidades: unidades.map((u) => {
+      const m = porId.get(String(u.monitorId));
+      return { unidade: u.valor, ratio: m?.ratio ?? null, dias: m?.dias || [] };
+    })
+  });
+}));
+
+// Lista para o select da engrenagem (vincular unidade → monitor).
+app.get('/api/conexoes/monitores', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  try {
+    res.json(await uptimeRobot.listarMonitores());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}));
+
+app.put('/api/conexoes/vinculo', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  const unidade = trim(req.body.unidade);
+  const monitorId = req.body.monitorId == null || req.body.monitorId === ''
+    ? null : Number(req.body.monitorId);
+  if (!unidade) return res.status(400).json({ error: 'Informe a unidade.' });
+  if (monitorId != null && !Number.isInteger(monitorId)) {
+    return res.status(400).json({ error: 'Monitor inválido.' });
+  }
+
+  const atual = (await query(`SELECT uptimerobot_monitor_id AS monitorId
+    FROM dbo.EQUIPSTI_opcoes WHERE lista = 'UNIDADE' AND valor = @unidade`,
+    { unidade: S(unidade) })).recordset[0];
+  if (!atual) return res.status(404).json({ error: 'Unidade não encontrada.' });
+
+  await query(`UPDATE dbo.EQUIPSTI_opcoes SET uptimerobot_monitor_id = @monitorId
+    WHERE lista = 'UNIDADE' AND valor = @unidade`,
+    { monitorId: { type: sql.BigInt, value: monitorId }, unidade: S(unidade) });
+
+  // Log com o nome do monitor (o id sozinho não diz nada em auditoria).
+  let nomeDe = null;
+  let nomePara = null;
+  try {
+    const monitores = await uptimeRobot.listarMonitores();
+    const nome = (id) => (id == null ? null : (monitores.find((m) => String(m.id) === String(id))?.nome || String(id)));
+    nomeDe = nome(atual.monitorId);
+    nomePara = nome(monitorId);
+  } catch {
+    // UptimeRobot fora do ar não pode impedir o vínculo nem o log.
+    nomeDe = atual.monitorId == null ? null : String(atual.monitorId);
+    nomePara = monitorId == null ? null : String(monitorId);
+  }
+  if (logMudou(nomeDe, nomePara, false)) {
+    await registrarLog({
+      modulo: 'INTERNET', entidadeRotulo: unidade,
+      acao: 'ATUALIZADO', campo: 'MONITOR',
+      valorAnterior: nomeDe, valorNovo: nomePara,
       usuario: req.user.email, usuarioId: req.user.sub
     });
   }
