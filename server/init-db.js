@@ -102,6 +102,10 @@ IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'cnpj') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'endereco') IS NULL
   ALTER TABLE dbo.EQUIPSTI_opcoes ADD endereco NVARCHAR(255) NULL;
 
+-- Migração: monitor do UptimeRobot vinculado à unidade (aba Internet › Conexão).
+IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'uptimerobot_monitor_id') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_opcoes ADD uptimerobot_monitor_id BIGINT NULL;
+
 -- Tabela de contratos de internet por unidade.
 IF OBJECT_ID('dbo.EQUIPSTI_internet', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_internet (

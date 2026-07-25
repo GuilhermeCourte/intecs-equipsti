@@ -707,6 +707,210 @@ async function excluirInternet() {
 }
 
 // ============================================================
+//  Conexões (sub-aba Internet › Conexão) — status do UptimeRobot
+//  Só leitura: um card por unidade, com a bolinha do estado atual.
+//  A engrenagem (hover no card) vincula a unidade a um monitor.
+// ============================================================
+let modalVincular = null;
+let CONEXOES = [];
+let CX_UPTIME = [];
+let _cxTimer = null;
+let _cxUnidadeEditando = null;
+
+const CX_ROTULO = {
+  UP: 'Online', DOWN: 'Offline', INSTAVEL: 'Instável',
+  PAUSADO: 'Pausado', NAO_VERIFICADO: 'Aguardando 1ª checagem',
+  DESCONHECIDO: 'Sem dados', SEM_MONITOR: 'Sem monitor'
+};
+
+async function carregarConexoes() {
+  const grid = $('gridConexoes');
+  try {
+    const r = await api('GET', '/api/conexoes');
+    CONEXOES = r.unidades || [];
+    $('cxAtualizadoEm').textContent = 'atualizado ' + tempoRelativo(r.atualizadoEm);
+    renderConexoes();
+    // A lista de uptime mostra o status vindo daqui, então acompanha o refresh.
+    if (CX_UPTIME.length) renderUptimeConexoes();
+  } catch (err) {
+    // Erro inline, nunca modal: com o auto-refresh ligado, showAlert()
+    // pipocaria um modal a cada 60s enquanto o UptimeRobot estivesse fora.
+    $('cxAtualizadoEm').textContent = '';
+    grid.innerHTML = '<div class="text-danger">Erro: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+// Já vinculada, a unidade aparece com o nome do monitor ("Brasilândia"); sem
+// vínculo não há nome, então fica a sigla da unidade mesmo (BRA).
+function rotuloConexao(unidade) {
+  const c = CONEXOES.find((x) => x.unidade === unidade);
+  return c?.monitor || unidade;
+}
+
+function cardConexao(c) {
+  // Unidade sem monitor não tem "desde" — mostra o convite a vincular.
+  const info = c.status === 'SEM_MONITOR'
+    ? CX_ROTULO.SEM_MONITOR
+    : CX_ROTULO[c.status] + (c.desde ? ' · ' + tempoRelativo(c.desde) : '');
+  const rotulo = c.monitor || c.unidade;
+  return '<div class="conexao-card cx-' + c.status + '" data-unidade="' + escapeHtml(c.unidade) + '">' +
+    '<button type="button" class="btn btn-link btn-sm text-muted p-1 btn-vincular" title="Vincular monitor">' +
+      '<i class="ph ph-gear"></i>' +
+    '</button>' +
+    // O title guarda a sigla: é ela que identifica a unidade no resto do sistema.
+    '<div class="cx-nome"><i class="conexao-dot"></i><span title="' + escapeHtml(c.unidade) + '">' +
+      escapeHtml(rotulo) + '</span></div>' +
+    '<div class="cx-info">' + escapeHtml(info) + '</div>' +
+    '</div>';
+}
+
+function renderConexoes() {
+  const grid = $('gridConexoes');
+  if (!CONEXOES.length) {
+    grid.innerHTML = '<div class="text-muted">Nenhuma unidade cadastrada em Opções.</div>';
+    return;
+  }
+  grid.innerHTML = CONEXOES.map(cardConexao).join('');
+}
+
+// Cor de uma barrinha (o dia): verde só com o dia inteiro no ar, laranja para
+// queda curta, vermelho quando ficou fora de verdade.
+function classeDia(ratio) {
+  if (ratio == null) return '';          // sem histórico: cinza
+  if (ratio >= 99.99) return 'b-ok';
+  if (ratio >= 95) return 'b-alerta';
+  return 'b-ruim';
+}
+
+// Cor do % do mês. Escala mais frouxa que a do dia de propósito: num mês
+// inteiro, cair de 100% é o normal — o que interessa é o link ruim.
+function classeRatio(ratio) {
+  if (ratio == null) return '';
+  if (ratio >= 95) return 'up-ok';
+  if (ratio >= 90) return 'up-alerta';
+  return 'up-ruim';
+}
+
+function linhaUptime(u) {
+  // A bolinha e o rótulo do status vêm dos cards — a fonte do status é sempre
+  // o /api/conexoes, não este endpoint (que só sabe de histórico).
+  const status = CONEXOES.find((c) => c.unidade === u.unidade)?.status || 'DESCONHECIDO';
+  // Sem nenhum dia é monitor que a página de status não publica — a unidade
+  // aparece assim mesmo, com o motivo, em vez de sumir da lista.
+  const barras = u.dias.length
+    ? u.dias.map((d) => {
+        const titulo = fmtData(d.dia) + ' · ' +
+          (d.ratio == null ? 'sem dados' : d.ratio.toFixed(3) + '%');
+        return '<i class="up-barra ' + classeDia(d.ratio) +
+          '" title="' + escapeHtml(titulo) + '"></i>';
+      }).join('')
+    : '<span class="up-vazio">sem histórico na página de status</span>';
+  return '<div class="uptime-linha cx-' + status + '">' +
+    '<div class="up-nome" title="' + escapeHtml(u.unidade) + '">' +
+      escapeHtml(rotuloConexao(u.unidade)) + '</div>' +
+    // Sem casas decimais e sem arredondar: 98.694% vira 98%, não 99%.
+    '<div class="up-ratio ' + classeRatio(u.ratio) + '">' +
+      (u.ratio == null ? '—' : Math.floor(u.ratio) + '%') + '</div>' +
+    '<div class="up-barras">' + barras + '</div>' +
+    '<div class="up-status"><i class="conexao-dot"></i>' + escapeHtml(CX_ROTULO[status] || status) + '</div>' +
+    '</div>';
+}
+
+function renderUptimeConexoes() {
+  $('uptimeConexoes').innerHTML = CX_UPTIME.length
+    ? CX_UPTIME.map(linhaUptime).join('')
+    : '<div class="text-muted py-2">Nenhuma unidade com monitor vinculado.</div>';
+}
+
+async function carregarUptimeConexoes() {
+  try {
+    const r = await api('GET', '/api/conexoes/uptime');
+    CX_UPTIME = r.unidades || [];
+    renderUptimeConexoes();
+  } catch (err) {
+    // Inline como nos cards: o painel fica aberto e recarregando, modal daria ruído.
+    CX_UPTIME = [];
+    $('uptimeConexoes').innerHTML = '<div class="text-danger py-2">Erro: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+// Cards (status ao vivo) + lista de uptime (histórico). São duas requisições
+// porque o histórico é lento no lado do UptimeRobot e tem cache longo; o
+// uptime vem depois porque as linhas dele usam o status vindo dos cards.
+async function carregarPainelConexoes() {
+  await carregarConexoes();
+  await carregarUptimeConexoes();
+}
+
+async function abrirVincular(unidade) {
+  const atual = CONEXOES.find((c) => c.unidade === unidade);
+  _cxUnidadeEditando = unidade;
+  $('vincUnidade').textContent = unidade;
+  const sel = $('vincMonitor');
+  sel.innerHTML = '<option value="">Carregando...</option>';
+  sel.disabled = true;
+  modalVincular.show();
+  try {
+    const monitores = await api('GET', '/api/conexoes/monitores');
+    sel.innerHTML = '<option value="">— nenhum —</option>' + monitores.map((m) =>
+      '<option value="' + escapeHtml(m.id) + '"' +
+      (String(m.id) === String(atual?.monitorId) ? ' selected' : '') + '>' +
+      escapeHtml(m.nome) + '</option>').join('');
+    sel.disabled = false;
+  } catch (err) {
+    sel.innerHTML = '<option value="">—</option>';
+    showAlert('alertVincular', 'danger', 'Erro: ' + escapeHtml(err.message));
+  }
+}
+
+async function salvarVinculo() {
+  if (!_cxUnidadeEditando) return;
+  const btn = $('btnSalvarVinculo');
+  btn.disabled = true;
+  try {
+    await api('PUT', '/api/conexoes/vinculo', {
+      unidade: _cxUnidadeEditando,
+      monitorId: $('vincMonitor').value || null
+    });
+    modalVincular.hide();
+    // Vincular/desvincular muda também quais linhas existem na lista de uptime.
+    await carregarPainelConexoes();
+  } catch (err) {
+    showAlert('alertVincular', 'danger', 'Erro: ' + escapeHtml(err.message));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Auto-refresh de 60s enquanto a sub-aba Conexão estiver aberta. Para quando
+// sai da sub-aba/aba e pula o ciclo com a janela em segundo plano — o plano
+// free do UptimeRobot só permite 10 req/min.
+function iniciarAutoRefreshConexoes() {
+  pararAutoRefreshConexoes();
+  _cxTimer = setInterval(() => { if (!document.hidden) carregarConexoes(); }, 60000);
+}
+
+function pararAutoRefreshConexoes() {
+  if (_cxTimer) { clearInterval(_cxTimer); _cxTimer = null; }
+}
+
+function configurarConexoes() {
+  modalVincular = new bootstrap.Modal($('modalVincularMonitor'));
+  $('btnAtualizarConexoes').addEventListener('click', carregarPainelConexoes);
+  $('btnSalvarVinculo').addEventListener('click', salvarVinculo);
+  $('gridConexoes').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-vincular');
+    if (btn) abrirVincular(btn.closest('.conexao-card').dataset.unidade);
+  });
+  $('sub-tab-conexao').addEventListener('shown.bs.tab', () => {
+    carregarPainelConexoes();
+    iniciarAutoRefreshConexoes();
+  });
+  $('sub-tab-conexao').addEventListener('hidden.bs.tab', pararAutoRefreshConexoes);
+  $('tab-internet').addEventListener('hidden.bs.tab', pararAutoRefreshConexoes);
+}
+
+// ============================================================
 //  Calendário (vencimentos de licenças, contratos e afins)
 // ============================================================
 let modalCalendario = null;
@@ -6029,6 +6233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarCategoriasIntecs();
   configurarVerificarMaquina();
   configurarConexaoRemota();
+  configurarConexoes();
   configurarMenuMobile();
   configurarDropdownsAbas();
   configurarCalendario();
@@ -6116,7 +6321,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   new IntersectionObserver((e) => { if (e[0].isIntersecting) loadLogsModulo(false); },
     { root: $('lmScroll'), threshold: 0.1 }).observe($('lmSentinel'));
 
-  $('tab-internet').addEventListener('shown.bs.tab', carregarInternet);
+  // Aba Internet: sub-aba padrão é Conexão; Provedores carrega ao abrir a sua.
+  // (o shown.bs.tab da sub-aba não dispara quando ela já está ativa)
+  $('tab-internet').addEventListener('shown.bs.tab', () => {
+    if ($('sub-tab-provedores').classList.contains('active')) carregarInternet();
+    else { carregarPainelConexoes(); iniciarAutoRefreshConexoes(); }
+  });
+  $('sub-tab-provedores').addEventListener('shown.bs.tab', carregarInternet);
   $('tab-calendario').addEventListener('shown.bs.tab', carregarCalendario);
   $('btnAtualizarInternet').addEventListener('click', carregarInternet);
   $('btnNovoInternet').addEventListener('click', () => abrirInternet(null));
