@@ -728,14 +728,12 @@ async function carregarConexoes() {
   try {
     const r = await api('GET', '/api/conexoes');
     CONEXOES = r.unidades || [];
-    $('cxAtualizadoEm').textContent = 'atualizado ' + tempoRelativo(r.atualizadoEm);
     renderConexoes();
     // A lista de uptime mostra o status vindo daqui, então acompanha o refresh.
     if (CX_UPTIME.length) renderUptimeConexoes();
   } catch (err) {
     // Erro inline, nunca modal: com o auto-refresh ligado, showAlert()
     // pipocaria um modal a cada 60s enquanto o UptimeRobot estivesse fora.
-    $('cxAtualizadoEm').textContent = '';
     grid.innerHTML = '<div class="text-danger">Erro: ' + escapeHtml(err.message) + '</div>';
   }
 }
@@ -896,7 +894,6 @@ function pararAutoRefreshConexoes() {
 
 function configurarConexoes() {
   modalVincular = new bootstrap.Modal($('modalVincularMonitor'));
-  $('btnAtualizarConexoes').addEventListener('click', carregarPainelConexoes);
   $('btnSalvarVinculo').addEventListener('click', salvarVinculo);
   $('gridConexoes').addEventListener('click', (e) => {
     const btn = e.target.closest('.btn-vincular');
@@ -4321,9 +4318,9 @@ function renderMaquinaDoChamado(resumo) {
   const ehLinux = crEhLinux(maquina);
   const botoes = podeAtenderCI() && agentId
     ? '<div class="d-flex gap-1">'
-      + crBtn(agentId, 'control', ehLinux ? CR_TITULO_LINUX : tituloControl, 'ph-monitor-play', 'Conectar', online && !ehLinux)
-      + crBtn(agentId, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', online)
-      + crBtn(agentId, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', online && !ehLinux)
+      + crBtn(agentId, 'control', ehLinux ? CR_TITULO_LINUX : tituloControl, 'ph-monitor-play', 'Conectar', !ehLinux)
+      + crBtn(agentId, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true)
+      + crBtn(agentId, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', !ehLinux)
       + '</div>'
     : '';
   const aviso = botoes && !atribuidoAMim
@@ -4785,7 +4782,7 @@ async function processarDeepLinkChamado() {
     }
   }
 
-  // Conexão direta: mesma regra do modal — só o responsável, máquina online.
+  // Conexão direta: mesma regra do modal — só o responsável (offline não bloqueia).
   // Navega a PRÓPRIA aba (sem window.open): clique de e-mail já abriu esta aba,
   // e navegação direta não sofre bloqueador de pop-up.
   let motivo = '';
@@ -4795,7 +4792,6 @@ async function processarDeepLinkChamado() {
       const equipamento = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id) + '/equipamento');
       if (chamado.responsavel_id !== _ciPerfil.id) motivo = 'atribuicao';
       else if (!equipamento?.tactical_agent_id) motivo = 'sem-maquina';
-      else if (!equipamento.maquina?.status_online) motivo = 'offline';
       else {
         const tipo = equipamento.maquina?.plat === 'linux' ? 'terminal' : 'control';
         const conexao = await api('GET', '/api/tactical-agents/'
@@ -4810,8 +4806,6 @@ async function processarDeepLinkChamado() {
   await abrirChamadoIntecsDetalhe(id);
   if (motivo === 'atribuicao') {
     uiAviso('Atribua o chamado a você para conectar à máquina.', { title: 'Chamado não atribuído' });
-  } else if (motivo === 'offline') {
-    uiAviso('A máquina está offline no momento — não é possível conectar agora.', { title: 'Máquina offline' });
   }
 }
 
@@ -5028,11 +5022,13 @@ const crBolinha = (online) => '<span class="dash-dot ' + (online ? 'dash-dot--gr
   + '" title="' + (online ? 'Online' : 'Offline') + '"></span>';
 
 // Botão de conexão (Conectar/Terminal/Arquivos) — usado na tabela (pequeno)
-// e no modal (tamanho cheio). Offline vira cinza preenchido (btn-secondary),
-// como o botão de comentário bloqueado no detalhe do chamado.
-const crBtn = (agentId, tipo, titulo, icone, rotulo, online, extra = '', pequeno = true) =>
-  `<button type="button" class="btn ${pequeno ? 'btn-sm ' : ''}${online ? 'btn-outline-primary' : 'btn-secondary'} btn-cr${extra ? ' ' + extra : ''}"`
-  + ` data-agent-id="${escapeHtml(agentId)}" data-cr-tipo="${tipo}" title="${titulo}"${online ? '' : ' disabled'}>`
+// e no modal (tamanho cheio). Máquina offline NÃO desabilita: o status pode
+// estar desatualizado, então deixamos tentar e o erro aparece no alerta.
+// Bloqueado vira cinza preenchido (btn-secondary), como o botão de comentário
+// bloqueado no detalhe do chamado.
+const crBtn = (agentId, tipo, titulo, icone, rotulo, habilitado, extra = '', pequeno = true) =>
+  `<button type="button" class="btn ${pequeno ? 'btn-sm ' : ''}${habilitado ? 'btn-outline-primary' : 'btn-secondary'} btn-cr${extra ? ' ' + extra : ''}"`
+  + ` data-agent-id="${escapeHtml(agentId)}" data-cr-tipo="${tipo}" title="${titulo}"${habilitado ? '' : ' disabled'}>`
   + `<i class="ph ${icone}"></i>${rotulo ? ' ' + rotulo : ''}</button>`;
 
 // Agente Linux não tem MeshCentral: só o Terminal (Remote Background do RMM)
@@ -5077,9 +5073,9 @@ function renderConexaoRemota() {
     const ehLinux = crEhLinux(a);
     const acoes = podeConectar
       ? '<div class="d-flex gap-1 justify-content-end">'
-        + crBtn(a.tactical_agent_id, 'control', ehLinux ? CR_TITULO_LINUX : 'Assumir o controle da tela', 'ph-monitor-play', '', online && !ehLinux)
-        + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', online)
-        + crBtn(a.tactical_agent_id, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', online && !ehLinux)
+        + crBtn(a.tactical_agent_id, 'control', ehLinux ? CR_TITULO_LINUX : 'Assumir o controle da tela', 'ph-monitor-play', '', !ehLinux)
+        + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true)
+        + crBtn(a.tactical_agent_id, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', !ehLinux)
         + '</div>'
       : '';
     return '<tr data-agent-id="' + escapeHtml(a.tactical_agent_id) + '" style="cursor:pointer">'
@@ -5105,16 +5101,16 @@ function abrirModalConexao(agentId) {
   $('cxUsuario').textContent = a.logged_username || '—';
   $('cxUnidade').textContent = a.site_name || '—';
   $('cxAlerta').innerHTML = online ? ''
-    : '<div class="alert alert-secondary py-2 small">Máquina offline — não é possível conectar agora.</div>';
+    : '<div class="alert alert-secondary py-2 small">Máquina offline no último check — a conexão pode falhar.</div>';
   const ehLinux = crEhLinux(a);
   $('cxBotoes').innerHTML = podeAtenderCI()
-    ? crBtn(a.tactical_agent_id, 'control', ehLinux ? CR_TITULO_LINUX : 'Assumir o controle da tela', 'ph-monitor-play', 'Conectar', online && !ehLinux, 'flex-fill', false)
-      + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', 'Terminal', online, 'flex-fill', false)
-      + crBtn(a.tactical_agent_id, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', 'Arquivos', online && !ehLinux, 'flex-fill', false)
+    ? crBtn(a.tactical_agent_id, 'control', ehLinux ? CR_TITULO_LINUX : 'Assumir o controle da tela', 'ph-monitor-play', 'Conectar', !ehLinux, 'flex-fill', false)
+      + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', 'Terminal', true, 'flex-fill', false)
+      + crBtn(a.tactical_agent_id, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', 'Arquivos', !ehLinux, 'flex-fill', false)
     : '';
-  // Estrela de scripts favoritos: mesma regra dos botões + máquina online.
+  // Estrela de scripts favoritos: mesma regra dos botões (offline não esconde).
   _cxAgenteAtual = a.tactical_agent_id;
-  $('cxBtnScripts').style.display = (podeAtenderCI() && online && !crEhLinux(a)) ? '' : 'none';
+  $('cxBtnScripts').style.display = (podeAtenderCI() && !crEhLinux(a)) ? '' : 'none';
   $('cxScriptsPainel').classList.remove('aberto');
   clearTimeout(_cxSaidaTimer);
   $('cxScriptSaida').style.display = 'none';
