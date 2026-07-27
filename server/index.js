@@ -1713,24 +1713,34 @@ async function sincronizarIntecsMsa() {
   }
 
   // Preenche a unidade buscando o detalhe (campo 19024) e mapeando para o sistema.
-  for (const { codigo, chave } of semUnidade.slice(0, SYNC_MAX_DETALHE)) {
-    try {
-      const lst = await eurosaCamposExtras(chave);
-      const campo = lst.find((e) => Number(e.codcampoextra) === 19024);
-      const msaUnidade = campo?.valcampoextra ? trim(String(campo.valcampoextra)) : '';
-      if (!msaUnidade) continue;
-      const unidadeSistema = assoc[msaUnidade] || msaUnidade;
-      await query(
-        `UPDATE dbo.EQUIPSTI_chamados_intecsmsa SET unidade = @u
-           WHERE numero_chamado_msa = @c AND (unidade IS NULL OR unidade = '')`,
-        { u: S(unidadeSistema), c: S(codigo) });
-    } catch (e) { console.warn('[intecs-msa unidade] chamado', codigo, '->', e.message); }
+  // Em lotes concorrentes (em vez de um HTTP por vez) — mesmo resultado, mais rápido.
+  const aBuscar = semUnidade.slice(0, SYNC_MAX_DETALHE);
+  const LOTE_DETALHE = 8;
+  for (let i = 0; i < aBuscar.length; i += LOTE_DETALHE) {
+    await Promise.all(aBuscar.slice(i, i + LOTE_DETALHE).map(async ({ codigo, chave }) => {
+      try {
+        const lst = await eurosaCamposExtras(chave);
+        const campo = lst.find((e) => Number(e.codcampoextra) === 19024);
+        const msaUnidade = campo?.valcampoextra ? trim(String(campo.valcampoextra)) : '';
+        if (!msaUnidade) return;
+        const unidadeSistema = assoc[msaUnidade] || msaUnidade;
+        await query(
+          `UPDATE dbo.EQUIPSTI_chamados_intecsmsa SET unidade = @u
+             WHERE numero_chamado_msa = @c AND (unidade IS NULL OR unidade = '')`,
+          { u: S(unidadeSistema), c: S(codigo) });
+      } catch (e) { console.warn('[intecs-msa unidade] chamado', codigo, '->', e.message); }
+    }));
   }
 }
 
 app.get('/api/intecs-msa', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
-  try { await sincronizarIntecsMsa(); }
-  catch (e) { console.warn('[intecs-msa sync] falhou:', e.message); }
+  // ?cache=1: responde só com o que está no banco, sem sincronizar com a MSA —
+  // instantâneo. A sub-aba abre com o cache e dispara a sincronização de
+  // verdade (sem o parâmetro) em segundo plano (mesmo padrão da Conexão Remota).
+  if (req.query.cache !== '1') {
+    try { await sincronizarIntecsMsa(); }
+    catch (e) { console.warn('[intecs-msa sync] falhou:', e.message); }
+  }
   const r = await query(`SELECT id,
     CONVERT(varchar(10), data_solicitacao, 23) AS data_solicitacao,
     numero_chamado_msa, problema, unidade, glpi, status_intecs,

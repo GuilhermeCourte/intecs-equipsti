@@ -223,6 +223,11 @@ CREATE TABLE dbo.EQUIPSTI_chamados_intecsmsa (
 IF COL_LENGTH('dbo.EQUIPSTI_chamados_intecsmsa', 'status_msa') IS NULL
   ALTER TABLE dbo.EQUIPSTI_chamados_intecsmsa ADD status_msa NVARCHAR(20) NULL;
 
+-- Consultado a cada chamado sincronizado (dedup + update de status/unidade).
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_intecsmsa_numero_chamado')
+  CREATE INDEX IX_intecsmsa_numero_chamado
+    ON dbo.EQUIPSTI_chamados_intecsmsa (numero_chamado_msa);
+
 -- Credenciais biométricas (WebAuthn/FIDO2) — usadas no celular para login só por biometria.
 IF OBJECT_ID('dbo.EQUIPSTI_webauthn', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_webauthn (
