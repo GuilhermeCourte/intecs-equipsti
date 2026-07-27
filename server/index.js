@@ -25,6 +25,7 @@ import {
   CHAVES_PERMISSOES, PADROES_POR_PAPEL, ROTULOS,
   permissoesEfetivas, calcularOverrides, validarPermissoes, isCustomizado, papelValido
 } from './permissoes.js';
+import { chaveConfigurada, cifrar, decifrar } from './cripto.js';
 
 dotenv.config();
 
@@ -795,6 +796,241 @@ app.delete('/api/internet/:id', exigirAuth, exigirPermissao('aba_internet'), wra
   res.json({ ok: true });
 }));
 
+// ===================== SENHAS (controle de portas) =====================
+// Gerencia quem tem acesso físico às portas 814/815 e 811 (controladoras
+// Intelbras Digiprox SA 203 MF). A senha de 4 dígitos precisa poder ser lida
+// de volta (o técnico a digita no teclado da porta) — por isso é cifrada
+// (AES-256-GCM, server/cripto.js), não um hash. Nunca entra em texto claro
+// no retorno da listagem nem em nenhum campo de log; só o GET /revelar a
+// devolve, e essa é a única ação que grava 'SENHA_REVELADA'.
+const PORTAS_SENHAS = ['814_815', '811'];
+const ROTULO_PORTA_SENHA = { '814_815': '814/815', '811': '811' };
+
+function lerSenha(body) {
+  const acessosBody = body.acessos && typeof body.acessos === 'object' ? body.acessos : {};
+  const acessos = {};
+  for (const porta of PORTAS_SENHAS) {
+    const a = acessosBody[porta] || {};
+    const habilitado = !!a.habilitado;
+    acessos[porta] = {
+      habilitado,
+      login: habilitado ? (trim(a.login) || null) : null,
+      ativo: habilitado ? a.ativo !== false : false
+    };
+  }
+  return { nome: trim(body.nome), senha: trim(body.senha), acessos };
+}
+
+function validarSenha(d) {
+  if (!d.nome) return 'Informe o nome.';
+  if (!/^\d{4}$/.test(d.senha)) return 'A senha deve ter 4 dígitos.';
+  const habilitadas = PORTAS_SENHAS.filter((p) => d.acessos[p].habilitado);
+  if (!habilitadas.length) return 'Selecione ao menos uma porta.';
+  for (const p of habilitadas) {
+    if (!/^\d{4}$/.test(d.acessos[p].login || '')) {
+      return `Login da porta ${ROTULO_PORTA_SENHA[p]} deve ter 4 dígitos.`;
+    }
+  }
+  return null;
+}
+
+const rotuloSenha = (d) => d.nome || '—';
+
+// Login já usado por OUTRO cadastro na mesma porta? (excluirId = ignora a própria
+// linha, usado no PUT). Não há transação no projeto (grep confirma: só query()) —
+// isto é um pré-check; o UNIQUE (porta, login) é o backstop contra corrida real.
+async function checarLoginEmUso(acessos, excluirId = null) {
+  for (const porta of PORTAS_SENHAS) {
+    const a = acessos[porta];
+    if (!a.habilitado) continue;
+    const params = { porta: S(porta), login: S(a.login) };
+    let condicaoId = '';
+    if (excluirId != null) {
+      params.excluirId = { type: sql.Int, value: excluirId };
+      condicaoId = 'AND senha_id <> @excluirId';
+    }
+    const r = await query(
+      `SELECT TOP 1 senha_id FROM dbo.EQUIPSTI_senhas_portas_acesso WHERE porta=@porta AND login=@login ${condicaoId}`,
+      params
+    );
+    if (r.recordset.length) return `O login ${a.login} já está em uso na porta ${ROTULO_PORTA_SENHA[porta]}.`;
+  }
+  return null;
+}
+
+function agruparAcessos(linhas) {
+  const mapa = new Map();
+  for (const l of linhas) {
+    if (!mapa.has(l.senhaId)) mapa.set(l.senhaId, {});
+    mapa.get(l.senhaId)[l.porta] = { habilitado: true, login: l.login, ativo: !!l.ativo };
+  }
+  return mapa;
+}
+
+app.get('/api/senhas', exigirAuth, exigirPermissao('aba_senhas'), wrap(async (req, res) => {
+  const senhas = (await query(
+    `SELECT id, nome, criado_por AS criadoPor, atualizado_por AS atualizadoPor,
+      CONVERT(varchar(19), criado_em, 120) AS criadoEm,
+      CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
+      FROM dbo.EQUIPSTI_senhas_portas ORDER BY nome`
+  )).recordset;
+  const acessosLinhas = (await query(
+    'SELECT senha_id AS senhaId, porta, login, ativo FROM dbo.EQUIPSTI_senhas_portas_acesso'
+  )).recordset;
+  const acessosPorSenha = agruparAcessos(acessosLinhas);
+  res.json(senhas.map((s) => ({ ...s, acessos: acessosPorSenha.get(s.id) || {} })));
+}));
+
+app.get('/api/senhas/proximo-login', exigirAuth, exigirPermissao('aba_senhas'), wrap(async (req, res) => {
+  const porta = trim(req.query.porta);
+  if (!PORTAS_SENHAS.includes(porta)) return res.status(400).json({ error: 'Porta inválida.' });
+  const r = await query('SELECT login FROM dbo.EQUIPSTI_senhas_portas_acesso WHERE porta=@porta', { porta: S(porta) });
+  const usados = new Set(r.recordset.map((x) => x.login));
+  let max = 0;
+  for (const login of usados) { const n = Number(login); if (Number.isFinite(n) && n > max) max = n; }
+  const candidatoMax = String(max + 1).padStart(4, '0');
+  if (max + 1 <= 9999 && !usados.has(candidatoMax)) return res.json({ login: candidatoMax });
+  for (let n = 1; n <= 9999; n++) {
+    const candidato = String(n).padStart(4, '0');
+    if (!usados.has(candidato)) return res.json({ login: candidato });
+  }
+  res.json({ login: '' });
+}));
+
+app.get('/api/senhas/:id/revelar', exigirAuth, exigirPermissao('aba_senhas'), wrap(async (req, res) => {
+  if (!chaveConfigurada()) return res.status(503).json({ error: 'SENHAS_CHAVE não configurada no .env.' });
+  const id = Number(req.params.id);
+  const row = (await query(
+    'SELECT nome, senha_cifrada AS senhaCifrada FROM dbo.EQUIPSTI_senhas_portas WHERE id=@id', { id }
+  )).recordset[0];
+  if (!row) return res.status(404).json({ error: 'Cadastro não encontrado.' });
+  const senha = decifrar(row.senhaCifrada);
+  await registrarLog({
+    modulo: 'SENHAS', entidadeId: String(id), entidadeRotulo: row.nome,
+    acao: 'SENHA_REVELADA', usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.json({ senha });
+}));
+
+app.post('/api/senhas', exigirAuth, exigirPermissao('aba_senhas'), wrap(async (req, res) => {
+  if (!chaveConfigurada()) return res.status(503).json({ error: 'SENHAS_CHAVE não configurada no .env.' });
+  const d = lerSenha(req.body);
+  const erroValidacao = validarSenha(d);
+  if (erroValidacao) return res.status(400).json({ error: erroValidacao });
+  const conflito = await checarLoginEmUso(d.acessos);
+  if (conflito) return res.status(409).json({ error: conflito });
+
+  const ins = await query(
+    `INSERT INTO dbo.EQUIPSTI_senhas_portas (nome, senha_cifrada, criado_por, atualizado_por)
+     OUTPUT INSERTED.id
+     VALUES (@nome, @senhaCifrada, @criadoPor, @criadoPor)`,
+    { nome: S(d.nome), senhaCifrada: S(cifrar(d.senha)), criadoPor: S(req.user.email) }
+  );
+  const id = ins.recordset[0].id;
+  for (const porta of PORTAS_SENHAS) {
+    const a = d.acessos[porta];
+    if (!a.habilitado) continue;
+    await query(
+      `INSERT INTO dbo.EQUIPSTI_senhas_portas_acesso (senha_id, porta, login, ativo)
+       VALUES (@senhaId, @porta, @login, @ativo)`,
+      {
+        senhaId: { type: sql.Int, value: id }, porta: S(porta), login: S(a.login),
+        ativo: { type: sql.Bit, value: a.ativo ? 1 : 0 }
+      }
+    );
+  }
+  await registrarLog({
+    modulo: 'SENHAS', entidadeId: String(id), entidadeRotulo: rotuloSenha(d), acao: 'CRIADO',
+    valorNovo: PORTAS_SENHAS.filter((p) => d.acessos[p].habilitado).map((p) => ROTULO_PORTA_SENHA[p]).join(', ') || '—',
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.status(201).json({ ok: true, id });
+}));
+
+app.put('/api/senhas/:id', exigirAuth, exigirPermissao('aba_senhas'), wrap(async (req, res) => {
+  if (!chaveConfigurada()) return res.status(503).json({ error: 'SENHAS_CHAVE não configurada no .env.' });
+  const id = Number(req.params.id);
+  const d = lerSenha(req.body);
+  const erroValidacao = validarSenha(d);
+  if (erroValidacao) return res.status(400).json({ error: erroValidacao });
+  const conflito = await checarLoginEmUso(d.acessos, id);
+  if (conflito) return res.status(409).json({ error: conflito });
+
+  const antes = (await query(
+    'SELECT nome, senha_cifrada AS senhaCifrada FROM dbo.EQUIPSTI_senhas_portas WHERE id=@id', { id }
+  )).recordset[0];
+  if (!antes) return res.status(404).json({ error: 'Cadastro não encontrado.' });
+  const acessosAntesLinhas = (await query(
+    'SELECT porta, login, ativo FROM dbo.EQUIPSTI_senhas_portas_acesso WHERE senha_id=@id', { id }
+  )).recordset;
+  const acessosAntes = {};
+  for (const p of PORTAS_SENHAS) acessosAntes[p] = { habilitado: false, login: null, ativo: false };
+  for (const l of acessosAntesLinhas) acessosAntes[l.porta] = { habilitado: true, login: l.login, ativo: !!l.ativo };
+
+  await query(
+    `UPDATE dbo.EQUIPSTI_senhas_portas SET nome=@nome, senha_cifrada=@senhaCifrada,
+     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME() WHERE id=@id`,
+    { nome: S(d.nome), senhaCifrada: S(cifrar(d.senha)), id, atualizadoPor: S(req.user.email) }
+  );
+
+  await query('DELETE FROM dbo.EQUIPSTI_senhas_portas_acesso WHERE senha_id=@id', { id });
+  for (const porta of PORTAS_SENHAS) {
+    const a = d.acessos[porta];
+    if (!a.habilitado) continue;
+    await query(
+      `INSERT INTO dbo.EQUIPSTI_senhas_portas_acesso (senha_id, porta, login, ativo)
+       VALUES (@senhaId, @porta, @login, @ativo)`,
+      {
+        senhaId: { type: sql.Int, value: id }, porta: S(porta), login: S(a.login),
+        ativo: { type: sql.Bit, value: a.ativo ? 1 : 0 }
+      }
+    );
+  }
+
+  if (logMudou(antes.nome, d.nome)) {
+    await registrarLog({
+      modulo: 'SENHAS', entidadeId: String(id), entidadeRotulo: rotuloSenha(d), acao: 'ATUALIZADO', campo: 'NOME',
+      valorAnterior: antes.nome, valorNovo: d.nome, usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  // Compara em claro só para decidir SE mudou (nunca grava o valor no log).
+  let senhaAnteriorTexto = null;
+  try { senhaAnteriorTexto = decifrar(antes.senhaCifrada); } catch { /* pacote antigo/corrompido: trata como alterada */ }
+  if (senhaAnteriorTexto !== d.senha) {
+    await registrarLog({
+      modulo: 'SENHAS', entidadeId: String(id), entidadeRotulo: rotuloSenha(d), acao: 'ATUALIZADO', campo: 'SENHA',
+      valorAnterior: '(oculto)', valorNovo: '(oculto)', usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  for (const porta of PORTAS_SENHAS) {
+    const a = acessosAntes[porta];
+    const b = d.acessos[porta];
+    if (logMudou(a.habilitado, b.habilitado) || logMudou(a.login, b.login) || logMudou(a.ativo, b.ativo)) {
+      await registrarLog({
+        modulo: 'SENHAS', entidadeId: String(id), entidadeRotulo: rotuloSenha(d), acao: 'ATUALIZADO',
+        campo: `PORTA ${ROTULO_PORTA_SENHA[porta]}`,
+        valorAnterior: a.habilitado ? `login ${a.login}${a.ativo ? '' : ' (inativo)'}` : 'desabilitada',
+        valorNovo: b.habilitado ? `login ${b.login}${b.ativo ? '' : ' (inativo)'}` : 'desabilitada',
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
+  }
+  res.json({ ok: true });
+}));
+
+app.delete('/api/senhas/:id', exigirAuth, exigirPermissao('aba_senhas'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const prev = (await query('SELECT nome FROM dbo.EQUIPSTI_senhas_portas WHERE id=@id', { id })).recordset[0];
+  await query('DELETE FROM dbo.EQUIPSTI_senhas_portas WHERE id=@id', { id }); // cascade cuida dos acessos
+  if (prev) {
+    await registrarLog({
+      modulo: 'SENHAS', entidadeId: String(id), entidadeRotulo: prev.nome, acao: 'EXCLUIDO',
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  res.json({ ok: true });
+}));
+
 // ===================== CONEXÕES (UptimeRobot) =====================
 // Somente leitura do monitoramento: o painel da sub-aba "Conexão" casa cada
 // UNIDADE cadastrada em Opções com um monitor do UptimeRobot. Nenhum aviso é
@@ -1441,10 +1677,7 @@ const SYNC_MAX_DETALHE = 60;
 // existentes atualizado, e preenche a unidade (do sistema) puxando o detalhe do
 // chamado para as linhas que ainda estão sem unidade.
 async function sincronizarIntecsMsa() {
-  const result = await eurosaCall(() => eurosaFetchChamados());
-  const data = result.data;
-  const lista = Array.isArray(data)
-    ? data : (data?.root ?? data?.Lista ?? data?.lista ?? []);
+  const lista = await eurosaFetchTodosChamados();
 
   // Associação unidade da MSA -> unidade do sistema (EQUIPSTI_opcoes.detalhe).
   const assocRows = await query(
@@ -1508,7 +1741,7 @@ app.get('/api/intecs-msa', exigirAuth, exigirPermissao('aba_chamados'), wrap(asy
     criado_por, atualizado_por,
     CONVERT(varchar(19), criado_em, 120) AS criado_em,
     CONVERT(varchar(19), atualizado_em, 120) AS atualizado_em
-    FROM dbo.EQUIPSTI_chamados_intecsmsa ORDER BY id DESC`);
+    FROM dbo.EQUIPSTI_chamados_intecsmsa ORDER BY data_solicitacao DESC, id DESC`);
   res.json(r.recordset);
 }));
 
@@ -1724,11 +1957,11 @@ function eurosaSessionExpired(result) {
     (typeof result.data === 'object' && result.data?.erro);
 }
 
-async function eurosaFetchChamados() {
+async function eurosaFetchChamados(pesquisa = '') {
   // Body espelhado exatamente do que o browser envia (HAR capturado em 2026-06-16)
   const body = new URLSearchParams({
     Dados: JSON.stringify({
-      Pesquisa: '', Ativo: '', Ordem: [],
+      Pesquisa: pesquisa, Ativo: '', Ordem: [],
       DataCriacao: '', DataInicioCriacao: '', DataFimCriacao: '',
       DataFinalizacao: '', DataInicioFinalizacao: '', DataFimFinalizacao: '',
       DataExpira: '', DataInicioExpira: '', HoraInicioExpira: '',
@@ -1768,10 +2001,45 @@ async function eurosaCall(fn) {
   return result;
 }
 
+// /Chamados/lista do eurosa sempre devolve no máximo 15 registros (confirmado:
+// mesmo sem nenhum filtro, "total" vem correto mas o array vem truncado em 15),
+// então uma única chamada nunca traz o histórico inteiro. Contorna varrendo por
+// mês: Pesquisa aceita o prefixo MM+AA do código do chamado (ex.: "0726" pega
+// os chamados 0726-xxxxxx) e cada mês fica bem abaixo do limite de página.
+// Início empírico: não há chamados anteriores a 07/2025 nesta conta.
+const EUROSA_HISTORICO_INICIO = { mes: 7, ano: 2025 };
+
+async function eurosaFetchTodosChamados() {
+  if (!eurosaCookie) await eurosaLogin();
+
+  const hoje = new Date();
+  const prefixos = [];
+  let { mes, ano } = EUROSA_HISTORICO_INICIO;
+  while (ano < hoje.getFullYear() || (ano === hoje.getFullYear() && mes <= hoje.getMonth() + 1)) {
+    prefixos.push(String(mes).padStart(2, '0') + String(ano % 100).padStart(2, '0'));
+    mes++; if (mes > 12) { mes = 1; ano++; }
+  }
+
+  const porMes = await Promise.all(prefixos.map(async (prefixo) => {
+    const result = await eurosaCall(() => eurosaFetchChamados(prefixo));
+    const data = result.data;
+    const lista = Array.isArray(data) ? data : (data?.root ?? data?.Lista ?? data?.lista ?? []);
+    const doMes = lista.filter((r) => String(r.Codigo || '').startsWith(prefixo + '-'));
+    if (doMes.length >= 15) {
+      console.warn('[chamados sweep] mês', prefixo, 'atingiu o limite de página (15) — pode haver chamados faltando nesse mês');
+    }
+    return doMes;
+  }));
+
+  const porCodigo = new Map();
+  for (const doMes of porMes) for (const ch of doMes) porCodigo.set(ch.Codigo, ch);
+  return [...porCodigo.values()];
+}
+
 app.get('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
-  const result = await eurosaCall(() => eurosaFetchChamados());
-  console.log('[chamados] status:', result.status, '| data:', JSON.stringify(result.data).slice(0, 200));
-  res.json(result.data);
+  const lista = await eurosaFetchTodosChamados();
+  console.log('[chamados] total:', lista.length);
+  res.json({ root: lista, total: lista.length });
 }));
 
 async function eurosaGetChamadoDetalhe(chave) {
@@ -2010,7 +2278,7 @@ app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(asyn
     await inserirChamadoMsaSeNovo({
       codigo,
       dataSolic:  new Date().toISOString().slice(0, 10),
-      problema:   assuntoText || descricao,
+      problema:   descricao || assuntoText,
       unidade:    unidadeSistema,
       patrimonio: patChamado,
       ns:         nsChamado,

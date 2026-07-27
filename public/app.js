@@ -707,6 +707,298 @@ async function excluirInternet() {
 }
 
 // ============================================================
+//  Senhas (controle de acesso às portas 814/815 e 811 — controladoras
+//  Intelbras Digiprox SA 203 MF). A senha de 4 dígitos nunca chega em claro
+//  no GET da lista: fica mascarada (••••) e só é revelada sob pedido — e
+//  cada revelação grava uma linha em EQUIPSTI_logs (servidor). Uma vez
+//  revelada no cliente, alternar mostrar/ocultar não repete a chamada.
+// ============================================================
+const PORTAS_SENHAS = ['814_815', '811'];
+const PORTAS_SENHAS_INFO = {
+  '814_815': { label: '814/815', codigo: '#424063#' },
+  '811': { label: '811', codigo: '#123456#' }
+};
+
+let SENHAS = [];
+let modalSenha = null;
+const _senhasReveladasTabela = new Map(); // id -> senha em claro, só nesta sessão de página
+let _senhaModalTexto = null;   // senha em claro do registro aberto no modal (null = não revelada)
+let _senhaGuiaPorta = null;    // porta selecionada no chip do guia
+
+async function carregarSenhas() {
+  const cont = $('corpoTabelaSenhas');
+  try {
+    SENHAS = await api('GET', '/api/senhas');
+    renderTabelaSenhas();
+  } catch (err) {
+    cont.innerHTML = '<tr><td colspan="4" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
+  }
+}
+
+function acessoCellSenha(r, porta) {
+  const a = r.acessos && r.acessos[porta];
+  if (!a || !a.habilitado) return '<span class="text-muted">—</span>';
+  const cls = a.ativo ? 'mono' : 'mono text-muted text-decoration-line-through';
+  return '<span class="' + cls + '">' + escapeHtml(a.login) + '</span>';
+}
+
+function rowHtmlSenhas(r) {
+  const revelada = _senhasReveladasTabela.get(String(r.id));
+  const senhaHtml = revelada
+    ? '<span class="mono senha-valor">' + escapeHtml(revelada) + '</span>'
+    : '<span class="mono senha-valor">••••</span>';
+  return '<tr class="row-senha" data-id="' + escapeHtml(r.id) + '" style="cursor:pointer">' +
+    '<td>' + escapeHtml(r.nome) + '</td>' +
+    '<td>' + acessoCellSenha(r, '814_815') + '</td>' +
+    '<td>' + acessoCellSenha(r, '811') + '</td>' +
+    '<td>' + senhaHtml +
+      ' <button type="button" class="btn btn-link btn-sm p-0 btn-revelar-senha-linha" data-id="' + escapeHtml(r.id) + '" title="' +
+        (revelada ? 'Ocultar senha' : 'Mostrar senha') + '">' +
+        '<i class="ph ' + (revelada ? 'ph-eye-slash' : 'ph-eye') + '"></i>' +
+      '</button>' +
+    '</td>' +
+    '</tr>';
+}
+
+function renderTabelaSenhas() {
+  const cont = $('corpoTabelaSenhas');
+  if (!SENHAS.length) {
+    cont.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-3">Nenhum cadastro de senha ainda.</td></tr>';
+    return;
+  }
+  cont.innerHTML = SENHAS.map(rowHtmlSenhas).join('');
+}
+
+// Revela (ou re-oculta, sem nova chamada) a senha de UMA linha da tabela.
+async function alternarSenhaLinha(id) {
+  const chave = String(id);
+  if (_senhasReveladasTabela.has(chave)) {
+    _senhasReveladasTabela.delete(chave);
+    renderTabelaSenhas();
+    return;
+  }
+  try {
+    const { senha } = await api('GET', '/api/senhas/' + id + '/revelar');
+    _senhasReveladasTabela.set(chave, senha);
+    renderTabelaSenhas();
+  } catch (err) {
+    showAlert('alertSenhas', 'danger', 'Erro ao revelar senha: ' + err.message);
+  }
+}
+
+// Alterna o modal entre visualização (campos travados) e edição.
+function setSenhaModo(editavel) {
+  $('senha_nome').disabled = !editavel;
+  $('senha_senha').disabled = !editavel;
+  PORTAS_SENHAS.forEach((porta) => {
+    $('senha_' + porta + '_habilitado').disabled = !editavel;
+    $('senha_' + porta + '_login').disabled = !editavel;
+    $('senha_' + porta + '_ativo').disabled = !editavel;
+  });
+  const temId = !!$('senha_id').value;
+  $('senhaModalTitle').textContent = editavel ? (temId ? 'Editar cadastro' : 'Novo cadastro') : 'Cadastro';
+  $('btnEditarSenha').classList.toggle('d-none', editavel);
+  $('btnSalvarSenha').classList.toggle('d-none', !editavel);
+  $('btnExcluirSenha').classList.toggle('d-none', !(editavel && temId));
+}
+
+function togglePortaDetalheSenha(porta) {
+  const ligado = $('senha_' + porta + '_habilitado').checked;
+  $('senha_' + porta + '_detalhe').style.display = ligado ? '' : 'none';
+}
+
+// Sugere o próximo login livre da porta ao habilitá-la (se o campo estiver vazio).
+async function sugerirLoginSenha(porta) {
+  const campo = $('senha_' + porta + '_login');
+  if (trim(campo.value)) return;
+  try {
+    const { login } = await api('GET', '/api/senhas/proximo-login?porta=' + encodeURIComponent(porta));
+    if (login) campo.value = login;
+  } catch { /* sem sugestão, usuário digita manualmente */ }
+}
+
+function abrirSenha(id) {
+  const r = id != null ? SENHAS.find((x) => String(x.id) === String(id)) : null;
+  $('alertSenhaModal').innerHTML = '';
+  $('formSenha').classList.remove('was-validated');
+  $('senha_portas_erro').style.display = 'none';
+  $('senha_id').value = r ? r.id : '';
+  $('senha_nome').value = r ? r.nome : '';
+  $('senha_senha').value = '';
+  $('senha_senha').type = 'password';
+  $('btnVerSenhaModal').querySelector('i').className = 'ph ph-eye';
+  _senhaModalTexto = null;
+  _senhaGuiaPorta = null;
+
+  PORTAS_SENHAS.forEach((porta) => {
+    const a = r && r.acessos ? r.acessos[porta] : null;
+    $('senha_' + porta + '_habilitado').checked = !!(a && a.habilitado);
+    $('senha_' + porta + '_login').value = a ? (a.login || '') : '';
+    $('senha_' + porta + '_ativo').checked = a ? a.ativo !== false : true;
+    togglePortaDetalheSenha(porta);
+  });
+
+  atualizarGuiaSenha();
+  setSenhaModo(id == null);
+  modalSenha.show();
+}
+
+function normalizeLoginSenha(v) {
+  const digitos = String(v || '').replace(/\D/g, '').slice(0, 4);
+  return digitos;
+}
+
+function dadosSenha() {
+  const acessos = {};
+  PORTAS_SENHAS.forEach((porta) => {
+    const habilitado = $('senha_' + porta + '_habilitado').checked;
+    acessos[porta] = {
+      habilitado,
+      login: habilitado ? normalizeLoginSenha($('senha_' + porta + '_login').value).padStart(4, '0') : null,
+      ativo: habilitado ? $('senha_' + porta + '_ativo').checked : false
+    };
+  });
+  return { nome: trim($('senha_nome').value), senha: trim($('senha_senha').value), acessos };
+}
+
+function validarFormSenha(d) {
+  const habilitadas = PORTAS_SENHAS.filter((p) => d.acessos[p].habilitado);
+  $('senha_portas_erro').style.display = habilitadas.length ? 'none' : '';
+  return habilitadas.length > 0;
+}
+
+async function salvarSenha(ev) {
+  ev.preventDefault();
+  const form = $('formSenha');
+  const dados = dadosSenha();
+  const portasOk = validarFormSenha(dados);
+  if (!form.checkValidity() || !portasOk) { form.classList.add('was-validated'); return; }
+  const id = $('senha_id').value;
+  const btn = $('btnSalvarSenha');
+  btn.disabled = true;
+  try {
+    if (id) await api('PUT', '/api/senhas/' + id, dados);
+    else await api('POST', '/api/senhas', dados);
+    modalSenha.hide();
+    _senhasReveladasTabela.delete(String(id));
+    await carregarSenhas();
+    showAlert('alertSenhas', 'success', 'Cadastro salvo.');
+  } catch (err) {
+    showAlert('alertSenhaModal', 'danger', 'Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function excluirSenha() {
+  const id = $('senha_id').value;
+  if (!id) return;
+  const ok = await uiConfirm(
+    'Excluir este cadastro? Isto não apaga a senha do teclado da porta — desabilite ou desative manualmente na controladora.',
+    { title: 'Excluir', okText: 'Excluir' }
+  );
+  if (!ok) return;
+  try {
+    await api('DELETE', '/api/senhas/' + id);
+    modalSenha.hide();
+    _senhasReveladasTabela.delete(String(id));
+    await carregarSenhas();
+    showAlert('alertSenhas', 'success', 'Cadastro excluído.');
+  } catch (err) {
+    showAlert('alertSenhaModal', 'danger', 'Erro: ' + err.message);
+  }
+}
+
+// Revela a senha do registro aberto no modal (para editar ou ver o guia).
+// Uma vez revelada, alternar mostrar/ocultar não repete a chamada nem o log.
+async function revelarSenhaModal() {
+  const id = $('senha_id').value;
+  if (!id) return null;
+  if (_senhaModalTexto != null) return _senhaModalTexto;
+  const { senha } = await api('GET', '/api/senhas/' + id + '/revelar');
+  _senhaModalTexto = senha;
+  return senha;
+}
+
+async function alternarVerSenhaModal() {
+  const campo = $('senha_senha');
+  const icone = $('btnVerSenhaModal').querySelector('i');
+  if (campo.type === 'text') {
+    campo.type = 'password';
+    icone.className = 'ph ph-eye';
+    return;
+  }
+  const id = $('senha_id').value;
+  if (!id) { campo.type = 'text'; icone.className = 'ph ph-eye-slash'; return; } // novo cadastro: nada a revelar
+  try {
+    const senha = await revelarSenhaModal();
+    campo.value = senha;
+    campo.type = 'text';
+    icone.className = 'ph ph-eye-slash';
+    atualizarGuiaSenha();
+  } catch (err) {
+    showAlert('alertSenhaModal', 'danger', 'Erro ao revelar senha: ' + err.message);
+  }
+}
+
+function buildSequenciaSenha(senhaTexto, porta, login) {
+  const info = PORTAS_SENHAS_INFO[porta] || { label: porta, codigo: '#____#' };
+  const loginTxt = login || '----';
+  const senhaTxt = senhaTexto || '----';
+  const passos = [
+    { label: 'Acessar o menu de programação (6.2)', teclas: info.codigo },
+    { label: 'Entrar no cadastro de senha numérica (6.6)', teclas: '22' },
+    { label: 'Digitar o login (4 dígitos)', teclas: loginTxt },
+    { label: 'Digitar a senha (4 dígitos)', teclas: senhaTxt },
+    { label: 'Confirmar e sair', teclas: '#' }
+  ];
+  const linha = [info.codigo, '22', loginTxt, senhaTxt, '#'].join('  →  ');
+  return { linha, passos };
+}
+
+// Redesenha o guia (chips de porta + sequência) a partir do estado atual do
+// formulário. Sem senha revelada, mostra placeholders "----" nos passos.
+function atualizarGuiaSenha() {
+  const temId = !!$('senha_id').value;
+  const habilitadas = PORTAS_SENHAS.filter((p) => $('senha_' + p + '_habilitado').checked);
+  if (!temId || !habilitadas.length) {
+    $('senha_guia_wrap').style.display = 'none';
+    return;
+  }
+  $('senha_guia_wrap').style.display = '';
+  if (!_senhaGuiaPorta || !habilitadas.includes(_senhaGuiaPorta)) _senhaGuiaPorta = habilitadas[0];
+
+  $('senhaGuiaChips').innerHTML = habilitadas.map((p) => {
+    const ativo = p === _senhaGuiaPorta;
+    return '<button type="button" class="btn btn-sm ' + (ativo ? 'btn-primary' : 'btn-outline-secondary') +
+      ' btn-guia-chip-senha" data-porta="' + p + '">' + PORTAS_SENHAS_INFO[p].label + '</button>';
+  }).join('');
+
+  const login = trim($('senha_' + _senhaGuiaPorta + '_login').value);
+  const { linha, passos } = buildSequenciaSenha(_senhaModalTexto, _senhaGuiaPorta, login);
+  $('senhaGuiaLinha').textContent = linha;
+  $('senhaGuiaPassos').innerHTML = passos.map((p) =>
+    '<li><span class="mono">' + escapeHtml(p.teclas) + '</span> — ' + escapeHtml(p.label) + '</li>').join('');
+}
+
+async function copiarGuiaSenha() {
+  try {
+    if (_senhaModalTexto == null) await revelarSenhaModal();
+    atualizarGuiaSenha();
+    const texto = $('senhaGuiaLinha').textContent;
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(texto);
+    else {
+      const ta = document.createElement('textarea');
+      ta.value = texto; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    }
+    showAlert('alertSenhaModal', 'success', 'Sequência copiada.');
+  } catch (err) {
+    showAlert('alertSenhaModal', 'danger', 'Não foi possível copiar: ' + err.message);
+  }
+}
+
+// ============================================================
 //  Conexões (sub-aba Internet › Conexão) — status do UptimeRobot
 //  Só leitura: um card por unidade, com a bolinha do estado atual.
 //  A engrenagem (hover no card) vincula a unidade a um monitor.
@@ -837,6 +1129,7 @@ async function carregarUptimeConexoes() {
 // uptime vem depois porque as linhas dele usam o status vindo dos cards.
 async function carregarPainelConexoes() {
   await carregarConexoes();
+  $('uptimeSecao').classList.remove('d-none');
   await carregarUptimeConexoes();
 }
 
@@ -900,6 +1193,7 @@ function configurarConexoes() {
     if (btn) abrirVincular(btn.closest('.conexao-card').dataset.unidade);
   });
   $('sub-tab-conexao').addEventListener('shown.bs.tab', () => {
+    trocarDescInternet('internetDescConexao');
     carregarPainelConexoes();
     iniciarAutoRefreshConexoes();
   });
@@ -3426,7 +3720,7 @@ async function abrirLog(registroId) {
 const LOG_MODULOS = [
   ['REGISTROS', 'Registros'], ['EMPRESTIMOS', 'Empréstimos'],
   ['CHAMADOS_INTECS', 'Chamados INTECS'], ['CHAMADOS_MSA', 'Chamados MSA'],
-  ['CONEXAO_REMOTA', 'Conexão Remota'], ['INTERNET', 'Internet'],
+  ['CONEXAO_REMOTA', 'Conexão Remota'], ['INTERNET', 'Internet'], ['SENHAS', 'Senhas'],
   ['CALENDARIO', 'Calendário'], ['OPCOES', 'Opções'], ['USUARIOS', 'Usuários']
 ];
 const LOG_MODULO_LABEL = Object.fromEntries(LOG_MODULOS);
@@ -4903,6 +5197,7 @@ const ABA_PERMISSAO = {
   'tab-chamados': 'aba_chamados',
   'tab-conexao': 'aba_conexao',
   'tab-internet': 'aba_internet',
+  'tab-senhas': 'aba_senhas',
   'tab-calendario': 'aba_calendario',
   'tab-gerenciar': 'aba_gerenciar',
   'tab-usuarios': 'aba_usuarios',
@@ -4914,7 +5209,7 @@ const ABA_PERMISSAO = {
 // o grupo inteiro só some quando nenhuma aba dele está liberada.
 const GRUPOS_ABAS = {
   equipamentos: { abas: ['tab-registros', 'tab-emprestimos'], desktopId: 'grupo-equipamentos', mobileId: 'mmGrupoEquipamentos' },
-  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
+  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet', 'tab-senhas'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
   opcoes: { abas: ['tab-gerenciar', 'tab-usuarios'], desktopId: 'grupo-opcoes', mobileId: 'mmGrupoOpcoes' }
 };
 
@@ -5739,6 +6034,18 @@ async function carregarChamados() {
   }
 }
 
+function trocarDescChamados(idAtivo) {
+  ['chamadosDescIntecsMsa', 'chamadosDescMsa', 'chamadosDescIntecs'].forEach((id) => {
+    $(id).classList.toggle('d-none', id !== idAtivo);
+  });
+}
+
+function trocarDescInternet(idAtivo) {
+  ['internetDescConexao', 'internetDescProvedores'].forEach((id) => {
+    $(id).classList.toggle('d-none', id !== idAtivo);
+  });
+}
+
 // ============================================================
 //  CHAMADOS — INTECS vs MSA (CRUD local em SQL Server)
 // ============================================================
@@ -5837,6 +6144,12 @@ function renderIntecsMsa() {
     const cells = INTECSMSA_COLS.map((c) => {
       if (c.key === 'status_msa') return `<td>${imStatusBadge(stMsa)}</td>`;
       if (c.key === 'status_intecs') return `<td>${imStatusBadge(r.status_intecs || '')}</td>`;
+      if (c.key === 'glpi') {
+        const v = trim(r.glpi);
+        if (!v) return '<td></td>';
+        const href = 'http://ssredirect.ddns.net:8000/tickets/front/ticket.form.php?id=' + encodeURIComponent(v);
+        return `<td><a class="glpi-link" href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(v)}</a></td>`;
+      }
       const val = c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? '');
       return `<td>${escapeHtml(val)}</td>`;
     }).join('');
@@ -6004,6 +6317,7 @@ function configurarIntecsMsa() {
   });
   $('formIntecsMsa').addEventListener('submit', salvarIntecsMsa);
   $('imTbody').addEventListener('click', (ev) => {
+    if (ev.target.closest('a.glpi-link')) return;
     const row = ev.target.closest('tr[data-edit-im]');
     if (row) { abrirEdicaoIntecsMsa(row.getAttribute('data-edit-im')); }
   });
@@ -6145,6 +6459,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalOpcao = new bootstrap.Modal($('modalOpcao'));
   modalEmprestimo = new bootstrap.Modal($('modalEmprestimo'));
   modalInternet = new bootstrap.Modal($('modalInternet'));
+  modalSenha = new bootstrap.Modal($('modalSenha'));
   modalCalendario = new bootstrap.Modal($('modalCalendario'));
   modalNovoChamado = new bootstrap.Modal($('modalNovoChamado'));
   modalChamadoDetalhe = new bootstrap.Modal($('modalChamadoDetalhe'));
@@ -6320,10 +6635,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Aba Internet: sub-aba padrão é Conexão; Provedores carrega ao abrir a sua.
   // (o shown.bs.tab da sub-aba não dispara quando ela já está ativa)
   $('tab-internet').addEventListener('shown.bs.tab', () => {
-    if ($('sub-tab-provedores').classList.contains('active')) carregarInternet();
-    else { carregarPainelConexoes(); iniciarAutoRefreshConexoes(); }
+    if ($('sub-tab-provedores').classList.contains('active')) {
+      trocarDescInternet('internetDescProvedores');
+      carregarInternet();
+    } else {
+      trocarDescInternet('internetDescConexao');
+      carregarPainelConexoes();
+      iniciarAutoRefreshConexoes();
+    }
   });
-  $('sub-tab-provedores').addEventListener('shown.bs.tab', carregarInternet);
+  $('sub-tab-provedores').addEventListener('shown.bs.tab', () => {
+    trocarDescInternet('internetDescProvedores');
+    carregarInternet();
+  });
   $('tab-calendario').addEventListener('shown.bs.tab', carregarCalendario);
   $('btnAtualizarInternet').addEventListener('click', carregarInternet);
   $('btnNovoInternet').addEventListener('click', () => abrirInternet(null));
@@ -6337,11 +6661,74 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tr = e.target.closest('tr[data-id]');
     if (tr) abrirInternet(tr.getAttribute('data-id'));
   });
+
+  // Aba Senhas: sub-aba padrão é Cadastros; recarrega ao entrar na aba ou
+  // ao voltar para a sub-aba (o shown.bs.tab dela não dispara quando ela
+  // já está ativa — mesmo motivo do comentário acima, na Internet).
+  $('tab-senhas').addEventListener('shown.bs.tab', () => {
+    $('senhasDescCadastros').classList.toggle('d-none', !$('sub-tab-senhas-cadastros').classList.contains('active'));
+    if ($('sub-tab-senhas-cadastros').classList.contains('active')) carregarSenhas();
+  });
+  $('sub-tab-senhas-cadastros').addEventListener('shown.bs.tab', () => {
+    $('senhasDescCadastros').classList.remove('d-none');
+    carregarSenhas();
+  });
+  $('sub-tab-senhas-manual').addEventListener('shown.bs.tab', () => {
+    $('senhasDescCadastros').classList.add('d-none');
+  });
+  $('btnAtualizarSenhas').addEventListener('click', carregarSenhas);
+  $('btnNovoSenha').addEventListener('click', () => abrirSenha(null));
+  $('btnExcluirSenha').addEventListener('click', excluirSenha);
+  $('btnEditarSenha').addEventListener('click', async () => {
+    try {
+      const senha = await revelarSenhaModal();
+      $('senha_senha').value = senha;
+      $('senha_senha').type = 'text';
+      $('btnVerSenhaModal').querySelector('i').className = 'ph ph-eye-slash';
+      atualizarGuiaSenha();
+      setSenhaModo(true);
+    } catch (err) {
+      showAlert('alertSenhaModal', 'danger', 'Erro ao revelar senha: ' + err.message);
+    }
+  });
+  $('formSenha').addEventListener('submit', salvarSenha);
+  $('btnVerSenhaModal').addEventListener('click', alternarVerSenhaModal);
+  $('btnCopiarGuiaSenha').addEventListener('click', copiarGuiaSenha);
+  PORTAS_SENHAS.forEach((porta) => {
+    $('senha_' + porta + '_habilitado').addEventListener('change', () => {
+      togglePortaDetalheSenha(porta);
+      if ($('senha_' + porta + '_habilitado').checked) sugerirLoginSenha(porta).finally(atualizarGuiaSenha);
+      else atualizarGuiaSenha();
+    });
+    $('senha_' + porta + '_login').addEventListener('input', (e) => {
+      e.target.value = normalizeLoginSenha(e.target.value);
+      atualizarGuiaSenha();
+    });
+  });
+  $('senhaGuiaChips').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-guia-chip-senha');
+    if (!btn) return;
+    _senhaGuiaPorta = btn.dataset.porta;
+    atualizarGuiaSenha();
+  });
+  $('corpoTabelaSenhas').addEventListener('click', (e) => {
+    const btnOlho = e.target.closest('.btn-revelar-senha-linha');
+    if (btnOlho) { e.stopPropagation(); alternarSenhaLinha(btnOlho.dataset.id); return; }
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) abrirSenha(tr.getAttribute('data-id'));
+  });
   // Aba Chamados: sub-aba padrão é INTECS vs MSA; MSA (Eurosa) carrega ao abrir sua sub-aba.
   $('tab-chamados').addEventListener('shown.bs.tab', carregarIntecsMsa);
-  $('sub-tab-intecsmsa').addEventListener('shown.bs.tab', carregarIntecsMsa);
-  $('sub-tab-msa').addEventListener('shown.bs.tab', carregarChamados);
+  $('sub-tab-intecsmsa').addEventListener('shown.bs.tab', () => {
+    trocarDescChamados('chamadosDescIntecsMsa');
+    carregarIntecsMsa();
+  });
+  $('sub-tab-msa').addEventListener('shown.bs.tab', () => {
+    trocarDescChamados('chamadosDescMsa');
+    carregarChamados();
+  });
   $('sub-tab-intecs').addEventListener('shown.bs.tab', async () => {
+    trocarDescChamados('chamadosDescIntecs');
     if (!_ciPerfil) await carregarMeuPerfilCI();
     if (!_ciCategorias.length) await carregarCategoriasIntecs();
     if (!_ciUsuarios.length) await carregarUsuariosIntecs();
@@ -6374,6 +6761,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireBuscaTabela('stBusca', 'stTbody');
   wireBuscaTabela('usuariosBusca', 'listaUsuarios', 'btnLimparFiltrosUsuarios');
   wireBuscaTabela('internetBusca', 'corpoTabelaInternet', 'btnLimparFiltrosInternet');
+  wireBuscaTabela('senhasBusca', 'corpoTabelaSenhas', 'btnLimparFiltrosSenhas');
   wireBuscaTabela('logBusca', 'logCorpo', 'btnLimparFiltrosLog');
 
   // Botões de limpar filtro (funil-x) ao lado de cada lupa.
@@ -6386,6 +6774,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnLimparFiltrosEmprestimos').addEventListener('click', () => limparBusca('empBusca'));
   $('btnLimparFiltrosUsuarios').addEventListener('click', () => limparBusca('usuariosBusca'));
   $('btnLimparFiltrosInternet').addEventListener('click', () => limparBusca('internetBusca'));
+  $('btnLimparFiltrosSenhas').addEventListener('click', () => limparBusca('senhasBusca'));
   $('btnLimparFiltrosLog').addEventListener('click', () => limparBusca('logBusca'));
   $('btnLimparFiltrosOpcoes').addEventListener('click', () => {
     Object.keys(opcoesFilterCtx.filters).forEach((k) => delete opcoesFilterCtx.filters[k]);

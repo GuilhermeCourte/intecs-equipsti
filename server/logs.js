@@ -18,7 +18,7 @@ import { query, sql } from './db.js';
 // Módulos válidos — whitelist da rota GET /api/logs e do <select> do front.
 export const MODULOS_LOG = [
   'REGISTROS', 'EMPRESTIMOS', 'CHAMADOS_INTECS', 'CHAMADOS_MSA',
-  'CONEXAO_REMOTA', 'INTERNET', 'CALENDARIO', 'OPCOES', 'USUARIOS'
+  'CONEXAO_REMOTA', 'INTERNET', 'SENHAS', 'CALENDARIO', 'OPCOES', 'USUARIOS'
 ];
 
 // NVARCHAR curto (com tamanho definido na coluna) — trunca defensivamente.
