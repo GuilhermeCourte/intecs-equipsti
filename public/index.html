@@ -2079,8 +2079,7 @@
             </div>
             <div id="alertUsuarios"></div>
 
-            <h6 class="mb-2">Usuários cadastrados</h6>
-            <div class="d-flex align-items-center gap-1 mb-2">
+            <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
               <div class="input-group input-group-sm busca-tabela">
                 <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
                 <input type="search" class="form-control" id="usuariosBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
@@ -2312,10 +2311,22 @@
                 <button type="button" class="btn btn-primary btn-sm" id="btnNovoEventoCal">
                   <i class="ph ph-plus"></i> Novo
                 </button>
-                <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="CALENDARIO" title="Ver logs deste módulo">
-                  <i class="material-icons ic-logs fs-5">travel_explore</i>
-                </button>
               </div>
+            </div>
+            <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
+              <div class="input-group input-group-sm busca-tabela">
+                <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                <input type="search" class="form-control" id="calBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosCalendario" title="Limpar filtros">
+                <i class="ph ph-funnel-x fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarCalendario" title="Atualizar">
+                <i class="ph ph-arrow-clockwise fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="CALENDARIO" title="Ver logs deste módulo">
+                <i class="material-icons ic-logs fs-5">travel_explore</i>
+              </button>
             </div>
             <div id="alertCalendario"></div>
 

@@ -6051,6 +6051,7 @@ function trocarDescInternet(idAtivo) {
 // ============================================================
 let modalIntecsMsa = null;
 let _intecsMsaTodos = [];
+let _imCarregando = false;
 const fpIM = {};
 
 const INTECSMSA_COLS = [
@@ -6160,17 +6161,36 @@ function renderIntecsMsa() {
 }
 
 async function carregarIntecsMsa() {
-  $('imStatus').textContent = 'Sincronizando com a MSA…';
-  $('imThead').innerHTML = '';
-  $('imTbody').innerHTML = '';
+  if (_imCarregando) return;
+  _imCarregando = true;
+  $('imThead').innerHTML = thFiltravel(INTECSMSA_COLS);
   try {
+    // 1) Cache primeiro: a sub-aba abre na hora com a última sincronização...
+    let cache = [];
+    try { cache = await api('GET', '/api/intecs-msa?cache=1'); } catch { cache = []; }
+    _intecsMsaTodos = Array.isArray(cache) ? cache : [];
+    if (_intecsMsaTodos.length) {
+      renderIntecsMsa();
+      $('imStatus').textContent += ' · atualizando...';
+    } else {
+      $('imTbody').innerHTML = '';
+      $('imStatus').textContent = 'Sincronizando com a MSA…';
+    }
+
+    // 2) ...e a sincronização de verdade roda por trás e re-renderiza no fim.
     const data = await api('GET', '/api/intecs-msa');
     _intecsMsaTodos = Array.isArray(data) ? data : [];
-    $('imThead').innerHTML = thFiltravel(INTECSMSA_COLS);
-    if (!_intecsMsaTodos.length) { $('imStatus').textContent = 'Nenhum registro cadastrado.'; return; }
+    if (!_intecsMsaTodos.length) { $('imStatus').textContent = 'Nenhum registro cadastrado.'; $('imTbody').innerHTML = ''; return; }
     renderIntecsMsa();
   } catch (e) {
-    $('imStatus').textContent = 'Erro: ' + e.message;
+    if (_intecsMsaTodos.length) {
+      // Sync falhou mas o cache está na tela: avisa sem derrubar a tabela.
+      $('imStatus').textContent += ' · não foi possível atualizar agora';
+    } else {
+      $('imStatus').textContent = 'Erro: ' + e.message;
+    }
+  } finally {
+    _imCarregando = false;
   }
 }
 
@@ -6763,6 +6783,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireBuscaTabela('internetBusca', 'corpoTabelaInternet', 'btnLimparFiltrosInternet');
   wireBuscaTabela('senhasBusca', 'corpoTabelaSenhas', 'btnLimparFiltrosSenhas');
   wireBuscaTabela('logBusca', 'logCorpo', 'btnLimparFiltrosLog');
+  wireBuscaTabela('calBusca', 'calListaTbody', 'btnLimparFiltrosCalendario');
 
   // Botões de limpar filtro (funil-x) ao lado de cada lupa.
   const limparBusca = (id) => {
@@ -6776,6 +6797,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnLimparFiltrosInternet').addEventListener('click', () => limparBusca('internetBusca'));
   $('btnLimparFiltrosSenhas').addEventListener('click', () => limparBusca('senhasBusca'));
   $('btnLimparFiltrosLog').addEventListener('click', () => limparBusca('logBusca'));
+  $('btnLimparFiltrosCalendario').addEventListener('click', () => limparBusca('calBusca'));
+  $('btnAtualizarCalendario').addEventListener('click', () => {
+    carregarCalendario().catch((err) => showAlert('alertCalendario', 'danger', 'Erro ao atualizar: ' + err.message));
+  });
   $('btnLimparFiltrosOpcoes').addEventListener('click', () => {
     Object.keys(opcoesFilterCtx.filters).forEach((k) => delete opcoesFilterCtx.filters[k]);
     limparBusca('opcoesBusca');
