@@ -728,14 +728,12 @@ async function carregarConexoes() {
   try {
     const r = await api('GET', '/api/conexoes');
     CONEXOES = r.unidades || [];
-    $('cxAtualizadoEm').textContent = 'atualizado ' + tempoRelativo(r.atualizadoEm);
     renderConexoes();
     // A lista de uptime mostra o status vindo daqui, então acompanha o refresh.
     if (CX_UPTIME.length) renderUptimeConexoes();
   } catch (err) {
     // Erro inline, nunca modal: com o auto-refresh ligado, showAlert()
     // pipocaria um modal a cada 60s enquanto o UptimeRobot estivesse fora.
-    $('cxAtualizadoEm').textContent = '';
     grid.innerHTML = '<div class="text-danger">Erro: ' + escapeHtml(err.message) + '</div>';
   }
 }
@@ -896,7 +894,6 @@ function pararAutoRefreshConexoes() {
 
 function configurarConexoes() {
   modalVincular = new bootstrap.Modal($('modalVincularMonitor'));
-  $('btnAtualizarConexoes').addEventListener('click', carregarPainelConexoes);
   $('btnSalvarVinculo').addEventListener('click', salvarVinculo);
   $('gridConexoes').addEventListener('click', (e) => {
     const btn = e.target.closest('.btn-vincular');
