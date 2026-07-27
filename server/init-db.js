@@ -128,6 +128,34 @@ CREATE TABLE dbo.EQUIPSTI_internet (
   atualizado_por   NVARCHAR(255) NULL
 );
 
+-- Pessoas com acesso às portas (controladoras Intelbras Digiprox SA 203 MF).
+-- senha_cifrada: AES-256-GCM, formato "iv:tag:ciphertext" em base64 (server/cripto.js).
+IF OBJECT_ID('dbo.EQUIPSTI_senhas_portas', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_senhas_portas (
+  id             INT IDENTITY(1,1) PRIMARY KEY,
+  nome           NVARCHAR(80)  NOT NULL,
+  senha_cifrada  NVARCHAR(255) NOT NULL,
+  criado_em      DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  criado_por     NVARCHAR(255) NULL,
+  atualizado_por NVARCHAR(255) NULL
+);
+
+-- Um registro por porta em que a pessoa está cadastrada (a linha existir = porta
+-- habilitada). O UNIQUE garante login único por porta (substitui a coleção
+-- auxiliar door_logins do app antigo em Firestore).
+IF OBJECT_ID('dbo.EQUIPSTI_senhas_portas_acesso', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_senhas_portas_acesso (
+  id       INT IDENTITY(1,1) PRIMARY KEY,
+  senha_id INT NOT NULL,
+  porta    NVARCHAR(20) NOT NULL,
+  login    NVARCHAR(4)  NOT NULL,
+  ativo    BIT NOT NULL DEFAULT 1,
+  CONSTRAINT FK_senhas_portas_acesso_senha FOREIGN KEY (senha_id)
+    REFERENCES dbo.EQUIPSTI_senhas_portas(id) ON DELETE CASCADE,
+  CONSTRAINT UQ_senhas_portas_login UNIQUE (porta, login)
+);
+
 -- Migração: insumo (toner) vinculado ao registro de impressora.
 IF COL_LENGTH('dbo.EQUIPSTI_registros', 'insumo') IS NULL
   ALTER TABLE dbo.EQUIPSTI_registros ADD insumo NVARCHAR(255) NULL;

@@ -491,6 +491,9 @@
     /* ---------- Ícone de Logs (Material Icons: travel_explore = globo + lupa) ---------- */
     .ic-logs.material-icons { font-size: 1em; vertical-align: -0.2em; line-height: 1; }
 
+    /* ---------- Senhas de portas: login/senha em fonte monoespaçada ---------- */
+    .mono { font-family: ui-monospace, 'Courier New', monospace; letter-spacing: .08em; }
+
     /* ---------- Busca de tabela (lupa: filtra qualquer coluna) ---------- */
     .busca-tabela { width: 160px; max-width: 100%; flex-wrap: nowrap; }
     /* Sem o "x" nativo do input de busca — limpar é pelo funil ao lado */
@@ -700,7 +703,7 @@
     /* ---------- Painel de conexões (Internet › Conexão) ---------- */
     /* 5 por fileira no desktop; vai reduzindo até 2 no celular. */
     .conexao-grid {
-      display: grid; gap: 1rem;
+      display: grid; gap: 1rem; margin-top: 3rem;
       grid-template-columns: repeat(5, minmax(0, 1fr));
     }
     @media (max-width: 991.98px) { .conexao-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
@@ -839,6 +842,12 @@
       background: #000; color: #fff;
     }
     .choices__input { font-size: 1rem; }
+
+    /* Largura fixa: evita que o filtro "Em Aberto" encolha ao trocar para "Todos" */
+    .choices:has(#imFiltroStatus),
+    .choices:has(#chamadosFiltroStatus) {
+      width: 150px; flex: 0 0 auto;
+    }
 
     /* Filtros de status compactos (equivalente ao form-select-sm) */
     .choices:has(#imFiltroStatus) .choices__inner,
@@ -1519,6 +1528,7 @@
               <button type="button" class="mm-item" data-tab="tab-chamados"><i class="ph ph-headset"></i> Chamados</button>
               <button type="button" class="mm-item" data-tab="tab-conexao"><i class="ph ph-screencast"></i> Conexão Remota</button>
               <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
+              <button type="button" class="mm-item" data-tab="tab-senhas"><i class="ph ph-key"></i> Senhas</button>
             </div>
           </div>
 
@@ -1587,6 +1597,12 @@
                 <button class="dropdown-item" id="tab-internet" data-bs-toggle="tab"
                   data-bs-target="#pane-internet" type="button" role="tab">
                   <i class="ph ph-wifi-high"></i> Internet
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-senhas" data-bs-toggle="tab"
+                  data-bs-target="#pane-senhas" type="button" role="tab">
+                  <i class="ph ph-key"></i> Senhas
                 </button>
               </li>
             </ul>
@@ -2087,6 +2103,8 @@
           <!-- ABA INTERNET -->
           <div class="tab-pane fade" id="pane-internet" role="tabpanel">
             <h2 class="pane-titulo-mobile"><i class="ph ph-wifi-high"></i> Internet</h2>
+            <p class="text-muted mb-2" id="internetDescConexao" style="font-size:.95rem;">Status de conexão das unidades.</p>
+            <p class="text-muted mb-2 d-none" id="internetDescProvedores" style="font-size:.95rem;">Contratos de internet das unidades.</p>
             <!-- Sub-abas: Conexão (status ao vivo) / Provedores (contratos) -->
             <ul class="nav sub-tabs" role="tablist">
               <li class="nav-item" role="presentation">
@@ -2107,30 +2125,29 @@
 
               <!-- SUB-ABA: CONEXÃO -->
               <div class="tab-pane fade show active" id="sub-conexao" role="tabpanel">
-                <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
-                  <p class="text-muted mb-0 flex-shrink-1">Status de conexão das unidades.</p>
-                </div>
                 <div class="conexao-grid" id="gridConexoes">
                   <div class="text-muted">Carregando...</div>
                 </div>
 
                 <!-- Uptime, uma barrinha por dia. O celular só tem largura para
-                     os últimos 30 (o resto some por CSS), daí os dois rótulos. -->
-                <div class="d-flex align-items-baseline gap-2 mt-5 pt-3 mb-1">
-                  <h3 class="h6 mb-0"><i class="ph ph-chart-bar"></i> Uptime</h3>
-                  <span class="text-muted small d-none d-md-inline">últimos 90 dias</span>
-                  <span class="text-muted small d-md-none">últimos 30 dias</span>
-                </div>
-                <div class="uptime-lista" id="uptimeConexoes">
-                  <div class="text-muted py-2">Carregando...</div>
+                     os últimos 30 (o resto some por CSS), daí os dois rótulos.
+                     Some fica escondido até os quadrados de conexão terminarem de carregar. -->
+                <div id="uptimeSecao" class="d-none">
+                  <div class="d-flex align-items-baseline gap-2 mt-5 pt-3 mb-1">
+                    <h3 class="h6 mb-0"><i class="ph ph-chart-bar"></i> Uptime</h3>
+                    <span class="text-muted small d-none d-md-inline">últimos 90 dias</span>
+                    <span class="text-muted small d-md-none">últimos 30 dias</span>
+                  </div>
+                  <div class="uptime-lista" id="uptimeConexoes">
+                    <div class="text-muted py-2">Carregando...</div>
+                  </div>
                 </div>
               </div>
 
               <!-- SUB-ABA: PROVEDORES -->
               <div class="tab-pane fade" id="sub-provedores" role="tabpanel">
-                <div class="d-flex align-items-center mb-3 gap-2">
-                  <p class="text-muted mb-0 flex-shrink-1 text-truncate">Contratos de internet das unidades.</p>
-                  <button type="button" class="btn btn-primary btn-sm flex-shrink-0 ms-auto" id="btnNovoInternet">
+                <div class="d-flex justify-content-end mb-3">
+                  <button type="button" class="btn btn-primary btn-sm" id="btnNovoInternet">
                     <i class="ph ph-plus"></i> Novo
                   </button>
                 </div>
@@ -2165,6 +2182,115 @@
                       <tr><td colspan="5" class="text-muted">Carregando...</td></tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- ABA SENHAS (controle de acesso às portas) -->
+          <div class="tab-pane fade" id="pane-senhas" role="tabpanel">
+            <h2 class="pane-titulo-mobile"><i class="ph ph-key"></i> Senhas</h2>
+            <p class="text-muted mb-2" id="senhasDescCadastros" style="font-size:.95rem;">Quem tem acesso às portas 814/815 e 811.</p>
+            <!-- Sub-abas: Cadastros (CRUD) / Manual (SA 203) -->
+            <ul class="nav sub-tabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="sub-tab-senhas-cadastros" data-bs-toggle="pill"
+                  data-bs-target="#sub-senhas-cadastros" type="button" role="tab">
+                  <i class="ph ph-users"></i> Cadastros
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="sub-tab-senhas-manual" data-bs-toggle="pill"
+                  data-bs-target="#sub-senhas-manual" type="button" role="tab">
+                  <i class="ph ph-book-open"></i> Manual
+                </button>
+              </li>
+            </ul>
+
+            <div class="tab-content">
+
+              <!-- SUB-ABA: CADASTROS -->
+              <div class="tab-pane fade show active" id="sub-senhas-cadastros" role="tabpanel">
+                <div class="d-flex justify-content-end mb-3">
+                  <button type="button" class="btn btn-primary btn-sm" id="btnNovoSenha">
+                    <i class="ph ph-plus"></i> Novo
+                  </button>
+                </div>
+                <div id="alertSenhas"></div>
+                <div class="d-flex align-items-center gap-1 justify-content-end mb-1">
+                  <div class="input-group input-group-sm busca-tabela">
+                    <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                    <input type="search" class="form-control" id="senhasBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                  </div>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosSenhas" title="Limpar filtros">
+                    <i class="ph ph-funnel-x fs-5"></i>
+                  </button>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarSenhas" title="Atualizar">
+                    <i class="ph ph-arrow-clockwise fs-5"></i>
+                  </button>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="SENHAS" title="Ver logs deste módulo">
+                    <i class="material-icons ic-logs fs-5">travel_explore</i>
+                  </button>
+                </div>
+                <div class="table-scroll-x table-sticky">
+                  <table class="table table-striped table-hover align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th>NOME</th>
+                        <th>814/815</th>
+                        <th>811</th>
+                        <th>SENHA</th>
+                      </tr>
+                    </thead>
+                    <tbody id="corpoTabelaSenhas">
+                      <tr><td colspan="4" class="text-muted">Carregando...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- SUB-ABA: MANUAL -->
+              <div class="tab-pane fade" id="sub-senhas-manual" role="tabpanel">
+                <div class="dash-panel mb-3">
+                  <div class="dash-panel-head">
+                    <div class="dash-panel-title"><i class="ph ph-lock-key"></i> Senha do menu de programação (6.2)</div>
+                  </div>
+                  <div class="p-3 d-flex flex-column gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge text-bg-light">Porta 814/815</span>
+                      <code class="fs-5">#424063#</code>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge text-bg-light">Porta 811</span>
+                      <code class="fs-5">#123456#</code>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="dash-panel mb-3">
+                  <div class="dash-panel-head">
+                    <div class="dash-panel-title"><i class="ph ph-list-numbers"></i> 6.6 — Cadastro de usuário com senha numérica</div>
+                  </div>
+                  <div class="p-3">
+                    <ol class="mb-0 ps-3">
+                      <li class="mb-2">Digite a senha de programação da controladora (ex.: <code>#______#</code>).</li>
+                      <li class="mb-2">Digite <code>22</code> para entrar no cadastro de senha numérica.</li>
+                      <li class="mb-2">Digite o login/slot da pessoa (4 dígitos, ex.: <code>0001</code>).</li>
+                      <li class="mb-2">Digite a senha da pessoa (4 dígitos, ex.: <code>2907</code>).</li>
+                      <li class="mb-0">Pressione <code>#</code> para gravar e sair.</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <div class="dash-panel mb-0">
+                  <div class="dash-panel-head">
+                    <div class="dash-panel-title"><i class="ph ph-file-pdf"></i> Manual completo — SA 203 / SA 203 MF</div>
+                    <a href="assets/manual-sa203.pdf" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+                      <i class="ph ph-arrow-square-out"></i> Abrir em nova aba
+                    </a>
+                  </div>
+                  <iframe src="assets/manual-sa203.pdf" title="Manual SA 203" style="width:100%;height:70vh;min-height:420px;border:0;"></iframe>
                 </div>
               </div>
 
@@ -2247,6 +2373,9 @@
           <div class="tab-pane fade" id="pane-chamados" role="tabpanel">
 
             <h2 class="pane-titulo-mobile"><i class="ph ph-headset"></i> Chamados</h2>
+            <p class="text-muted mb-2" id="chamadosDescIntecsMsa" style="font-size:.95rem;">Controle interno cruzando MSA com a INTECS.</p>
+            <p class="text-muted mb-2 d-none" id="chamadosDescMsa" style="font-size:.95rem;">Abra e acompanhe chamados para a MSA.</p>
+            <p class="text-muted mb-2 d-none" id="chamadosDescIntecs" style="font-size:.95rem;">Chamados internos da INTECS</p>
             <!-- Sub-abas: INTECS vs MSA / MSA / INTECS -->
             <ul class="nav sub-tabs" role="tablist">
               <li class="nav-item" role="presentation">
@@ -2273,9 +2402,6 @@
 
               <!-- SUB-ABA: INTECS vs MSA -->
               <div class="tab-pane fade show active" id="sub-intecsmsa" role="tabpanel">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Controle interno cruzando MSA com a INTECS.</h5>
-                </div>
                 <!-- Filtros -->
                 <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
                   <select class="form-select form-select-sm w-auto" id="imFiltroStatus">
@@ -2311,8 +2437,7 @@
 
               <!-- SUB-ABA: MSA (lista Eurosa — conteúdo original) -->
               <div class="tab-pane fade" id="sub-msa" role="tabpanel">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Abra e acompanhe chamados para a MSA.</h5>
+                <div class="d-flex justify-content-end mb-3">
                   <div class="d-flex gap-2">
                     <button type="button" class="btn btn-primary btn-sm d-inline-flex d-md-inline-block flex-column align-items-center" id="btnNovoChamado">
                       <i class="ph ph-plus"></i> Novo
@@ -2354,8 +2479,7 @@
 
               <!-- SUB-ABA: INTECS (chamado interno + Tactical RMM) -->
               <div class="tab-pane fade" id="sub-intecs" role="tabpanel">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h5 class="mb-0 text-muted fw-normal" style="font-size:.95rem;">Chamados internos da INTECS</h5>
+                <div class="d-flex justify-content-end mb-3">
                   <div class="d-flex gap-2">
                     <button type="button" class="btn btn-dark btn-sm" id="btnDashboardIntecs" style="display:none">
                       <i class="ph ph-chart-bar"></i> Dashboard
@@ -2960,6 +3084,106 @@
           </button>
           <button type="button" class="btn btn-primary" id="btnEditarInternet"><i class="ph ph-pencil-simple"></i> Editar</button>
           <button type="submit" form="formInternet" class="btn btn-primary" id="btnSalvarInternet"><i class="ph ph-check"></i> Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL SENHA (portas) ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalSenha" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-key me-2"></i><span id="senhaModalTitle">Novo cadastro</span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertSenhaModal"></div>
+          <form id="formSenha" class="needs-validation row g-3" novalidate>
+            <input type="hidden" id="senha_id">
+            <div class="col-md-6">
+              <label class="form-label" for="senha_nome">NOME *</label>
+              <input type="text" class="form-control" id="senha_nome" maxlength="80" required autocomplete="off">
+              <div class="invalid-feedback">Informe o nome.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="senha_senha">SENHA (4 dígitos) *</label>
+              <div class="input-group">
+                <input type="password" class="form-control text-center mono" id="senha_senha"
+                  maxlength="4" inputmode="numeric" autocomplete="off" required pattern="\d{4}">
+                <button type="button" class="btn btn-outline-secondary" id="btnVerSenhaModal" title="Mostrar/ocultar senha">
+                  <i class="ph ph-eye"></i>
+                </button>
+              </div>
+              <div class="invalid-feedback">A senha deve ter 4 dígitos.</div>
+              <div class="form-text">A mesma senha vale para as duas portas. Pode repetir entre pessoas diferentes.</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label mb-2">PORTAS</label>
+              <div class="d-flex flex-column gap-2">
+                <div class="border rounded p-2" data-porta-row="814_815">
+                  <div class="form-check form-switch mb-0">
+                    <input class="form-check-input senha-porta-toggle" type="checkbox" id="senha_814_815_habilitado" data-porta="814_815">
+                    <label class="form-check-label" for="senha_814_815_habilitado">Porta 814/815</label>
+                  </div>
+                  <div class="row g-2 mt-1 senha-porta-detalhe" id="senha_814_815_detalhe" style="display:none">
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-1" for="senha_814_815_login">Login</label>
+                      <input type="text" class="form-control mono senha-porta-login" id="senha_814_815_login"
+                        data-porta="814_815" maxlength="4" inputmode="numeric" placeholder="0001" autocomplete="off">
+                    </div>
+                    <div class="col-6 col-md-4 d-flex align-items-end">
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="senha_814_815_ativo" checked>
+                        <label class="form-check-label" for="senha_814_815_ativo">Ativo</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="border rounded p-2" data-porta-row="811">
+                  <div class="form-check form-switch mb-0">
+                    <input class="form-check-input senha-porta-toggle" type="checkbox" id="senha_811_habilitado" data-porta="811">
+                    <label class="form-check-label" for="senha_811_habilitado">Porta 811</label>
+                  </div>
+                  <div class="row g-2 mt-1 senha-porta-detalhe" id="senha_811_detalhe" style="display:none">
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-1" for="senha_811_login">Login</label>
+                      <input type="text" class="form-control mono senha-porta-login" id="senha_811_login"
+                        data-porta="811" maxlength="4" inputmode="numeric" placeholder="0001" autocomplete="off">
+                    </div>
+                    <div class="col-6 col-md-4 d-flex align-items-end">
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="senha_811_ativo" checked>
+                        <label class="form-check-label" for="senha_811_ativo">Ativo</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="text-danger small mt-1" id="senha_portas_erro" style="display:none">Selecione ao menos uma porta.</div>
+            </div>
+
+            <div class="col-12" id="senha_guia_wrap" style="display:none">
+              <hr>
+              <label class="form-label mb-2"><i class="ph ph-list-numbers"></i> Guia de cadastro no teclado</label>
+              <div class="d-flex gap-2 mb-2" id="senhaGuiaChips"></div>
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <code class="flex-grow-1" id="senhaGuiaLinha"></code>
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnCopiarGuiaSenha">
+                  <i class="ph ph-copy"></i> Copiar
+                </button>
+              </div>
+              <ol class="mb-0 ps-3 small text-muted" id="senhaGuiaPassos"></ol>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-danger me-auto" id="btnExcluirSenha">
+            <i class="ph ph-trash"></i> Excluir
+          </button>
+          <button type="button" class="btn btn-primary" id="btnEditarSenha"><i class="ph ph-pencil-simple"></i> Editar</button>
+          <button type="submit" form="formSenha" class="btn btn-primary" id="btnSalvarSenha"><i class="ph ph-check"></i> Salvar</button>
         </div>
       </div>
     </div>
