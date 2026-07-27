@@ -1300,6 +1300,41 @@
       background: var(--bg-soft);
     }
 
+    /* Skeleton de carregamento (espelha a estrutura real do dashboard) */
+    .skel {
+      display: block;
+      border-radius: 6px;
+      background: var(--line);
+      background-image: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.85) 50%, transparent 100%);
+      background-size: 200% 100%;
+      background-repeat: no-repeat;
+      animation: skelShimmer 1.3s ease-in-out infinite;
+    }
+    @keyframes skelShimmer {
+      from { background-position: 180% 0; }
+      to   { background-position: -80% 0; }
+    }
+    .skel-stat-top   { height: 11px; width: 65%; margin-bottom: .6rem; }
+    .skel-stat-value { height: 26px; width: 45%; border-radius: 8px; }
+    .skel-line       { height: 12px; }
+    .skel-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: .7rem;
+    }
+    .skel-chart .skel { flex: 1; border-radius: 6px 6px 2px 2px; }
+    .dash-skel-table td { padding: .55rem 1.1rem; }
+    /* Conteúdo real entra suave quando os dados chegam */
+    #dashboardContent { animation: dashFadeIn .32s ease both; }
+    @keyframes dashFadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .skel { animation: none; }
+      #dashboardContent { animation: none; }
+    }
+
     /* Mobile */
     @media (max-width: 575.98px) {
       .dash-stats-row { flex-wrap: wrap; }
@@ -1615,9 +1650,64 @@
               </div>
             </div>
 
-            <!-- Loading -->
-            <div id="dashboardLoading" class="text-center py-5 text-muted">
-              <i class="ph ph-spinner ph-spin fs-3"></i><br>Carregando dados...
+            <!-- Loading: skeleton com a mesma estrutura do conteúdo real -->
+            <div id="dashboardLoading" aria-busy="true" aria-label="Carregando dados do dashboard">
+              <div class="dash-stats-row">
+                <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
+                <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
+                <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
+                <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
+                <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
+              </div>
+
+              <div class="dash-panel">
+                <div class="dash-panel-head">
+                  <div style="flex:1;max-width:220px">
+                    <span class="skel skel-line" style="width:60%"></span>
+                    <span class="skel skel-line" style="width:38%;height:10px;margin-top:.4rem"></span>
+                  </div>
+                  <div class="dash-panel-legend">
+                    <span class="skel skel-line" style="width:80px"></span>
+                    <span class="skel skel-line" style="width:70px"></span>
+                  </div>
+                </div>
+                <div class="dash-chart-wrap skel-chart">
+                  <span class="skel" style="height:45%"></span>
+                  <span class="skel" style="height:72%"></span>
+                  <span class="skel" style="height:38%"></span>
+                  <span class="skel" style="height:88%"></span>
+                  <span class="skel" style="height:55%"></span>
+                  <span class="skel" style="height:66%"></span>
+                  <span class="skel" style="height:30%"></span>
+                  <span class="skel" style="height:78%"></span>
+                </div>
+              </div>
+
+              <div class="dash-panel">
+                <div class="dash-panel-head">
+                  <span class="skel skel-line" style="width:150px"></span>
+                </div>
+                <div class="table-responsive">
+                  <table class="dash-table dash-skel-table table align-middle">
+                    <thead>
+                      <tr>
+                        <th><span class="skel skel-line" style="width:70px;height:9px"></span></th>
+                        <th><span class="skel skel-line" style="width:90px;height:9px"></span></th>
+                        <th><span class="skel skel-line" style="width:60px;height:9px"></span></th>
+                        <th><span class="skel skel-line" style="width:80px;height:9px"></span></th>
+                        <th><span class="skel skel-line" style="width:90px;height:9px"></span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><span class="skel skel-line" style="width:55%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:80%"></span></td></tr>
+                      <tr><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:80%"></span></td></tr>
+                      <tr><td><span class="skel skel-line" style="width:45%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:80%"></span></td></tr>
+                      <tr><td><span class="skel skel-line" style="width:62%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:80%"></span></td></tr>
+                      <tr><td><span class="skel skel-line" style="width:50%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:70%"></span></td><td><span class="skel skel-line" style="width:80%"></span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
 
             <div id="dashboardContent" class="hidden">
