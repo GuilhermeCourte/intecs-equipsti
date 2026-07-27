@@ -152,6 +152,11 @@ export async function getResumoAgente(tacticalAgentId) {
 // Acesso remoto (aba Conexão Remota do admin): URLs do MeshCentral com token
 // de login efêmero — geradas a cada clique, nunca cacheadas. Devolve null
 // quando o agente não resolve, para a rota responder 404 em vez de estourar.
+//
+// Já foi testado apontar o "control" para o /takecontrol/<agent_id> do painel
+// do RMM (interface mais completa): não vale a pena, porque essa URL não tem
+// token embutido e joga o técnico na tela de login do painel. O auto-login do
+// mesh vale mais que as opções extras — não repetir.
 export async function getConexaoRemota(tacticalAgentId) {
   if (!tacticalAgentId) return null;
   // Agente Linux não tem MeshCentral — a única conexão que funciona é o
