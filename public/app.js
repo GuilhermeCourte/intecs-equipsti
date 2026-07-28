@@ -5033,26 +5033,42 @@ function ciCapturarAgentIdDaUrl() {
 }
 
 // Deep-links dos e-mails da equipe: ?chamado=ID abre o modal do chamado;
-// ?conectar=ID tenta ir direto pro Take Control da máquina vinculada.
+// ?conectar=ID tenta ir direto pro Take Control da máquina vinculada;
+// ?conexoes leva direto pra sub-aba Conexão (status ao vivo) da aba Internet.
 // Guardados em memória (intenção única desta aba) e tirados da URL na hora.
 let _deepLinkChamado = null;
 let _deepLinkConectar = null;
+let _deepLinkConexoes = false;
 let _forcarViewChamadosIntecs = false; // deep-link pede a lista; o shown.bs.tab consome
 
 function ciCapturarDeepLinkChamado() {
   const params = new URLSearchParams(location.search);
   const chamado = trim(params.get('chamado'));
   const conectar = trim(params.get('conectar'));
-  if (!chamado && !conectar) return;
+  const conexoes = params.has('conexoes');
+  if (!chamado && !conectar && !conexoes) return;
   _deepLinkChamado = chamado || null;
   _deepLinkConectar = conectar || null;
+  _deepLinkConexoes = conexoes;
   params.delete('chamado');
   params.delete('conectar');
+  params.delete('conexoes');
   const q = params.toString();
   history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
 }
 
 async function processarDeepLinkChamado() {
+  if (_deepLinkConexoes) {
+    _deepLinkConexoes = false;
+    if (!_ciPerfil) await carregarMeuPerfilCI().catch(() => {});
+    if (_ciPerfil && permiteAba('tab-internet')) {
+      const abaInternet = $('tab-internet');
+      if (abaInternet) bootstrap.Tab.getOrCreateInstance(abaInternet).show();
+      const subConexao = $('sub-tab-conexao');
+      if (subConexao) bootstrap.Tab.getOrCreateInstance(subConexao).show();
+    }
+  }
+
   const id = _deepLinkConectar || _deepLinkChamado;
   if (!id) return;
   const conectar = !!_deepLinkConectar;
