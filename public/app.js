@@ -502,11 +502,12 @@ function initFlatpickr() {
     const el = $(id);
     if (el && !fpMap[id]) fpMap[id] = flatpickr(el, cfg);
   });
-  // Filtros De/Até dos Logs: mesmo padrão visual, mas sem minDate — o filtro
-  // é sobre eventos passados, diferente da data do empréstimo (futuro/hoje).
+  // Mesmo padrão visual, mas sem minDate: filtros De/Até dos Logs (eventos
+  // passados) e data do evento do calendário (editar evento antigo ou clicar
+  // num dia já passado da grade). Diferente da data do empréstimo (futuro/hoje).
   const cfgSemMinData = { ...cfg };
   delete cfgSemMinData.minDate;
-  ['lgDe', 'lgAte'].forEach((id) => {
+  ['lgDe', 'lgAte', 'cal_data'].forEach((id) => {
     const el = $(id);
     if (el && !fpMap[id]) fpMap[id] = flatpickr(el, cfgSemMinData);
   });
@@ -1410,7 +1411,9 @@ function abrirCalendario(id, dataPreenchida) {
   $('calModalTitle').textContent = e ? 'Editar evento' : 'Novo evento';
   $('cal_titulo').value = e ? e.titulo : '';
   $('cal_tipo').value = e ? e.tipo : '';
-  $('cal_data').value = e ? e.data : (dataPreenchida || '');
+  const dataEvento = e ? e.data : (dataPreenchida || '');
+  if (fpMap['cal_data']) fpMap['cal_data'].setDate(dataEvento, false);
+  else $('cal_data').value = dataEvento;
   $('cal_valor').value = e && e.valor != null ? formatarMoeda(e.valor) : '';
   setSelectVal('cal_recorrencia', e ? e.recorrencia : '');
   $('cal_avisar_dias').value = e && e.avisarDiasAntes != null ? e.avisarDiasAntes : '';
@@ -1466,7 +1469,7 @@ async function excluirCalendario() {
 }
 
 function configurarCalendario() {
-  $('btnNovoEventoCal').addEventListener('click', () => abrirCalendario(null, ymd(new Date())));
+  $('btnNovoEventoCal').addEventListener('click', () => abrirCalendario(null));
   $('formCalendario').addEventListener('submit', salvarCalendario);
   $('btnExcluirCalendario').addEventListener('click', excluirCalendario);
   $('calMesAnterior').addEventListener('click', () => {
