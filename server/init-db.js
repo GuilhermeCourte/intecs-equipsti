@@ -491,6 +491,49 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_logs_modulo_e
   CREATE INDEX IX_EQUIPSTI_logs_modulo_entidade
     ON dbo.EQUIPSTI_logs (modulo, entidade_id, id);
 
+-- Auditoria do Google Drive (Admin SDK Reports API). Tabela SEPARADA da
+-- EQUIPSTI_logs de propósito: aqui não há ação humana no GTI, são eventos
+-- espelhados do Workspace, com colunas e ciclo de vida próprios (o Google só
+-- guarda 6 meses). Alimentada por server/googleworkspace/; lida pela aba
+-- "Logs" quando a fonte é "Google Drive".
+IF OBJECT_ID('dbo.EQUIPSTI_google_drive_eventos', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_google_drive_eventos (
+  id                     INT IDENTITY(1,1) PRIMARY KEY,
+  data_evento            DATETIME2     NOT NULL,   -- id.time, em UTC
+  qualificador           NVARCHAR(40)  NOT NULL,   -- id.uniqueQualifier: int64, estoura o Number do JS
+  evento                 NVARCHAR(60)  NOT NULL,   -- download|copy|source_copy|item_content_synced|edit|trash|delete
+  ator_email             NVARCHAR(255) NULL,       -- quem executou
+  ip                     NVARCHAR(45)  NULL,       -- cabe IPv6
+  doc_id                 NVARCHAR(200) NULL,
+  doc_titulo             NVARCHAR(500) NULL,
+  doc_tipo               NVARCHAR(60)  NULL,
+  proprietario           NVARCHAR(255) NULL,       -- owner do arquivo
+  drive_compartilhado    NVARCHAR(200) NULL,       -- shared_drive_id
+  em_drive_compartilhado BIT NOT NULL DEFAULT 0,
+  origem                 NVARCHAR(20)  NOT NULL DEFAULT 'DESCONHECIDA',  -- WEB|DESKTOP|MOBILE|APP|DESCONHECIDA (derivado; ver service.js)
+  app_origem_id          NVARCHAR(120) NULL,       -- originating_app_id (ID OAuth do app)
+  visibilidade           NVARCHAR(80)  NULL,
+  alvo                   NVARCHAR(255) NULL,       -- target_user
+  valor_anterior         NVARCHAR(500) NULL,
+  valor_novo             NVARCHAR(500) NULL,
+  parametros_json        NVARCHAR(MAX) NULL,       -- saco cru: nada do que o Google mandou se perde
+  criado_em              DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- IGNORE_DUP_KEY é o que faz a janela de sobreposição do sync ser idempotente
+-- de graça: reinserir o que já está gravado vira no-op (warning, não erro) e as
+-- linhas novas do mesmo INSERT entram normalmente. Uma atividade pode trazer
+-- vários events[], por isso o evento faz parte da chave.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_EQUIPSTI_gdrive_evento')
+  CREATE UNIQUE INDEX UQ_EQUIPSTI_gdrive_evento
+    ON dbo.EQUIPSTI_google_drive_eventos (data_evento, qualificador, evento)
+    WITH (IGNORE_DUP_KEY = ON);
+
+-- Serve o ORDER BY data_evento DESC da tela e o MAX(data_evento) do cursor.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_gdrive_data')
+  CREATE INDEX IX_EQUIPSTI_gdrive_data
+    ON dbo.EQUIPSTI_google_drive_eventos (data_evento DESC);
+
 -- Pré-requisito da migração dos logs de registros (em bancos onde
 -- migrate-add-justificativa.js nunca rodou): garante a coluna antes do SELECT.
 IF COL_LENGTH('dbo.EQUIPSTI_registros_log', 'justificativa') IS NULL

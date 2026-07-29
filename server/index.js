@@ -18,6 +18,7 @@ import { emailParaEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as uptimeRobot from './uptimerobot/service.js';
+import * as googleDrive from './googleworkspace/service.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
 import { calcularPrazosSla } from './chamadosIntecsSla.js';
 import { carregarPerfilChamados, exigirPapel, exigirPermissao, podeVerChamado } from './chamadosIntecsAuth.js';
@@ -1038,11 +1039,11 @@ app.delete('/api/senhas/:id', exigirAuth, exigirPermissao('aba_senhas'), wrap(as
 // UptimeRobot. Mesma permissão da aba Internet, onde o painel vive.
 
 // Unidades visíveis + o monitor vinculado a cada uma.
-// SEDE fica de fora: é o escritório, não uma loja com link monitorado.
+// SEDE e MATRIZ ficam de fora: são escritórios, não lojas com link monitorado.
 async function unidadesComMonitor() {
   const r = await query(`SELECT valor, uptimerobot_monitor_id AS monitorId
     FROM dbo.EQUIPSTI_opcoes
-    WHERE lista = 'UNIDADE' AND oculto = 0 AND valor <> 'SEDE'
+    WHERE lista = 'UNIDADE' AND oculto = 0 AND valor NOT IN ('SEDE', 'MATRIZ')
     ORDER BY valor`);
   return r.recordset;
 }
@@ -3139,6 +3140,81 @@ app.get('/api/logs', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, r
   res.json(linhas);
 }));
 
+// ===================== LOGS DO GOOGLE DRIVE (Admin SDK Reports) =====================
+// Fonte "Google Drive" da aba Logs. Mesma régua da auditoria interna
+// (aba_logs, MASTER por padrão) — é log de quem mexeu em arquivo de quem.
+// Falta de setup no servidor é 503 (igual à aba Senhas sem SENHAS_CHAVE);
+// falha ao falar com o Google é 502, como nas outras integrações externas.
+const SEM_GOOGLE = 'Google Workspace não configurado: preencha GOOGLE_SA_CLIENT_EMAIL, GOOGLE_SA_PRIVATE_KEY e GOOGLE_ADMIN_SUBJECT no .env.';
+const erroDrive = (res, err) => {
+  console.warn('[googledrive]', err.message);
+  res.status(502).json({ error: err.message });
+};
+
+// Lê o que já está gravado. Nunca fala com o Google — a tela abre instantânea
+// e o sync vem atrás (mesmo padrão da Conexão Remota).
+app.get('/api/drive-logs', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, res) => {
+  const de = req.query.de ? new Date(req.query.de) : null;
+  const ate = req.query.ate ? new Date(req.query.ate) : null;
+  const eventos = trim(req.query.eventos)
+    ? trim(req.query.eventos).split(',').map((e) => e.trim()).filter(Boolean)
+    : null;
+
+  const linhas = await googleDrive.listarEventos({
+    q: trim(req.query.q) || null,
+    eventos,
+    origem: trim(req.query.origem) || null,
+    de: de && !isNaN(de) ? de : null,
+    ate: ate && !isNaN(ate) ? ate : null,
+    limit: parseInt(req.query.limit, 10) || 50,
+    offset: parseInt(req.query.offset, 10) || 0
+  });
+  res.json(linhas);
+}));
+
+// Puxa o que falta desde o último evento gravado. ?forcar=1 ignora o TTL de
+// 5 min (é o botão "Atualizar" da toolbar).
+app.post('/api/drive-logs/sync', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, res) => {
+  if (!googleDrive.configurado()) return res.status(503).json({ error: SEM_GOOGLE });
+  try {
+    const r = await googleDrive.sincronizar({ forcar: req.query.forcar === '1' });
+    res.json(r);
+  } catch (err) {
+    erroDrive(res, err);
+  }
+}));
+
+// Visualizações (eventName=view): consulta ao vivo, nada é gravado.
+app.get('/api/drive-logs/visualizacoes', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, res) => {
+  if (!googleDrive.configurado()) return res.status(503).json({ error: SEM_GOOGLE });
+  const de = req.query.de ? new Date(req.query.de) : null;
+  const ate = req.query.ate ? new Date(req.query.ate) : null;
+  if (!de || isNaN(de) || !ate || isNaN(ate)) {
+    return res.status(400).json({ error: 'Informe o período (de/até) para consultar as visualizações.' });
+  }
+  if (ate - de > googleDrive.MAX_DIAS_AO_VIVO * 24 * 60 * 60 * 1000) {
+    return res.status(400).json({ error: `A consulta de visualizações cobre no máximo ${googleDrive.MAX_DIAS_AO_VIVO} dias.` });
+  }
+  try {
+    const r = await googleDrive.listarVisualizacoes({ de, ate, pageToken: trim(req.query.pageToken) || null });
+    res.json(r);
+  } catch (err) {
+    erroDrive(res, err);
+  }
+}));
+
+// Amostra crua da API: confere quais parâmetros este domínio realmente manda
+// (em especial se existe client_type) e quais originating_app_id aparecem —
+// é daí que sai o mapa APPS_CONHECIDOS do service.
+app.get('/api/drive-logs/diagnostico', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, res) => {
+  if (!googleDrive.configurado()) return res.status(503).json({ error: SEM_GOOGLE });
+  try {
+    res.json(await googleDrive.amostraDiagnostico({ horas: req.query.horas }));
+  } catch (err) {
+    erroDrive(res, err);
+  }
+}));
+
 // ===================== ESTÁTICO (front-end vanilla) =====================
 // Usado no desenvolvimento local; na Vercel os estáticos são servidos pela CDN
 // (ver vercel.json para o roteamento de /chamados em produção).
@@ -3161,4 +3237,15 @@ if (!process.env.VERCEL) {
     .catch((e) => console.error('Lembretes calendário:', e.message));
   setTimeout(dispararLembretes, 30_000);
   setInterval(dispararLembretes, 6 * 60 * 60 * 1000);
+
+  // Auditoria do Drive: o Google só guarda 6 meses, então não dá para depender
+  // só de alguém abrir a aba. Mesma limitação do calendário — na Vercel isto
+  // precisaria virar um cron em vercel.json.
+  if (googleDrive.configurado()) {
+    const sincronizarDrive = () => googleDrive.sincronizar()
+      .then((r) => { if (r.inseridos) console.log(`Google Drive: ${r.inseridos} evento(s) novo(s).`); })
+      .catch((e) => console.error('Sync Google Drive:', e.message));
+    setTimeout(sincronizarDrive, 60_000);
+    setInterval(sincronizarDrive, 6 * 60 * 60 * 1000);
+  }
 }

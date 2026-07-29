@@ -2717,13 +2717,44 @@
           <div class="tab-pane fade" id="pane-logs" role="tabpanel">
             <h2 class="pane-titulo-mobile"><i class="material-icons ic-logs">travel_explore</i> Logs</h2>
             <div class="d-flex align-items-center mb-3 gap-2">
-              <p class="text-muted mb-0">Auditoria de ações nos módulos do sistema.</p>
+              <p class="text-muted mb-0" id="logsDescSistema">Auditoria de ações nos módulos do sistema.</p>
+              <p class="text-muted mb-0 d-none" id="logsDescDrive">Auditoria de arquivos do Google Drive (downloads, cópias, edições e exclusões).</p>
             </div>
             <div id="alertLogs"></div>
             <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
-              <div style="width:200px;flex-shrink:0;">
+              <div style="width:150px;flex-shrink:0;">
+                <select class="form-select form-select-sm w-auto" id="lgFonte" title="Fonte dos logs">
+                  <option value="SISTEMA">Sistema (GTI)</option>
+                  <option value="DRIVE">Google Drive</option>
+                </select>
+              </div>
+              <div style="width:200px;flex-shrink:0;" id="lgModuloWrap">
                 <select class="form-select form-select-sm w-auto" id="lgModulo" title="Filtrar por módulo">
                   <option value="">Todos</option>
+                </select>
+              </div>
+              <!-- Filtros exclusivos da fonte Google Drive: aparecem/somem juntos
+                   pela classe (d-none e d-flex na mesma tag brigariam). -->
+              <div class="lg-drv-filtro d-none" style="width:210px;flex-shrink:0;">
+                <!-- O valor é a lista de eventos da API separada por vírgula; "view"
+                     é o único que não vem do banco (consulta ao vivo). -->
+                <select class="form-select form-select-sm w-auto" id="lgDrvEvento" title="Filtrar por tipo de evento">
+                  <option value="">Todos os gravados</option>
+                  <option value="download">Download</option>
+                  <option value="copy,source_copy">Cópia</option>
+                  <option value="sync_item_content">Sync (Drive para Computador)</option>
+                  <option value="edit">Edição</option>
+                  <option value="trash,delete">Exclusão</option>
+                  <option value="view">Visualização (ao vivo)</option>
+                </select>
+              </div>
+              <div class="lg-drv-filtro d-none" style="width:200px;flex-shrink:0;">
+                <select class="form-select form-select-sm w-auto" id="lgDrvOrigem" title="Filtrar por origem do acesso">
+                  <option value="">Todas as origens</option>
+                  <option value="WEB">Web</option>
+                  <option value="DESKTOP">Drive para Computador</option>
+                  <option value="MOBILE">Celular</option>
+                  <option value="APP">Outro aplicativo</option>
                 </select>
               </div>
               <div class="input-group input-group-sm" style="width:130px;flex-shrink:0;">
@@ -2744,6 +2775,11 @@
                 </button>
               </div>
             </div>
+            <div class="small text-muted mb-1 d-none" id="lgDrvAviso">
+              <i class="ph ph-info"></i> Visualizações não são gravadas: esta consulta vai direto ao Google e cobre no máximo 7 dias.
+            </div>
+            <!-- Estado do sync com o Google (inline: a tela recarrega sozinha e um modal pipocaria). -->
+            <div class="small text-muted mb-1 d-none" id="lgDrvSync"></div>
             <div class="table-scroll-x table-sticky" id="lgScroll">
               <table class="table table-sm table-striped table-hover align-middle">
                 <thead class="table-light">

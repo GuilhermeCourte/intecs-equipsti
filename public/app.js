@@ -40,13 +40,13 @@ const CHOICES_IDS = [
   'ci_categoria', 'ci_subcategoria', 'ci_prioridade',
   'ci_unidade', 'ci_departamento', 'ciMaquinaSelect',
   'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
-  'cal_recorrencia', 'lgModulo'
+  'cal_recorrencia', 'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvOrigem'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
 const FILTRO_STATUS_IDS = new Set([
   'imFiltroStatus', 'chamadosFiltroStatus',
   'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
-  'lgModulo'
+  'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvOrigem'
 ]);
 
 // ---------- Estado em memória ----------
@@ -97,6 +97,16 @@ let _fdToken    = 0;    // invalida aberturas em voo quando o dropdown fecha/rea
 //  Utilidades de UI
 // ============================================================
 const $ = (id) => document.getElementById(id);
+
+// Estado "salvando" dos botões de salvar: desabilita e troca o conteúdo por
+// spinner + texto. Devolve a função que restaura o rótulo original (chamar no
+// finally), assim cada botão volta ao ícone/texto que já tinha no HTML.
+function btnSalvando(btn, texto) {
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ph ph-circle-notch fd-spin"></i> ' + (texto || 'Salvando...');
+  return () => { btn.disabled = false; btn.innerHTML = original; };
+}
 
 // Exibe a mensagem num modal de notificação (substitui os alerts inline).
 // O 1º parâmetro (containerId) é mantido por compatibilidade e ignorado.
@@ -253,14 +263,17 @@ async function finishAsk(confirmado) {
 
   if (askOnOk) {
     const btn = $('askOk');
-    btn.disabled = true;
+    // O mesmo botão serve Salvar/Excluir/Confirmar: só o "Salvar" vira
+    // "Salvando...", nos outros o rótulo fica e entra apenas o spinner.
+    const rotulo = trim(btn.textContent);
+    const restaurarBtn = btnSalvando(btn, rotulo === 'Salvar' ? 'Salvando...' : rotulo);
     try {
       await askOnOk(result);
       askClose(result);
     } catch (err) {
       askShowError(err.message);
     } finally {
-      btn.disabled = false;
+      restaurarBtn();
     }
     return;
   }
@@ -568,7 +581,10 @@ function linkCellInternet(url) {
   const u = trim(url);
   if (!u) return '<span class="text-muted">—</span>';
   const href = /^https?:\/\//i.test(u) ? u : 'http://' + u;
-  return '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener" title="' + escapeHtml(u) + '">' + escapeHtml(u) + '</a>';
+  const semProto = u.replace(/^https?:\/\//i, '');
+  const host = semProto.split(/[/?#]/)[0];
+  const texto = host + (semProto.length > host.length ? '/…' : '');
+  return '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener" title="' + escapeHtml(u) + '">' + escapeHtml(texto) + '</a>';
 }
 
 function rowHtmlInternet(r) {
@@ -676,8 +692,7 @@ async function salvarInternet(ev) {
   const form = $('formInternet');
   if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
   const id = $('internet_id').value;
-  const btn = $('btnSalvarInternet');
-  btn.disabled = true;
+  const restaurarBtn = btnSalvando($('btnSalvarInternet'));
   try {
     if (id) await api('PUT', '/api/internet/' + id, dadosInternet());
     else await api('POST', '/api/internet', dadosInternet());
@@ -687,7 +702,7 @@ async function salvarInternet(ev) {
   } catch (err) {
     showAlert('alertInternetModal', 'danger', 'Erro: ' + err.message);
   } finally {
-    btn.disabled = false;
+    restaurarBtn();
   }
 }
 
@@ -874,8 +889,7 @@ async function salvarSenha(ev) {
   const portasOk = validarFormSenha(dados);
   if (!form.checkValidity() || !portasOk) { form.classList.add('was-validated'); return; }
   const id = $('senha_id').value;
-  const btn = $('btnSalvarSenha');
-  btn.disabled = true;
+  const restaurarBtn = btnSalvando($('btnSalvarSenha'));
   try {
     if (id) await api('PUT', '/api/senhas/' + id, dados);
     else await api('POST', '/api/senhas', dados);
@@ -886,7 +900,7 @@ async function salvarSenha(ev) {
   } catch (err) {
     showAlert('alertSenhaModal', 'danger', 'Erro: ' + err.message);
   } finally {
-    btn.disabled = false;
+    restaurarBtn();
   }
 }
 
@@ -1156,8 +1170,7 @@ async function abrirVincular(unidade) {
 
 async function salvarVinculo() {
   if (!_cxUnidadeEditando) return;
-  const btn = $('btnSalvarVinculo');
-  btn.disabled = true;
+  const restaurarBtn = btnSalvando($('btnSalvarVinculo'));
   try {
     await api('PUT', '/api/conexoes/vinculo', {
       unidade: _cxUnidadeEditando,
@@ -1169,7 +1182,7 @@ async function salvarVinculo() {
   } catch (err) {
     showAlert('alertVincular', 'danger', 'Erro: ' + escapeHtml(err.message));
   } finally {
-    btn.disabled = false;
+    restaurarBtn();
   }
 }
 
@@ -1370,8 +1383,7 @@ async function salvarCalendario(ev) {
   const form = $('formCalendario');
   if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
   const id = $('cal_id').value;
-  const btn = $('btnSalvarCalendario');
-  btn.disabled = true;
+  const restaurarBtn = btnSalvando($('btnSalvarCalendario'));
   try {
     if (id) await api('PUT', '/api/calendario/eventos/' + id, dadosCalendario());
     else await api('POST', '/api/calendario/eventos', dadosCalendario());
@@ -1381,7 +1393,7 @@ async function salvarCalendario(ev) {
   } catch (err) {
     showAlert('alertCalendarioModal', 'danger', 'Erro: ' + err.message);
   } finally {
-    btn.disabled = false;
+    restaurarBtn();
   }
 }
 
@@ -2723,8 +2735,7 @@ function configurarModalEditarUsuario() {
     const original = _usuariosCache.find((x) => String(x.id) === String(id));
     $('alertEditarUsuario').innerHTML = '';
 
-    const btn = $('btnSalvarEditarUsuario');
-    btn.disabled = true;
+    const restaurarBtn = btnSalvando($('btnSalvarEditarUsuario'));
     try {
       if (email && email !== original.email) await api('PUT', '/api/users/' + id, { email });
       if (senha) {
@@ -2748,7 +2759,7 @@ function configurarModalEditarUsuario() {
     } catch (err) {
       $('alertEditarUsuario').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
     } finally {
-      btn.disabled = false;
+      restaurarBtn();
     }
   });
 }
@@ -3513,8 +3524,7 @@ async function salvarModalOpcao(ev) {
     cnpj = dig ? maskCNPJ(dig) : null;
   }
 
-  const btn = $('btnSalvarOpcao');
-  btn.disabled = true; btn.innerHTML = '<i class="ph ph-circle-notch fd-spin"></i> Salvando...';
+  const restaurarBtn = btnSalvando($('btnSalvarOpcao'));
   try {
     if (limpo !== original) {
       await api('PUT', '/api/options/rename', { lista, valor: original, novoValor: limpo });
@@ -3554,7 +3564,7 @@ async function salvarModalOpcao(ev) {
   } catch (err) {
     $('alertOpcaoModal').innerHTML = '<div class="alert alert-danger py-2 mb-0">Erro: ' + escapeHtml(err.message) + '</div>';
   } finally {
-    btn.disabled = false; btn.innerHTML = '<i class="ph ph-check"></i> Salvar';
+    restaurarBtn();
   }
 }
 
@@ -3632,8 +3642,7 @@ function configurarFormEditar() {
     if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
     const id = $('edit_id').value;
     const justificativa = trim($('edit_justificativa').value);
-    const btn = $('btnSalvarEdicao');
-    btn.disabled = true; btn.innerHTML = '<i class="ph ph-circle-notch fd-spin"></i> Salvando...';
+    const restaurarBtn = btnSalvando($('btnSalvarEdicao'));
     try {
       await api('PUT', '/api/records/' + id, { ...dadosFormulario('edit_'), justificativa });
       const jEl = $('edit_justificativa');
@@ -3648,7 +3657,7 @@ function configurarFormEditar() {
     } catch (err) {
       showAlert('alertRegistros', 'danger', 'Erro ao salvar: ' + err.message);
     } finally {
-      btn.disabled = false; btn.innerHTML = '<i class="ph ph-check"></i> Salvar';
+      restaurarBtn();
     }
   });
 
@@ -3728,6 +3737,8 @@ const LOG_PAGE = 50;
 
 let _lgOffset = 0, _lgLoading = false, _lgAllLoaded = false, _lgBuscaTimer = null;   // aba global
 let _lgRows = []; // linhas carregadas da aba global (para o funil de coluna)
+let _lgFonte = 'SISTEMA';  // fonte da aba: SISTEMA (EQUIPSTI_logs) ou DRIVE (Google)
+let _lgLimpando = false;   // true durante o "limpar filtros" (ver recarregarLogs)
 let _lmModulo = null, _lmOffset = 0, _lmLoading = false, _lmAllLoaded = false, _lmBuscaTimer = null; // modal
 let _lmRows = []; // linhas carregadas do módulo atual (para o funil de coluna)
 let modalLogsModulo = null;
@@ -3752,15 +3763,19 @@ function lgColVal(l, col) {
   return '';
 }
 
+// As duas fontes da aba dividem o mesmo <thead>, e wireCtxFiltro() prende um
+// contexto só no listener — ligar dois faria os dois dispararem no mesmo
+// clique. Por isso é UM contexto que delega para a fonte ativa; trocarFonteLogs()
+// limpa os filtros ao trocar, já que as colunas não são as mesmas.
 const lgFilterCtx = {
   theadSel: '#lgThead th[data-col]',
-  getRows: () => _lgRows,
-  colVal: lgColVal,
+  getRows: () => (_lgFonte === 'DRIVE' ? _drvRows : _lgRows),
+  colVal: (l, col) => (_lgFonte === 'DRIVE' ? drvColVal(l, col) : lgColVal(l, col)),
   filters: {},
   maxItems: 6,
   clearBtnId: 'btnLimparFiltrosLogs',
   buscaId: 'lgBusca',
-  onApply: () => renderLogsTabela(),
+  onApply: () => (_lgFonte === 'DRIVE' ? renderDriveTabela() : renderLogsTabela()),
 };
 
 // Colunas do modal de logs por módulo, com funil de filtro (igual ao resto do sistema).
@@ -3943,6 +3958,224 @@ async function loadLogsModulo(reset = true) {
   } finally {
     _lmLoading = false;
   }
+}
+
+// ============================================================
+//  Logs do Google Drive — fonte "Google Drive" da aba Logs
+//
+//  Mesma tela, mesma toolbar e mesmo <thead> da auditoria interna; só o
+//  dropdown #lgFonte troca de onde vêm as linhas.
+//
+//  Uma diferença importante: "Visualização" NÃO está no nosso banco (é o
+//  evento mais volumoso do Drive de longe). Escolher esse filtro liga o
+//  modo AO VIVO, que consulta o Google direto, exige período e pagina por
+//  pageToken — a API deles não tem offset.
+// ============================================================
+const DRV_COLS = [
+  { label: 'DATA/HORA' },
+  { label: 'EVENTO' },
+  { label: 'ARQUIVO' },
+  { label: 'USUÁRIO' },
+  { label: 'ORIGEM' },
+  { label: 'IP' },
+];
+
+const DRV_EVENTO_LABEL = {
+  download: 'Download',
+  copy: 'Cópia',
+  source_copy: 'Copiado de',
+  sync_item_content: 'Sync p/ computador',
+  edit: 'Edição',
+  trash: 'Lixeira',
+  delete: 'Exclusão definitiva',
+  view: 'Visualização',
+};
+
+const DRV_ORIGEM_LABEL = {
+  WEB: 'Web',
+  DESKTOP: 'Drive para Computador',
+  MOBILE: 'Celular',
+  APP: 'Outro aplicativo',
+  DESCONHECIDA: 'Desconhecida',
+};
+
+let _drvOffset = 0, _drvLoading = false, _drvAllLoaded = false, _drvRows = [];
+let _drvPageToken = null; // só no modo ao vivo
+
+// "view" é o único evento que não vem do banco.
+const drvAoVivo = () => _lgFonte === 'DRIVE' && $('lgDrvEvento').value === 'view';
+
+function drvColVal(l, col) {
+  if (col === 0) return fmtDataHora(l.dataEvento);
+  if (col === 1) return DRV_EVENTO_LABEL[l.evento] || l.evento || '';
+  if (col === 2) return l.docTitulo || l.docId || '';
+  if (col === 3) return l.atorEmail || '';
+  if (col === 4) return DRV_ORIGEM_LABEL[l.origem] || l.origem || '';
+  if (col === 5) return l.ip || '';
+  return '';
+}
+
+// Badge por evento: o que tira arquivo da nuvem chama mais atenção.
+function drvBadge(evento) {
+  let cls = 'bg-secondary';
+  if (evento === 'download' || evento === 'item_content_synced') cls = 'bg-danger';
+  else if (evento === 'copy' || evento === 'source_copy') cls = 'bg-warning text-dark';
+  else if (evento === 'edit') cls = 'bg-primary';
+  else if (evento === 'trash' || evento === 'delete') cls = 'bg-dark';
+  else if (evento === 'view') cls = 'bg-light text-dark border';
+  return '<span class="badge ' + cls + '">' + escapeHtml(DRV_EVENTO_LABEL[evento] || evento) + '</span>';
+}
+
+function renderLinhaDrive(l) {
+  const arquivo = l.docTitulo || l.docId || '—';
+  const compartilhado = l.emDriveCompartilhado
+    ? ' <i class="ph ph-users-three text-muted" title="Drive compartilhado"></i>' : '';
+  // Dono só aparece quando é outra pessoa — é o caso que interessa.
+  const dono = l.proprietario && l.proprietario !== l.atorEmail
+    ? '<div class="text-muted small">dono: ' + escapeHtml(l.proprietario) + '</div>' : '';
+  // O ID OAuth do app fica no title: é o que alimenta o mapa APPS_CONHECIDOS
+  // do servidor quando a origem ainda sai como "Outro aplicativo".
+  const tipApp = l.appOrigemId ? ' title="app ' + escapeHtml(l.appOrigemId) + '"' : '';
+  return '<tr>' +
+    '<td class="text-nowrap">' + escapeHtml(fmtDataHora(l.dataEvento)) + '</td>' +
+    '<td>' + drvBadge(l.evento) + '</td>' +
+    '<td>' + logTrunc(arquivo) + compartilhado + dono + '</td>' +
+    '<td>' + escapeHtml(l.atorEmail || '—') + '</td>' +
+    '<td><span' + tipApp + '>' + escapeHtml(DRV_ORIGEM_LABEL[l.origem] || l.origem || '—') + '</span></td>' +
+    '<td class="text-nowrap">' + escapeHtml(l.ip || '—') + '</td>' +
+    '</tr>';
+}
+
+function renderDriveTabela() {
+  const linhas = _drvRows.filter((l) => ctxPassa(lgFilterCtx, l));
+  $('lgTbody').innerHTML = linhas.length
+    ? linhas.map((l) => renderLinhaDrive(l)).join('')
+    : '<tr><td colspan="6" class="text-muted">Nenhum evento encontrado.</td></tr>';
+  ctxAtualizarTh(lgFilterCtx);
+}
+
+// Querystring de /api/drive-logs. Mesma convenção da aba: o input é dia LOCAL
+// e o "até" é exclusivo (+1 dia).
+function montarQueryDrive(offset) {
+  const p = new URLSearchParams();
+  const eventos = $('lgDrvEvento').value;
+  const origem = $('lgDrvOrigem').value;
+  const q = $('lgBusca').value.trim();
+  if (eventos) p.set('eventos', eventos);
+  if (origem) p.set('origem', origem);
+  if (q) p.set('q', q);
+  const de = $('lgDe').value, ate = $('lgAte').value;
+  if (de) { const d = new Date(de + 'T00:00:00'); if (!isNaN(d)) p.set('de', d.toISOString()); }
+  if (ate) { const d = new Date(ate + 'T00:00:00'); if (!isNaN(d)) { d.setDate(d.getDate() + 1); p.set('ate', d.toISOString()); } }
+  p.set('limit', LOG_PAGE);
+  p.set('offset', offset);
+  return '/api/drive-logs?' + p.toString();
+}
+
+// A consulta ao vivo exige período; sem nada preenchido, usa o dia de hoje.
+function periodoAoVivo() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const dia = (v, padrao) => {
+    const d = v ? new Date(v + 'T00:00:00') : null;
+    return d && !isNaN(d) ? d : padrao;
+  };
+  const ini = dia($('lgDe').value, dia($('lgAte').value, hoje));
+  const fim = new Date(Math.max(dia($('lgAte').value, ini).getTime(), ini.getTime()));
+  fim.setDate(fim.getDate() + 1); // "até" exclusivo, igual ao resto da aba
+  return { de: ini.toISOString(), ate: fim.toISOString() };
+}
+
+async function loadDriveLogs(reset = true) {
+  if (_drvLoading) return;
+  if (!reset && _drvAllLoaded) return;
+  if (reset) {
+    _drvOffset = 0; _drvPageToken = null; _drvAllLoaded = false; _drvRows = [];
+    $('lgTbody').innerHTML = '<tr><td colspan="6" class="text-muted">Carregando...</td></tr>';
+    $('lgSentinel').classList.add('d-none');
+  }
+  _drvLoading = true;
+  try {
+    let novos;
+    if (drvAoVivo()) {
+      const p = new URLSearchParams(periodoAoVivo());
+      if (_drvPageToken) p.set('pageToken', _drvPageToken);
+      const r = await api('GET', '/api/drive-logs/visualizacoes?' + p.toString());
+      novos = r.linhas || [];
+      _drvPageToken = r.nextPageToken || null;
+      _drvAllLoaded = !_drvPageToken;
+    } else {
+      novos = await api('GET', montarQueryDrive(_drvOffset));
+      _drvOffset += novos.length;
+      _drvAllLoaded = novos.length < LOG_PAGE;
+    }
+    _drvRows = reset ? novos : _drvRows.concat(novos);
+    renderDriveTabela();
+    $('lgSentinel').classList.toggle('d-none', _drvAllLoaded);
+  } catch (err) {
+    // Inline, nunca em modal: a tela recarrega sozinha a cada troca de filtro.
+    if (reset) $('lgTbody').innerHTML = '<tr><td colspan="6" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
+    // Trava o scroll infinito, senão o observer repetiria a chamada que falhou.
+    _drvAllLoaded = true;
+    $('lgSentinel').classList.add('d-none');
+  } finally {
+    _drvLoading = false;
+  }
+}
+
+// Sync atrás da tela: a tabela já apareceu com o que está no banco; se vier
+// coisa nova, recarrega. Mesmo desenho do "cache-first + sync atrás" da
+// Conexão Remota.
+async function sincronizarDrive(forcar = false) {
+  const aviso = $('lgDrvSync');
+  aviso.classList.remove('d-none', 'text-danger');
+  aviso.innerHTML = '<i class="ph ph-circle-notch fd-spin me-1"></i>Sincronizando com o Google...';
+  try {
+    const r = await api('POST', '/api/drive-logs/sync' + (forcar ? '?forcar=1' : ''));
+    if (r.inseridos) await loadDriveLogs(true);
+    if (r.completo === false) {
+      // Backfill longo é fatiado em várias chamadas para não travar a tela.
+      aviso.textContent = 'Importação inicial em andamento — clique em atualizar para continuar.';
+    } else {
+      aviso.classList.add('d-none');
+    }
+  } catch (err) {
+    aviso.classList.add('text-danger');
+    aviso.textContent = 'Sincronização com o Google falhou: ' + err.message;
+  }
+}
+
+// Troca a fonte da aba Logs (Sistema GTI <-> Google Drive).
+function trocarFonteLogs() {
+  _lgFonte = $('lgFonte').value === 'DRIVE' ? 'DRIVE' : 'SISTEMA';
+  const drive = _lgFonte === 'DRIVE';
+
+  $('logsDescSistema').classList.toggle('d-none', drive);
+  $('logsDescDrive').classList.toggle('d-none', !drive);
+  $('lgModuloWrap').classList.toggle('d-none', drive);
+  document.querySelectorAll('.lg-drv-filtro').forEach((el) => el.classList.toggle('d-none', !drive));
+  $('lgDrvAviso').classList.toggle('d-none', !drvAoVivo());
+  $('lgDrvSync').classList.add('d-none');
+
+  // As duas fontes têm colunas diferentes: manter o funil de uma valendo na
+  // outra filtraria por um valor que nem existe lá.
+  Object.keys(lgFilterCtx.filters).forEach((k) => delete lgFilterCtx.filters[k]);
+  $('lgThead').innerHTML = thFiltravel(drive ? DRV_COLS : LG_COLS);
+  ctxAtualizarTh(lgFilterCtx);
+
+  if (drive) {
+    loadDriveLogs(true);
+    sincronizarDrive();
+  } else {
+    loadLogs(true);
+  }
+}
+
+// Um ponto só para os filtros compartilhados (datas e busca valem nas duas
+// fontes). O guarda evita recarregar a cada select mexido pelo "limpar
+// filtros" — o Choices.js dispara 'change' também quando o valor vem do código.
+function recarregarLogs() {
+  if (_lgLimpando) return;
+  if (_lgFonte === 'DRIVE') loadDriveLogs(true); else loadLogs(true);
 }
 
 // ============================================================
@@ -4966,6 +5199,7 @@ function configurarCategoriasIntecs() {
     const btnRemover = ev.target.closest('.btn-remover-prioridade');
     if (btnSalvar) {
       const tr = btnSalvar.closest('tr[data-pr-id]');
+      const restaurarBtn = btnSalvando(btnSalvar);
       try {
         await api('PUT', '/api/chamados-intecs/prioridades/' + tr.getAttribute('data-pr-id'), {
           sla_resposta_horas: tr.querySelector('.pr-resposta').value,
@@ -4973,6 +5207,8 @@ function configurarCategoriasIntecs() {
         });
       } catch (err) {
         $('alertPrioridadesIntecs').innerHTML = '<div class="alert alert-danger py-2 mb-0">' + escapeHtml(err.message) + '</div>';
+      } finally {
+        restaurarBtn();
       }
     } else if (btnRemover) {
       try {
@@ -6302,8 +6538,7 @@ async function salvarIntecsMsa(ev) {
   if (ev) ev.preventDefault();
   const id = trim($('im_id').value);
   const dados = dadosIntecsMsa();
-  const btn = $('btnSalvarIntecsMsa');
-  btn.disabled = true;
+  const restaurarBtn = btnSalvando($('btnSalvarIntecsMsa'));
   try {
     if (id) await api('PUT', '/api/intecs-msa/' + id, dados);
     else await api('POST', '/api/intecs-msa', dados);
@@ -6312,7 +6547,7 @@ async function salvarIntecsMsa(ev) {
   } catch (e) {
     $('alertIntecsMsa').innerHTML = `<div class="alert alert-danger py-2 mb-3">${escapeHtml(e.message)}</div>`;
   } finally {
-    btn.disabled = false;
+    restaurarBtn();
   }
 }
 
@@ -6639,17 +6874,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ---- Aba Logs (auditoria unificada) ----
   modalLogsModulo = new bootstrap.Modal($('modalLogsModulo'));
-  $('tab-logs').addEventListener('shown.bs.tab', () => loadLogs(true));
-  ['lgModulo', 'lgDe', 'lgAte'].forEach((id) => $(id).addEventListener('change', () => loadLogs(true)));
-  $('lgBusca').addEventListener('input', () => { clearTimeout(_lgBuscaTimer); _lgBuscaTimer = setTimeout(() => loadLogs(true), 300); });
-  $('btnAtualizarLogs').addEventListener('click', () => loadLogs(true));
+  $('tab-logs').addEventListener('shown.bs.tab', () => {
+    recarregarLogs();
+    // Voltar para a aba com a fonte Drive já ativa também procura evento novo
+    // (sem isto, só trocar o dropdown sincronizava). A trava de 5 min do
+    // servidor evita insistir com o Google a cada ida e volta.
+    if (_lgFonte === 'DRIVE') sincronizarDrive();
+  });
+  $('lgFonte').addEventListener('change', trocarFonteLogs);
+  // Datas e busca valem nas duas fontes; módulo só no Sistema e evento/origem
+  // só no Drive — todos caem no mesmo dispatcher.
+  ['lgModulo', 'lgDe', 'lgAte', 'lgDrvOrigem'].forEach((id) => $(id).addEventListener('change', recarregarLogs));
+  $('lgDrvEvento').addEventListener('change', () => {
+    // Trocar para/de "Visualização" muda a origem dos dados (ao vivo x banco).
+    $('lgDrvAviso').classList.toggle('d-none', !drvAoVivo());
+    recarregarLogs();
+  });
+  $('lgBusca').addEventListener('input', () => { clearTimeout(_lgBuscaTimer); _lgBuscaTimer = setTimeout(recarregarLogs, 300); });
+  $('btnAtualizarLogs').addEventListener('click', () => {
+    if (_lgFonte === 'DRIVE') sincronizarDrive(true); else loadLogs(true);
+  });
   $('btnLimparFiltrosLogs').addEventListener('click', () => {
-    setSelectVal('lgModulo', '');
-    if (fpMap['lgDe']) fpMap['lgDe'].clear(); else $('lgDe').value = '';
-    if (fpMap['lgAte']) fpMap['lgAte'].clear(); else $('lgAte').value = '';
-    $('lgBusca').value = '';
-    Object.keys(lgFilterCtx.filters).forEach((k) => delete lgFilterCtx.filters[k]);
-    loadLogs(true);
+    // Sem o guarda, cada setSelectVal dispararia um recarregamento com os
+    // outros filtros ainda por limpar (o Choices.js emite 'change' por código).
+    _lgLimpando = true;
+    try {
+      setSelectVal('lgModulo', '');
+      setSelectVal('lgDrvEvento', '');
+      setSelectVal('lgDrvOrigem', '');
+      if (fpMap['lgDe']) fpMap['lgDe'].clear(); else $('lgDe').value = '';
+      if (fpMap['lgAte']) fpMap['lgAte'].clear(); else $('lgAte').value = '';
+      $('lgBusca').value = '';
+      Object.keys(lgFilterCtx.filters).forEach((k) => delete lgFilterCtx.filters[k]);
+    } finally {
+      _lgLimpando = false;
+    }
+    $('lgDrvAviso').classList.add('d-none');
+    recarregarLogs();
   });
   $('lgThead').innerHTML = thFiltravel(LG_COLS);
   wireCtxFiltro(lgFilterCtx, $('lgThead'));
@@ -6663,8 +6924,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.querySelectorAll('.btn-log-modulo').forEach((b) =>
     b.addEventListener('click', () => abrirLogsModulo(b.dataset.logmodulo)));
-  new IntersectionObserver((e) => { if (e[0].isIntersecting) loadLogs(false); },
-    { root: $('lgScroll'), threshold: 0.1 }).observe($('lgSentinel'));
+  new IntersectionObserver((e) => {
+    if (!e[0].isIntersecting) return;
+    if (_lgFonte === 'DRIVE') loadDriveLogs(false); else loadLogs(false);
+  }, { root: $('lgScroll'), threshold: 0.1 }).observe($('lgSentinel'));
   new IntersectionObserver((e) => { if (e[0].isIntersecting) loadLogsModulo(false); },
     { root: $('lmScroll'), threshold: 0.1 }).observe($('lmSentinel'));
 
