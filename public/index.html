@@ -1147,6 +1147,18 @@
     .cal-evento--MENSAL { background: var(--dash-blue); }
     .cal-evento--ANUAL { background: var(--dash-orange); }
     .cal-evento--NENHUMA { background: #6b7280; }
+    /* REPETIÇÃO (modal do evento): bolinha com a cor que o evento terá na grade.
+       O Choices.js roda com allowHTML:false, então a bolinha sai do data-value
+       do item por CSS. Cores espelham as .cal-evento--* acima. */
+    .choices:has(#cal_recorrencia) .choices__item[data-value="NENHUMA"]::before,
+    .choices:has(#cal_recorrencia) .choices__item[data-value="MENSAL"]::before,
+    .choices:has(#cal_recorrencia) .choices__item[data-value="ANUAL"]::before {
+      content: ''; display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; vertical-align: middle; margin-right: 6px;
+    }
+    .choices:has(#cal_recorrencia) .choices__item[data-value="MENSAL"]::before { background: var(--dash-blue); }
+    .choices:has(#cal_recorrencia) .choices__item[data-value="ANUAL"]::before { background: var(--dash-orange); }
+    .choices:has(#cal_recorrencia) .choices__item[data-value="NENHUMA"]::before { background: #6b7280; }
     .cal-proximos-list { max-height: 280px; overflow-y: auto; }
     .cal-proximo-item {
       display: flex; align-items: center; gap: .6rem; padding: .6rem 1.1rem;
@@ -3356,7 +3368,7 @@
             </div>
             <div class="col-md-6">
               <label class="form-label" for="cal_data">DATA *</label>
-              <input type="date" class="form-control" id="cal_data" required>
+              <input type="text" class="form-control" id="cal_data" required readonly autocomplete="off">
               <div class="invalid-feedback">Informe a data.</div>
             </div>
             <div class="col-md-6">
