@@ -577,14 +577,19 @@ async function carregarInternet() {
   }
 }
 
+// Texto que aparece na coluna LINK DE ACESSO: só o host (+ "/…" quando a URL
+// tem caminho). O funil do cabeçalho lista exatamente esse texto.
+function linkTextoInternet(url) {
+  const semProto = trim(url).replace(/^https?:\/\//i, '');
+  const host = semProto.split(/[/?#]/)[0];
+  return host + (semProto.length > host.length ? '/…' : '');
+}
+
 function linkCellInternet(url) {
   const u = trim(url);
   if (!u) return '<span class="text-muted">—</span>';
   const href = /^https?:\/\//i.test(u) ? u : 'http://' + u;
-  const semProto = u.replace(/^https?:\/\//i, '');
-  const host = semProto.split(/[/?#]/)[0];
-  const texto = host + (semProto.length > host.length ? '/…' : '');
-  return '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener" title="' + escapeHtml(u) + '">' + escapeHtml(texto) + '</a>';
+  return '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener" title="' + escapeHtml(u) + '">' + escapeHtml(linkTextoInternet(u)) + '</a>';
 }
 
 function rowHtmlInternet(r) {
@@ -598,13 +603,39 @@ function rowHtmlInternet(r) {
     '</tr>';
 }
 
+// Colunas filtráveis da tabela de provedores (a ordem casa com o data-col do
+// #internetThead).
+const INTERNET_COLS = ['unidade', 'empresa', 'ipInternet', 'upDown', 'linkAcesso'];
+
+function internetColVal(r, col) {
+  const k = INTERNET_COLS[col];
+  if (!k) return '';
+  return k === 'linkAcesso' ? linkTextoInternet(r.linkAcesso) : trim(r[k]);
+}
+
+const internetFilterCtx = {
+  theadSel: '#internetThead th[data-col]',
+  getRows: () => INTERNET,
+  colVal: internetColVal,
+  filters: {},
+  maxItems: 8,
+  clearBtnId: 'btnLimparFiltrosInternet',
+  buscaId: 'internetBusca',
+  onApply: renderTabelaInternet,
+};
+
 function renderTabelaInternet() {
   const cont = $('corpoTabelaInternet');
+  const vazio = (msg) => '<tr><td colspan="5" class="text-muted text-center py-3">' + msg + '</td></tr>';
   if (!INTERNET.length) {
-    cont.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Nenhum contrato de internet cadastrado.</td></tr>';
-    return;
+    cont.innerHTML = vazio('Nenhum contrato de internet cadastrado.');
+  } else {
+    const rows = INTERNET.filter((r) => ctxPassa(internetFilterCtx, r));
+    cont.innerHTML = rows.length
+      ? rows.map(rowHtmlInternet).join('')
+      : vazio('Nenhum contrato corresponde aos filtros.');
   }
-  cont.innerHTML = INTERNET.map(rowHtmlInternet).join('');
+  ctxAtualizarTh(internetFilterCtx);
 }
 
 // Popula o select CONTRATO com os CNPJs cadastrados nas unidades (Opções).
@@ -1282,9 +1313,30 @@ function renderCalendarioGrid() {
       '<div class="cal-evento cal-evento--' + e.recorrencia + '" data-id="' + e.id + '" title="' + escapeHtml(e.titulo) + '">' + escapeHtml(e.titulo) + '</div>'
     ).join('');
     html += '<div class="cal-day' + (outroMes ? ' is-outro-mes' : '') + (isHoje ? ' is-hoje' : '') + '" data-date="' + ymd(d) + '">' +
-      '<div class="cal-day-num">' + d.getDate() + '</div>' + pills + '</div>';
+      '<div class="cal-day-num">' + d.getDate() + '</div>' +
+      '<div class="cal-day-eventos">' + pills + '</div>' +
+      '<div class="cal-day-mais"></div></div>';
   }
   $('calGrid').innerHTML = html;
+  atualizarContadoresCal();
+}
+
+// "+N" = eventos que ficaram fora da área visível do dia (some ao rolar até o fim).
+function atualizarContadorDia(box) {
+  const rodape = box.parentElement.querySelector('.cal-day-mais');
+  const limite = box.scrollTop + box.clientHeight + 1; // +1 absorve arredondamento
+  let ocultos = 0;
+  for (const pill of box.children) {
+    if (pill.offsetTop + pill.offsetHeight > limite) ocultos++;
+  }
+  rodape.textContent = ocultos ? '+' + ocultos : '';
+}
+
+// Duas passadas: marca quem transborda (o rodapé passa a ocupar espaço) e só então conta.
+function atualizarContadoresCal() {
+  const boxes = $('calGrid').querySelectorAll('.cal-day-eventos');
+  boxes.forEach((box) => box.parentElement.classList.toggle('tem-mais', box.scrollHeight > box.clientHeight));
+  $('calGrid').querySelectorAll('.cal-day.tem-mais .cal-day-eventos').forEach(atualizarContadorDia);
 }
 
 function renderProximosVencimentosCal() {
@@ -1337,6 +1389,7 @@ function renderListaCalendario() {
 function mostrarCalGradeView() {
   $('calGradeView').style.display = '';
   $('calListaView').style.display = 'none';
+  atualizarContadoresCal(); // grade oculta mede tudo como 0; recalcula ao reaparecer
   $('btnCalendarioViewGrade').classList.replace('btn-outline-secondary', 'btn-dark');
   $('btnCalendarioViewLista').classList.replace('btn-dark', 'btn-outline-secondary');
 }
@@ -1431,9 +1484,19 @@ function configurarCalendario() {
   $('calGrid').addEventListener('click', (ev) => {
     const pill = ev.target.closest('.cal-evento');
     if (pill) { abrirCalendario(pill.getAttribute('data-id')); return; }
+    const mais = ev.target.closest('.cal-day-mais');
+    if (mais) { // rola o dia em vez de abrir o modal de novo evento
+      const box = mais.parentElement.querySelector('.cal-day-eventos');
+      box.scrollBy({ top: box.clientHeight, behavior: 'smooth' });
+      return;
+    }
     const dia = ev.target.closest('.cal-day');
     if (dia) abrirCalendario(null, dia.getAttribute('data-date'));
   });
+  // scroll não borbulha: captura para atualizar o "+N" do dia rolado
+  $('calGrid').addEventListener('scroll', (ev) => {
+    if (ev.target.classList && ev.target.classList.contains('cal-day-eventos')) atualizarContadorDia(ev.target);
+  }, true);
   $('calProximos').addEventListener('click', (ev) => {
     const item = ev.target.closest('.cal-proximo-item');
     if (item) abrirCalendario(item.getAttribute('data-id'));
@@ -6998,6 +7061,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tr = e.target.closest('tr[data-id]');
     if (tr) abrirInternet(tr.getAttribute('data-id'));
   });
+  wireCtxFiltro(internetFilterCtx, $('internetThead'));
 
   // Aba Senhas: sub-aba padrão é Cadastros; recarrega ao entrar na aba ou
   // ao voltar para a sub-aba (o shown.bs.tab dela não dispara quando ela
@@ -7097,7 +7161,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireBuscaTabela('prBusca', 'prTbody');
   wireBuscaTabela('stBusca', 'stTbody');
   wireBuscaTabela('usuariosBusca', 'listaUsuarios', 'btnLimparFiltrosUsuarios');
-  wireBuscaTabela('internetBusca', 'corpoTabelaInternet', 'btnLimparFiltrosInternet');
+  wireBuscaTabela('internetBusca', 'corpoTabelaInternet', 'btnLimparFiltrosInternet',
+    () => Object.keys(internetFilterCtx.filters).length > 0);
   wireBuscaTabela('senhasBusca', 'corpoTabelaSenhas', 'btnLimparFiltrosSenhas');
   wireBuscaTabela('logBusca', 'logCorpo', 'btnLimparFiltrosLog');
   wireBuscaTabela('calBusca', 'calListaTbody', 'btnLimparFiltrosCalendario');
@@ -7111,7 +7176,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   $('btnLimparFiltrosEmprestimos').addEventListener('click', () => limparBusca('empBusca'));
   $('btnLimparFiltrosUsuarios').addEventListener('click', () => limparBusca('usuariosBusca'));
-  $('btnLimparFiltrosInternet').addEventListener('click', () => limparBusca('internetBusca'));
+  $('btnLimparFiltrosInternet').addEventListener('click', () => {
+    Object.keys(internetFilterCtx.filters).forEach((k) => delete internetFilterCtx.filters[k]);
+    limparBusca('internetBusca');
+    renderTabelaInternet();
+  });
   $('btnLimparFiltrosSenhas').addEventListener('click', () => limparBusca('senhasBusca'));
   $('btnLimparFiltrosLog').addEventListener('click', () => limparBusca('logBusca'));
   $('btnLimparFiltrosCalendario').addEventListener('click', () => limparBusca('calBusca'));

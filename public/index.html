@@ -260,25 +260,28 @@
     /* tabela */
     .table-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-    /* ---------- Barra de scroll das tabelas ----------
+    /* ---------- Barra de scroll das tabelas e listas roláveis ----------
        Oculta por padrão; aparece ao passar o mouse (hover)
        ou enquanto rola (classe .is-scrolling via JS). */
-    .table-scroll-x, .table-sticky {
+    .table-scroll-x, .table-sticky, .cal-proximos-list {
       scrollbar-width: thin;            /* Firefox: largura fixa (reserva o espaço) */
       scrollbar-color: transparent transparent; /* thumb invisível até o hover */
       scrollbar-gutter: stable;         /* reserva a calha p/ não deslocar o conteúdo */
     }
     .table-scroll-x::-webkit-scrollbar,
-    .table-sticky::-webkit-scrollbar {
+    .table-sticky::-webkit-scrollbar,
+    .cal-proximos-list::-webkit-scrollbar {
       width: 9px;
       height: 9px;
     }
     .table-scroll-x::-webkit-scrollbar-track,
-    .table-sticky::-webkit-scrollbar-track {
+    .table-sticky::-webkit-scrollbar-track,
+    .cal-proximos-list::-webkit-scrollbar-track {
       background: transparent;
     }
     .table-scroll-x::-webkit-scrollbar-thumb,
-    .table-sticky::-webkit-scrollbar-thumb {
+    .table-sticky::-webkit-scrollbar-thumb,
+    .cal-proximos-list::-webkit-scrollbar-thumb {
       background-color: transparent;    /* oculta por padrão */
       border-radius: 999px;
       border: 2px solid transparent;
@@ -291,17 +294,21 @@
     }
     /* Revela ao passar o mouse ou enquanto rola */
     .table-scroll-x:hover, .table-scroll-x.is-scrolling,
-    .table-sticky:hover, .table-sticky.is-scrolling {
+    .table-sticky:hover, .table-sticky.is-scrolling,
+    .cal-proximos-list:hover, .cal-proximos-list.is-scrolling {
       scrollbar-color: var(--line) transparent; /* Firefox: revela o thumb */
     }
     .table-scroll-x:hover::-webkit-scrollbar-thumb,
     .table-scroll-x.is-scrolling::-webkit-scrollbar-thumb,
     .table-sticky:hover::-webkit-scrollbar-thumb,
-    .table-sticky.is-scrolling::-webkit-scrollbar-thumb {
+    .table-sticky.is-scrolling::-webkit-scrollbar-thumb,
+    .cal-proximos-list:hover::-webkit-scrollbar-thumb,
+    .cal-proximos-list.is-scrolling::-webkit-scrollbar-thumb {
       background-color: var(--line);
     }
     .table-scroll-x:hover::-webkit-scrollbar-thumb:hover,
-    .table-sticky:hover::-webkit-scrollbar-thumb:hover {
+    .table-sticky:hover::-webkit-scrollbar-thumb:hover,
+    .cal-proximos-list:hover::-webkit-scrollbar-thumb:hover {
       background-color: var(--muted);
     }
     .table > thead th {
@@ -1093,26 +1100,50 @@
     /* Calendário */
     .cal-grid-wrap { padding: .9rem 1.1rem 1.1rem; }
     .cal-weekdays {
-      display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px;
+      display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px;
     }
     .cal-weekdays div {
       text-align: center; font-size: .68rem; font-weight: 700; color: var(--muted);
       text-transform: uppercase; letter-spacing: .5px;
     }
-    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    /* minmax(0, 1fr): sem o min 0, o "1fr" vira min-content e a coluna estica
+       para caber o título do evento, deixando os dias com larguras diferentes. */
+    .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
     .cal-day {
-      min-height: 88px; border: 1px solid var(--line); border-radius: 10px; padding: 6px;
+      height: 104px; border: 1px solid var(--line); border-radius: 10px; padding: 6px;
       cursor: pointer; background: #fff; display: flex; flex-direction: column; gap: 3px;
       transition: background .15s, border-color .15s;
     }
     .cal-day:hover { background: var(--bg-soft); }
     .cal-day.is-outro-mes { opacity: .4; }
     .cal-day.is-hoje { border-color: var(--dash-blue); border-width: 2px; }
-    .cal-day-num { font-size: .78rem; font-weight: 600; }
+    .cal-day-num { font-size: .78rem; font-weight: 600; flex-shrink: 0; }
+    /* Área dos eventos: rola dentro do dia quando há mais do que cabe, sem esticar a célula. */
+    .cal-day-eventos {
+      position: relative; /* referência do offsetTop das pílulas ao contar o "+N" */
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      display: flex; flex-direction: column; gap: 3px;
+      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+    }
+    .cal-day-eventos::-webkit-scrollbar { width: 6px; }
+    .cal-day-eventos::-webkit-scrollbar-track { background: transparent; }
+    .cal-day-eventos::-webkit-scrollbar-thumb {
+      background-color: var(--line); border-radius: 999px; transition: background-color .2s ease;
+    }
+    .cal-day:hover .cal-day-eventos { scrollbar-color: var(--muted) transparent; }
+    .cal-day:hover .cal-day-eventos::-webkit-scrollbar-thumb { background-color: var(--muted); }
     .cal-evento {
       font-size: .66rem; padding: 2px 5px; border-radius: 6px; color: #fff; cursor: pointer;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
     }
+    /* Contador dos eventos que sobraram; só aparece nos dias que transbordam (.tem-mais). */
+    .cal-day-mais {
+      display: none; flex-shrink: 0; padding-left: 2px;
+      font-size: .62rem; font-weight: 700; color: var(--muted);
+      line-height: 12px; min-height: 12px; /* mantém a altura ao zerar o texto no fim do scroll */
+    }
+    .cal-day.tem-mais .cal-day-mais { display: block; }
+    .cal-day-mais:hover { color: var(--ink); }
     .cal-evento--MENSAL { background: var(--dash-blue); }
     .cal-evento--ANUAL { background: var(--dash-orange); }
     .cal-evento--NENHUMA { background: #6b7280; }
@@ -1128,8 +1159,10 @@
     }
     .cal-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
     @media (max-width: 576px) {
-      .cal-day { min-height: 54px; padding: 4px; }
+      .cal-day { height: 54px; padding: 4px; }
       .cal-day-num { font-size: .68rem; }
+      .cal-day-eventos { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
+      .cal-day.tem-mais .cal-day-mais { display: none; } /* não cabe na célula de 54px */
       .cal-evento { font-size: 0; padding: 0; width: 8px; height: 8px; border-radius: 50%; }
     }
 
@@ -2208,12 +2241,12 @@
                 <div class="table-scroll-x table-sticky">
                   <table class="table table-striped table-hover align-middle">
                     <thead class="table-light">
-                      <tr>
-                        <th>UNIDADE</th>
-                        <th>EMPRESA</th>
-                        <th>IP DE INTERNET</th>
-                        <th>UP/DOWN</th>
-                        <th>LINK DE ACESSO</th>
+                      <tr id="internetThead">
+                        <th class="th-filterable" data-col="0">UNIDADE <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                        <th class="th-filterable" data-col="1">EMPRESA <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                        <th class="th-filterable" data-col="2">IP DE INTERNET <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                        <th class="th-filterable" data-col="3">UP/DOWN <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                        <th class="th-filterable" data-col="4">LINK DE ACESSO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                       </tr>
                     </thead>
                     <tbody id="corpoTabelaInternet">
@@ -4339,10 +4372,10 @@
   <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js" crossorigin="anonymous"></script>
   <script type="module" src="app.js?v=19"></script>
   <script>
-    /* Mostra a barra de scroll das tabelas enquanto rola e a oculta
-       pouco depois de parar (~700ms). Funciona para X e Y. */
+    /* Mostra a barra de scroll das tabelas e listas roláveis enquanto rola e a
+       oculta pouco depois de parar (~700ms). Funciona para X e Y. */
     (function () {
-      var sel = '.table-scroll-x, .table-sticky';
+      var sel = '.table-scroll-x, .table-sticky, .cal-proximos-list';
       document.addEventListener('scroll', function (e) {
         var el = e.target;
         if (!el || !el.matches || !el.matches(sel)) return;
