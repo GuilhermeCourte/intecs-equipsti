@@ -499,6 +499,9 @@
     /* Sem o "x" nativo do input de busca — limpar é pelo funil ao lado */
     .busca-tabela input[type="search"]::-webkit-search-cancel-button,
     .busca-tabela input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+    /* Período dos Logs: largura fixa nos dois campos de data. Precisa ser CSS —
+       o flatpickr troca o input por um clone (altInput) e style inline não vai junto. */
+    #lgPeriodo .form-control { flex: 0 0 108px; min-width: 0; }
     /* Registros no celular: busca+botões descem para a linha abaixo do Simples/Detalhada */
     @media (max-width: 575.98px) {
       .busca-grupo-reg { flex-basis: 100%; justify-content: flex-end; }
@@ -857,7 +860,10 @@
     .choices:has(#ciFiltroStatus) .choices__inner,
     .choices:has(#ciFiltroResponsavel) .choices__inner,
     .choices:has(#cal_recorrencia) .choices__inner,
-    .choices:has(#lgModulo) .choices__inner {
+    .choices:has(#lgModulo) .choices__inner,
+    .choices:has(#lgFonte) .choices__inner,
+    .choices:has(#lgDrvEvento) .choices__inner,
+    .choices:has(#lgDrvProprietario) .choices__inner {
       min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px;
     }
     .choices:has(#imFiltroStatus) .choices__list--single .choices__item,
@@ -867,7 +873,10 @@
     .choices:has(#ciFiltroStatus) .choices__list--single .choices__item,
     .choices:has(#ciFiltroResponsavel) .choices__list--single .choices__item,
     .choices:has(#cal_recorrencia) .choices__list--single .choices__item,
-    .choices:has(#lgModulo) .choices__list--single .choices__item { font-size: .875rem; }
+    .choices:has(#lgModulo) .choices__list--single .choices__item,
+    .choices:has(#lgFonte) .choices__list--single .choices__item,
+    .choices:has(#lgDrvEvento) .choices__list--single .choices__item,
+    .choices:has(#lgDrvProprietario) .choices__list--single .choices__item { font-size: .875rem; }
     .choices:has(#imFiltroStatus) .choices__list--dropdown .choices__item,
     .choices:has(#imFiltroStatus) .choices__list[aria-expanded] .choices__item,
     .choices:has(#chamadosFiltroStatus) .choices__list--dropdown .choices__item,
@@ -879,8 +888,38 @@
     .choices:has(#cal_recorrencia) .choices__list--dropdown .choices__item,
     .choices:has(#cal_recorrencia) .choices__list[aria-expanded] .choices__item,
     .choices:has(#lgModulo) .choices__list--dropdown .choices__item,
-    .choices:has(#lgModulo) .choices__list[aria-expanded] .choices__item {
+    .choices:has(#lgModulo) .choices__list[aria-expanded] .choices__item,
+    .choices:has(#lgFonte) .choices__list--dropdown .choices__item,
+    .choices:has(#lgFonte) .choices__list[aria-expanded] .choices__item,
+    .choices:has(#lgDrvEvento) .choices__list--dropdown .choices__item,
+    .choices:has(#lgDrvEvento) .choices__list[aria-expanded] .choices__item,
+    .choices:has(#lgDrvProprietario) .choices__list--dropdown .choices__item,
+    .choices:has(#lgDrvProprietario) .choices__list[aria-expanded] .choices__item {
       padding: 7px 10px; font-size: .875rem;
+    }
+
+    /* Nome de drive compartilhado é longo: a lista abre mais larga que a caixa
+       para o item caber numa linha (a caixa fechada segue com 200px). */
+    .choices:has(#lgDrvProprietario) .choices__list--dropdown,
+    .choices:has(#lgDrvProprietario) .choices__list[aria-expanded] {
+      width: max-content; min-width: 100%; max-width: 340px;
+    }
+
+    /* Ícone de cada fonte dos Logs. Vai como background do item porque o Choices
+       roda com allowHTML: false — o rótulo é texto puro, não aceita <i>/<img>. */
+    .choices:has(#lgFonte) .choices__item[data-value="SISTEMA"],
+    .choices:has(#lgFonte) .choices__item[data-value="DRIVE"] {
+      background-repeat: no-repeat; background-size: 16px 16px;
+    }
+    .choices:has(#lgFonte) .choices__item[data-value="SISTEMA"] { background-image: url('/favicon_intecs.png'); }
+    .choices:has(#lgFonte) .choices__item[data-value="DRIVE"] { background-image: url('/icons/google-drive.svg'); }
+    /* O item selecionado não tem recuo próprio; os do dropdown têm 10px. */
+    .choices:has(#lgFonte) .choices__list--single .choices__item {
+      padding-left: 22px; background-position: left center;
+    }
+    .choices:has(#lgFonte) .choices__list--dropdown .choices__item,
+    .choices:has(#lgFonte) .choices__list[aria-expanded] .choices__item {
+      padding-left: 32px; background-position: 10px center;
     }
 
     /* Limita o dropdown dos chamados a ~4 itens visíveis */
@@ -2717,14 +2756,14 @@
           <div class="tab-pane fade" id="pane-logs" role="tabpanel">
             <h2 class="pane-titulo-mobile"><i class="material-icons ic-logs">travel_explore</i> Logs</h2>
             <div class="d-flex align-items-center mb-3 gap-2">
-              <p class="text-muted mb-0" id="logsDescSistema">Auditoria de ações nos módulos do sistema.</p>
-              <p class="text-muted mb-0 d-none" id="logsDescDrive">Auditoria de arquivos do Google Drive (downloads, cópias, edições e exclusões).</p>
+              <p class="text-muted mb-0" id="logsDescSistema">Auditoria de ações no Gestão TI.</p>
+              <p class="text-muted mb-0 d-none" id="logsDescDrive">Auditoria de ações no Google Drive</p>
             </div>
             <div id="alertLogs"></div>
             <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
               <div style="width:150px;flex-shrink:0;">
                 <select class="form-select form-select-sm w-auto" id="lgFonte" title="Fonte dos logs">
-                  <option value="SISTEMA">Sistema (GTI)</option>
+                  <option value="SISTEMA">Gestão TI</option>
                   <option value="DRIVE">Google Drive</option>
                 </select>
               </div>
@@ -2735,33 +2774,34 @@
               </div>
               <!-- Filtros exclusivos da fonte Google Drive: aparecem/somem juntos
                    pela classe (d-none e d-flex na mesma tag brigariam). -->
-              <div class="lg-drv-filtro d-none" style="width:210px;flex-shrink:0;">
+              <div class="lg-drv-filtro d-none" style="width:200px;flex-shrink:0;">
                 <!-- O valor é a lista de eventos da API separada por vírgula; "view"
                      é o único que não vem do banco (consulta ao vivo). -->
                 <select class="form-select form-select-sm w-auto" id="lgDrvEvento" title="Filtrar por tipo de evento">
                   <option value="">Todos os gravados</option>
                   <option value="download">Download</option>
                   <option value="copy,source_copy">Cópia</option>
-                  <option value="sync_item_content">Sync (Drive para Computador)</option>
                   <option value="edit">Edição</option>
                   <option value="trash,delete">Exclusão</option>
-                  <option value="view">Visualização (ao vivo)</option>
+                  <option value="view">Visualização</option>
                 </select>
               </div>
               <div class="lg-drv-filtro d-none" style="width:200px;flex-shrink:0;">
-                <select class="form-select form-select-sm w-auto" id="lgDrvOrigem" title="Filtrar por origem do acesso">
-                  <option value="">Todas as origens</option>
-                  <option value="WEB">Web</option>
-                  <option value="DESKTOP">Drive para Computador</option>
-                  <option value="MOBILE">Celular</option>
-                  <option value="APP">Outro aplicativo</option>
+                <!-- Opções vêm do banco (donos distintos já gravados), montadas
+                     antes do initChoices() — ver carregarProprietariosDrive(). -->
+                <select class="form-select form-select-sm w-auto" id="lgDrvProprietario" title="Filtrar por dono do arquivo">
+                  <option value="">Todos os HDs</option>
                 </select>
               </div>
-              <div class="input-group input-group-sm" style="width:130px;flex-shrink:0;">
+              <!-- De/Até no mesmo input-group: os rótulos ficam fora dos campos
+                   (placeholder sumia ao preencher) e a data ocupa a largura fixa de d/m/Y. -->
+              <div class="input-group input-group-sm" id="lgPeriodo" style="width:auto;flex-shrink:0;">
                 <span class="input-group-text"><i class="ph ph-calendar-blank"></i></span>
-                <input type="text" class="form-control form-control-sm" id="lgDe" title="De (data inicial)" placeholder="De" readonly autocomplete="off">
+                <span class="input-group-text">De</span>
+                <input type="text" class="form-control form-control-sm" id="lgDe" title="De (data inicial)" readonly autocomplete="off">
+                <span class="input-group-text">Até</span>
+                <input type="text" class="form-control form-control-sm" id="lgAte" title="Até (data final)" readonly autocomplete="off">
               </div>
-              <input type="text" class="form-control form-control-sm w-auto" id="lgAte" title="Até (data final)" placeholder="Até" readonly autocomplete="off">
               <div class="d-flex align-items-center gap-1 ms-sm-auto">
                 <div class="input-group input-group-sm busca-tabela">
                   <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>

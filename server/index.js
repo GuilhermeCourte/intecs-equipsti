@@ -3163,13 +3163,18 @@ app.get('/api/drive-logs', exigirAuth, exigirPermissao('aba_logs'), wrap(async (
   const linhas = await googleDrive.listarEventos({
     q: trim(req.query.q) || null,
     eventos,
-    origem: trim(req.query.origem) || null,
+    proprietario: trim(req.query.proprietario) || null,
     de: de && !isNaN(de) ? de : null,
     ate: ate && !isNaN(ate) ? ate : null,
     limit: parseInt(req.query.limit, 10) || 50,
     offset: parseInt(req.query.offset, 10) || 0
   });
   res.json(linhas);
+}));
+
+// Donos distintos, para o select da toolbar.
+app.get('/api/drive-logs/proprietarios', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, res) => {
+  res.json(await googleDrive.listarProprietarios());
 }));
 
 // Puxa o que falta desde o último evento gravado. ?forcar=1 ignora o TTL de

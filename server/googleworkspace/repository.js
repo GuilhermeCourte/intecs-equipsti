@@ -98,11 +98,11 @@ export async function ultimoEventoUtc() {
  * @param {object} [f]
  * @param {string} [f.q]        busca em arquivo/usuário/dono/evento
  * @param {string[]} [f.eventos] restringe a estes eventos
- * @param {string} [f.origem]   WEB|DESKTOP|MOBILE|APP|DESCONHECIDA
+ * @param {string} [f.proprietario] dono do arquivo (drive compartilhado ou e-mail)
  * @param {Date}   [f.de]       data_evento >= de
  * @param {Date}   [f.ate]      data_evento < ate (limite superior EXCLUSIVO)
  */
-export async function listarEventos({ q = null, eventos = null, origem = null, de = null, ate = null, limit = 50, offset = 0 } = {}) {
+export async function listarEventos({ q = null, eventos = null, proprietario = null, de = null, ate = null, limit = 50, offset = 0 } = {}) {
   const params = {};
   const where = [];
 
@@ -120,7 +120,7 @@ export async function listarEventos({ q = null, eventos = null, origem = null, d
     });
     where.push(`evento IN (${nomes.join(',')})`);
   }
-  if (origem) { params.origem = S(origem, 20); where.push('origem = @origem'); }
+  if (proprietario) { params.prop = S(proprietario, 255); where.push('proprietario = @prop'); }
   if (de instanceof Date && !isNaN(de)) { params.de = DT(de); where.push('data_evento >= @de'); }
   if (ate instanceof Date && !isNaN(ate)) { params.ate = DT(ate); where.push('data_evento < @ate'); }
 
@@ -142,6 +142,23 @@ export async function listarEventos({ q = null, eventos = null, origem = null, d
     params
   );
   return r.recordset;
+}
+
+/**
+ * Donos distintos já gravados — alimenta o select da toolbar. Sai do banco
+ * inteiro (não da página carregada), senão o filtro só veria os 50 da tela.
+ * Só drives compartilhados: dono pessoa física é um e-mail, não um HD.
+ */
+export async function listarProprietarios() {
+  const r = await query(
+    `SELECT proprietario
+       FROM dbo.EQUIPSTI_google_drive_eventos
+      WHERE proprietario IS NOT NULL AND proprietario <> ''
+        AND em_drive_compartilhado = 1
+      GROUP BY proprietario
+      ORDER BY proprietario`
+  );
+  return r.recordset.map((x) => x.proprietario);
 }
 
 /** Apaga eventos mais antigos que `dias`. dias <= 0 desliga a limpeza. */
