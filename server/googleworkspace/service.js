@@ -278,6 +278,10 @@ export function listarEventos(filtros) {
   return repo.listarEventos(filtros);
 }
 
+export function listarProprietarios() {
+  return repo.listarProprietarios();
+}
+
 // Janela máxima da consulta ao vivo. Janela estreita é MUITO mais rápida nesta
 // API (recomendação do próprio Google) e "view" é o evento mais volumoso.
 // Exportada porque a rota valida o período antes (400) — aqui fica a garantia.

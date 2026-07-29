@@ -40,13 +40,13 @@ const CHOICES_IDS = [
   'ci_categoria', 'ci_subcategoria', 'ci_prioridade',
   'ci_unidade', 'ci_departamento', 'ciMaquinaSelect',
   'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
-  'cal_recorrencia', 'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvOrigem'
+  'cal_recorrencia', 'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvProprietario'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
 const FILTRO_STATUS_IDS = new Set([
   'imFiltroStatus', 'chamadosFiltroStatus',
   'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
-  'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvOrigem'
+  'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvProprietario'
 ]);
 
 // ---------- Estado em memória ----------
@@ -2111,7 +2111,9 @@ function ctxAtualizarTh(ctx) {
   if (ctx.clearBtnId) {
     const btn = $(ctx.clearBtnId);
     const buscaAtiva = ctx.buscaId && trim($(ctx.buscaId).value) !== '';
-    if (btn) btn.classList.toggle('filtro-on', Object.keys(ctx.filters).length > 0 || !!buscaAtiva);
+    // extraOn: filtros da toolbar que não são coluna nem busca (datas, selects).
+    if (btn) btn.classList.toggle('filtro-on',
+      Object.keys(ctx.filters).length > 0 || !!buscaAtiva || !!(ctx.extraOn && ctx.extraOn()));
   }
 }
 
@@ -3775,6 +3777,11 @@ const lgFilterCtx = {
   maxItems: 6,
   clearBtnId: 'btnLimparFiltrosLogs',
   buscaId: 'lgBusca',
+  // Acende o funil-x também pelas datas e pelos selects — só os da fonte ativa,
+  // já que trocar de fonte esconde o select da outra sem zerar o valor.
+  extraOn: () => !!($('lgDe').value || $('lgAte').value || (_lgFonte === 'DRIVE'
+    ? ($('lgDrvEvento').value || $('lgDrvProprietario').value)
+    : $('lgModulo').value)),
   onApply: () => (_lgFonte === 'DRIVE' ? renderDriveTabela() : renderLogsTabela()),
 };
 
@@ -3977,7 +3984,6 @@ const DRV_COLS = [
   { label: 'ARQUIVO' },
   { label: 'USUÁRIO' },
   { label: 'ORIGEM' },
-  { label: 'IP' },
 ];
 
 const DRV_EVENTO_LABEL = {
@@ -4011,7 +4017,6 @@ function drvColVal(l, col) {
   if (col === 2) return l.docTitulo || l.docId || '';
   if (col === 3) return l.atorEmail || '';
   if (col === 4) return DRV_ORIGEM_LABEL[l.origem] || l.origem || '';
-  if (col === 5) return l.ip || '';
   return '';
 }
 
@@ -4028,21 +4033,26 @@ function drvBadge(evento) {
 
 function renderLinhaDrive(l) {
   const arquivo = l.docTitulo || l.docId || '—';
+  // Nome vira link para o arquivo. /open?id= serve para qualquer tipo (documento,
+  // planilha, pasta): o Google redireciona para o app certo.
+  const nome = l.docId
+    ? '<a href="https://drive.google.com/open?id=' + encodeURIComponent(l.docId) +
+      '" target="_blank" rel="noopener" title="Abrir no Google Drive">' + logTrunc(arquivo) + '</a>'
+    : logTrunc(arquivo);
   const compartilhado = l.emDriveCompartilhado
     ? ' <i class="ph ph-users-three text-muted" title="Drive compartilhado"></i>' : '';
   // Dono só aparece quando é outra pessoa — é o caso que interessa.
   const dono = l.proprietario && l.proprietario !== l.atorEmail
-    ? '<div class="text-muted small">dono: ' + escapeHtml(l.proprietario) + '</div>' : '';
+    ? '<div class="text-muted small">' + escapeHtml(l.proprietario) + '</div>' : '';
   // O ID OAuth do app fica no title: é o que alimenta o mapa APPS_CONHECIDOS
   // do servidor quando a origem ainda sai como "Outro aplicativo".
   const tipApp = l.appOrigemId ? ' title="app ' + escapeHtml(l.appOrigemId) + '"' : '';
   return '<tr>' +
     '<td class="text-nowrap">' + escapeHtml(fmtDataHora(l.dataEvento)) + '</td>' +
     '<td>' + drvBadge(l.evento) + '</td>' +
-    '<td>' + logTrunc(arquivo) + compartilhado + dono + '</td>' +
+    '<td>' + nome + compartilhado + dono + '</td>' +
     '<td>' + escapeHtml(l.atorEmail || '—') + '</td>' +
     '<td><span' + tipApp + '>' + escapeHtml(DRV_ORIGEM_LABEL[l.origem] || l.origem || '—') + '</span></td>' +
-    '<td class="text-nowrap">' + escapeHtml(l.ip || '—') + '</td>' +
     '</tr>';
 }
 
@@ -4059,10 +4069,10 @@ function renderDriveTabela() {
 function montarQueryDrive(offset) {
   const p = new URLSearchParams();
   const eventos = $('lgDrvEvento').value;
-  const origem = $('lgDrvOrigem').value;
+  const proprietario = $('lgDrvProprietario').value;
   const q = $('lgBusca').value.trim();
   if (eventos) p.set('eventos', eventos);
-  if (origem) p.set('origem', origem);
+  if (proprietario) p.set('proprietario', proprietario);
   if (q) p.set('q', q);
   const de = $('lgDe').value, ate = $('lgAte').value;
   if (de) { const d = new Date(de + 'T00:00:00'); if (!isNaN(d)) p.set('de', d.toISOString()); }
@@ -4070,6 +4080,32 @@ function montarQueryDrive(offset) {
   p.set('limit', LOG_PAGE);
   p.set('offset', offset);
   return '/api/drive-logs?' + p.toString();
+}
+
+// Opções do select de dono. Saem do banco inteiro (o endpoint faz DISTINCT),
+// não das linhas carregadas — a tabela vem paginada de 50 em 50.
+async function carregarProprietariosDrive() {
+  let lista;
+  try {
+    lista = await api('GET', '/api/drive-logs/proprietarios');
+  } catch {
+    return; // sem lista o select fica só com "Todos" — não trava a aba
+  }
+  const atual = $('lgDrvProprietario').value;
+  // placeholder: true deixa o item vazio meio apagado, igual ao "Todos os
+  // gravados" (que ganha isso do Choices por vir como <option> vazia no HTML).
+  const itens = [{ value: '', label: 'Todos os HDs', placeholder: true, selected: !atual }]
+    .concat(lista.map((p) => ({ value: p, label: p, selected: p === atual })));
+  const inst = choicesMap['lgDrvProprietario'];
+  if (inst) {
+    // Só setChoices: setChoiceByValue dispararia 'change' e recarregaria a tabela.
+    inst.clearChoices();
+    inst.setChoices(itens, 'value', 'label', true);
+  } else {
+    $('lgDrvProprietario').innerHTML = itens.map((i) =>
+      '<option value="' + escapeHtml(i.value) + '"' + (i.selected ? ' selected' : '') +
+      '>' + escapeHtml(i.label) + '</option>').join('');
+  }
 }
 
 // A consulta ao vivo exige período; sem nada preenchido, usa o dia de hoje.
@@ -4128,10 +4164,11 @@ async function loadDriveLogs(reset = true) {
 async function sincronizarDrive(forcar = false) {
   const aviso = $('lgDrvSync');
   aviso.classList.remove('d-none', 'text-danger');
-  aviso.innerHTML = '<i class="ph ph-circle-notch fd-spin me-1"></i>Sincronizando com o Google...';
+  aviso.innerHTML = '<i class="ph ph-circle-notch fd-spin me-1"></i>Sincronizando com o Google Drive...';
   try {
     const r = await api('POST', '/api/drive-logs/sync' + (forcar ? '?forcar=1' : ''));
-    if (r.inseridos) await loadDriveLogs(true);
+    // Evento novo pode trazer um dono que ainda não estava no select.
+    if (r.inseridos) { await loadDriveLogs(true); carregarProprietariosDrive(); }
     if (r.completo === false) {
       // Backfill longo é fatiado em várias chamadas para não travar a tela.
       aviso.textContent = 'Importação inicial em andamento — clique em atualizar para continuar.';
@@ -4163,6 +4200,7 @@ function trocarFonteLogs() {
   ctxAtualizarTh(lgFilterCtx);
 
   if (drive) {
+    carregarProprietariosDrive();
     loadDriveLogs(true);
     sincronizarDrive();
   } else {
@@ -6884,7 +6922,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('lgFonte').addEventListener('change', trocarFonteLogs);
   // Datas e busca valem nas duas fontes; módulo só no Sistema e evento/origem
   // só no Drive — todos caem no mesmo dispatcher.
-  ['lgModulo', 'lgDe', 'lgAte', 'lgDrvOrigem'].forEach((id) => $(id).addEventListener('change', recarregarLogs));
+  ['lgModulo', 'lgDe', 'lgAte', 'lgDrvProprietario'].forEach((id) => $(id).addEventListener('change', recarregarLogs));
   $('lgDrvEvento').addEventListener('change', () => {
     // Trocar para/de "Visualização" muda a origem dos dados (ao vivo x banco).
     $('lgDrvAviso').classList.toggle('d-none', !drvAoVivo());
@@ -6901,7 +6939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       setSelectVal('lgModulo', '');
       setSelectVal('lgDrvEvento', '');
-      setSelectVal('lgDrvOrigem', '');
+      setSelectVal('lgDrvProprietario', '');
       if (fpMap['lgDe']) fpMap['lgDe'].clear(); else $('lgDe').value = '';
       if (fpMap['lgAte']) fpMap['lgAte'].clear(); else $('lgAte').value = '';
       $('lgBusca').value = '';
