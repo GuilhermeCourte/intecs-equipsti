@@ -1,6 +1,6 @@
 // Service Worker — estratégia network-first para conteúdo da própria origem
 // (mantém o app sempre atualizado) com fallback para cache quando offline.
-const CACHE = 'inv-cache-v12';
+const CACHE = 'inv-cache-v13';
 const SHELL = [
   './',
   './index.html',
