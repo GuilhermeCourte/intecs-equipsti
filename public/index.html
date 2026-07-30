@@ -5,6 +5,22 @@
   <!-- Evita o "flash" da tela de login ao recarregar com sessão ativa:
        oculta o login antes da pintura quando já existe token salvo. -->
   <script>try { if (localStorage.getItem('token')) document.documentElement.classList.add('sessao-ativa'); } catch (e) {}</script>
+  <!-- Aplica o tema salvo antes da pintura, evitando o "flash" de tema claro. -->
+  <script>
+    (function () {
+      var raiz = document.documentElement;
+      window.aplicarTema = function (modo) {
+        if (modo === 'dark') {
+          raiz.setAttribute('data-theme', 'dark');
+          raiz.setAttribute('data-bs-theme', 'dark');
+        } else {
+          raiz.removeAttribute('data-theme');
+          raiz.removeAttribute('data-bs-theme');
+        }
+      };
+      try { window.aplicarTema(localStorage.getItem('tema') === 'dark' ? 'dark' : 'light'); } catch (e) {}
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#2b2b2b">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,11 +54,14 @@
     :root {
       --ink:      #2b2b2b;   /* charcoal principal */
       --ink-2:    #1c1c1c;   /* charcoal escuro (hover) */
+      --ink-contrast: #fff;  /* texto sobre elementos preenchidos com --ink */
       --muted:    #9a9a9a;   /* texto auxiliar */
       --line:     #e4e4e4;   /* linhas / bordas */
       --bg:       #ffffff;
       --bg-soft:  #f4f4f5;
       --radius:   16px;
+      /* Barra de cabeçalho (topo/modais/flatpickr): sempre charcoal, não inverte no tema escuro */
+      --bar:      #2b2b2b;
 
       --bs-primary: #2b2b2b;
       --bs-primary-rgb: 43, 43, 43;
@@ -243,7 +262,7 @@
     .app-card { max-width: 980px; margin: 22px auto; border: none; border-radius: var(--radius); box-shadow: none !important; }
     .app-card.app-card-wide { max-width: 1320px; }
     .app-card .card-header {
-      background: var(--ink) !important;
+      background: var(--bar) !important;
       border-radius: var(--radius) var(--radius) 0 0 !important;
       padding: 1rem 1.25rem;
     }
@@ -798,7 +817,7 @@
 
     /* modal */
     .modal-content { border: none; border-radius: var(--radius); overflow: hidden; }
-    .modal-header.bg-primary { background: var(--ink) !important; }
+    .modal-header.bg-primary { background: var(--bar) !important; }
     /* Quando um modal tem um <form> embrulhando header/body/footer
        (ex.: #modalEditar), a rolagem flex do Bootstrap (modal-dialog-scrollable
        no desktop / tela cheia no celular) quebra e o rodapé (botão Salvar)
@@ -989,7 +1008,7 @@
     .flatpickr-day.nextMonthDay:hover {
       background: var(--bg-soft); border-color: var(--line);
     }
-    .flatpickr-months .flatpickr-month { background: var(--ink); color: #fff; border-radius: var(--radius) var(--radius) 0 0; }
+    .flatpickr-months .flatpickr-month { background: var(--bar); color: #fff; border-radius: var(--radius) var(--radius) 0 0; }
     .flatpickr-month { display: flex; align-items: center; justify-content: center; }
     .flatpickr-current-month { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; position: static; left: auto; }
     .flatpickr-current-month input.cur-year {
@@ -1002,8 +1021,8 @@
     .flatpickr-current-month .numInputWrapper span.arrowDown { border: none; background: transparent; }
     .flatpickr-current-month .numInputWrapper span.arrowUp::after { border-bottom-color: #fff; }
     .flatpickr-current-month .numInputWrapper span.arrowDown::after { border-top-color: #fff; }
-    .flatpickr-current-month .flatpickr-monthDropdown-months { background: var(--ink); color: #fff; appearance: none; -webkit-appearance: none; }
-    .flatpickr-current-month .flatpickr-monthDropdown-months option { background: var(--ink); color: #fff; }
+    .flatpickr-current-month .flatpickr-monthDropdown-months { background: var(--bar); color: #fff; appearance: none; -webkit-appearance: none; }
+    .flatpickr-current-month .flatpickr-monthDropdown-months option { background: var(--bar); color: #fff; }
     .flatpickr-weekdays { padding-top: 6px; }
     .flatpickr-months { padding-bottom: 6px; }
     .flatpickr-weekday { color: var(--muted); }
@@ -1042,7 +1061,7 @@
       .flatpickr-calendar::before,
       .flatpickr-calendar::after { display: none !important; }
       .fp-mobile-header {
-        background: var(--ink);
+        background: var(--bar);
         color: #fff;
         text-align: center;
         padding: 10px 16px;
@@ -1476,6 +1495,136 @@
     #notifLista .notif-vazio { padding: 1.1rem .9rem; color: var(--muted); font-size: .85rem; text-align: center; }
     #btnNotificacoes .ph { font-size: 1.15rem; line-height: 1; }
     #notifBadge { font-size: .6rem; }
+
+    /* ============================================================
+       Tema escuro — ativado via [data-theme="dark"] no <html>
+       (ver botão #btnTemaToggle / localStorage 'tema').
+       A tela de login (#authView) fica de fora: mantém as
+       variáveis no valor claro sempre, então não é afetada.
+       ============================================================ */
+    html[data-theme="dark"] #authView {
+      --ink: #2b2b2b; --ink-2: #1c1c1c; --ink-contrast: #fff;
+      --muted: #9a9a9a; --line: #e4e4e4; --bg: #fff; --bg-soft: #f4f4f5;
+    }
+    html[data-theme="dark"] {
+      background: var(--bg);
+      --ink: #e8e8ea;
+      --ink-2: #d4d4d8;
+      --ink-contrast: #1c1c1e;
+      --muted: #93939b;
+      --line: #38383c;
+      --bg: #18181b;
+      --bg-soft: #232327;
+      --thead-bg: #2a2a2f;
+      /* Bootstrap usa sua própria paleta escura (azulada) nos componentes
+         nativos (.card, .modal, .dropdown-menu, .list-group...) — força o
+         mesmo charcoal do resto da página em vez do cinza padrão dele. */
+      --bs-body-bg: var(--bg);
+      --bs-tertiary-bg: var(--bg-soft);
+      --bs-secondary-bg: var(--bg-soft);
+      --bs-border-color: var(--line);
+      --bs-border-color-translucent: var(--line);
+      /* .bg-light / .text-bg-light (ex.: painel de scripts favoritos na
+         Conexão Remota) usam --bs-light fixo, também fora da paleta. */
+      --bs-light: var(--bg-soft);
+      --bs-light-rgb: 35, 35, 39;
+    }
+    /* Elementos "preenchidos" (botão/pílula ativa) que ficam claros no tema
+       escuro precisam de texto escuro em vez do #fff fixo do tema claro. */
+    html[data-theme="dark"] .btn-primary,
+    html[data-theme="dark"] .btn-success,
+    html[data-theme="dark"] .btn-primary:hover,
+    html[data-theme="dark"] .btn-primary:focus,
+    html[data-theme="dark"] .btn-primary:active,
+    html[data-theme="dark"] .btn-success:hover,
+    html[data-theme="dark"] .btn-success:focus,
+    html[data-theme="dark"] .btn-success:active,
+    html[data-theme="dark"] .btn-outline-primary:hover,
+    html[data-theme="dark"] .btn-outline-secondary:hover,
+    html[data-theme="dark"] .col-filter-ativo .col-filter-icon,
+    html[data-theme="dark"] .btn-link.filtro-on,
+    html[data-theme="dark"] .btn-link.filtro-on:hover,
+    html[data-theme="dark"] .app-tabs .nav-link.active,
+    html[data-theme="dark"] .app-tabs .app-tabs-group .dropdown-item.active,
+    html[data-theme="dark"] .mm-item.active,
+    html[data-theme="dark"] .sub-tabs .nav-link.active,
+    html[data-theme="dark"] .flatpickr-day.selected,
+    html[data-theme="dark"] .tl-dot.origem,
+    html[data-theme="dark"] .flatpickr-calendar .fp-footer button {
+      color: var(--ink-contrast) !important;
+    }
+    /* Superfícies com branco fixo no CSS (não usavam variável) */
+    html[data-theme="dark"] .btn-light {
+      background: var(--bg-soft); color: var(--ink); border-color: var(--line);
+    }
+    html[data-theme="dark"] #colFilterDropdown,
+    html[data-theme="dark"] #askDialog,
+    html[data-theme="dark"] .log-busca-bar,
+    html[data-theme="dark"] .choices__inner,
+    html[data-theme="dark"] #mobileMenu,
+    html[data-theme="dark"] .cal-day,
+    html[data-theme="dark"] #notifLista .notif-item,
+    html[data-theme="dark"] .btn-dash-refresh,
+    html[data-theme="dark"] .dash-stats-row,
+    html[data-theme="dark"] .dash-panel {
+      background: var(--bg);
+    }
+    /* Choices.js define seu próprio cinza claro fixo pro estado desabilitado
+       (Visualizar Registro deixa os selects travados) — não é var(--bg). */
+    html[data-theme="dark"] .choices.is-disabled .choices__inner {
+      background: var(--bg-soft);
+    }
+    /* .table-light é a classe fixa do Bootstrap (bg claro + texto escuro)
+       usada no <thead> de todas as tabelas do sistema — não inverte sozinha
+       com o tema escuro, então precisa do mesmo tratamento aqui. */
+    html[data-theme="dark"] .table-light {
+      --bs-table-bg: var(--thead-bg);
+      --bs-table-color: var(--ink);
+      --bs-table-border-color: var(--line);
+      background-color: var(--thead-bg) !important;
+      color: var(--ink) !important;
+    }
+    html[data-theme="dark"] .col-filter-item { border-bottom-color: var(--line); }
+    html[data-theme="dark"] .form-label { color: #b8b8bd; }
+    html[data-theme="dark"] .pat-link { text-decoration-color: var(--line); }
+    html[data-theme="dark"] .tl-dot { box-shadow: 0 0 0 3px var(--bg); }
+    html[data-theme="dark"] #notifLista .notif-msg { color: #b8b8bd; }
+    html[data-theme="dark"] .table-sticky > table > thead th { background: var(--thead-bg) !important; }
+    html[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: var(--bg-soft); }
+    html[data-theme="dark"] .app-tabs {
+      background: rgba(24,24,27,.82); border-color: rgba(56,56,60,.7);
+    }
+    html[data-theme="dark"] .skel {
+      background-image: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.08) 50%, transparent 100%);
+    }
+    /* Choices.js: caixa/lista vêm com cores fixas do plugin */
+    html[data-theme="dark"] .choices__inner,
+    html[data-theme="dark"] .choices__list--dropdown,
+    html[data-theme="dark"] .choices__list[aria-expanded] {
+      border-color: var(--line);
+    }
+    html[data-theme="dark"] .choices__list--dropdown .choices__item,
+    html[data-theme="dark"] .choices__list[aria-expanded] .choices__item {
+      color: var(--ink); border-bottom-color: var(--line);
+    }
+    html[data-theme="dark"] .choices__list--dropdown,
+    html[data-theme="dark"] .choices__list[aria-expanded] {
+      background: var(--bg);
+    }
+    html[data-theme="dark"] .choices__list--dropdown .choices__item--selectable.is-highlighted,
+    html[data-theme="dark"] .choices__list[aria-expanded] .choices__item--selectable.is-highlighted,
+    html[data-theme="dark"] .choices__list--dropdown .choices__item--selectable.is-selected.is-highlighted,
+    html[data-theme="dark"] .choices__list[aria-expanded] .choices__item--selectable.is-selected.is-highlighted {
+      background: var(--ink); color: var(--ink-contrast);
+    }
+    /* Flatpickr: o CSS do CDN vem só com cores de tema claro */
+    html[data-theme="dark"] .flatpickr-calendar { background: var(--bg-soft); }
+    html[data-theme="dark"] .flatpickr-day { color: var(--ink); }
+    html[data-theme="dark"] .flatpickr-day.prevMonthDay,
+    html[data-theme="dark"] .flatpickr-day.nextMonthDay,
+    html[data-theme="dark"] .flatpickr-day.flatpickr-disabled { color: var(--muted); }
+    html[data-theme="dark"] .flatpickr-weekdays { background: var(--bg-soft); }
+    html[data-theme="dark"] .flatpickr-weekday { color: #fff; }
   </style>
 </head>
 <body>
@@ -1578,6 +1727,9 @@
               <div id="notifLista"></div>
             </div>
           </div>
+          <button class="btn btn-sm btn-light" id="btnTemaToggle" type="button" title="Tema escuro" aria-pressed="false">
+            <i class="ph ph-moon" id="iconTema"></i>
+          </button>
           <button class="btn btn-sm btn-light" id="btnSair">Sair</button>
         </div>
       </div>
@@ -2449,11 +2601,11 @@
                 <table class="table table-striped table-hover align-middle">
                   <thead class="table-light">
                     <tr>
-                      <th>DATA</th>
-                      <th>TÍTULO</th>
-                      <th>TIPO</th>
-                      <th>VALOR</th>
-                      <th>REPETIÇÃO</th>
+                      <th class="th-filterable" data-col="0">DATA <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                      <th class="th-filterable" data-col="1">TÍTULO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                      <th class="th-filterable" data-col="2">TIPO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                      <th class="th-filterable" data-col="3">VALOR <i class="ph ph-funnel-simple col-filter-icon"></i></th>
+                      <th class="th-filterable" data-col="4">REPETIÇÃO <i class="ph ph-funnel-simple col-filter-icon"></i></th>
                     </tr>
                   </thead>
                   <tbody id="calListaTbody">
