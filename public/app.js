@@ -1365,25 +1365,53 @@ function renderProximosVencimentosCal() {
 
 const CAL_RECORRENCIA_LABEL = { MENSAL: 'Mensal', ANUAL: 'Anual', NENHUMA: 'Não repete' };
 
+function calDataFmt(e) {
+  const [ano, mes, dia] = e.data.split('-');
+  return dia + '/' + mes + '/' + ano;
+}
+function calValorFmt(e) {
+  return e.valor != null ? 'R$ ' + Number(e.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '—';
+}
+
+function calColVal(e, col) {
+  switch (col) {
+    case 0: return calDataFmt(e);
+    case 1: return String(e.titulo || '');
+    case 2: return String(e.tipo || '');
+    case 3: return calValorFmt(e);
+    case 4: return CAL_RECORRENCIA_LABEL[e.recorrencia] || e.recorrencia;
+  }
+  return '';
+}
+
+const calFilterCtx = {
+  theadSel: '#calListaView thead th[data-col]',
+  getRows: () => CALENDARIO,
+  colVal: calColVal,
+  filters: {},
+  onApply: renderListaCalendario,
+};
+
 function renderListaCalendario() {
   const cont = $('calListaTbody');
   if (!CALENDARIO.length) {
     cont.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Nenhum evento cadastrado.</td></tr>';
+    ctxAtualizarTh(calFilterCtx);
     return;
   }
-  const itens = [...CALENDARIO].sort((a, b) => a.data.localeCompare(b.data));
-  cont.innerHTML = itens.map((e) => {
-    const [ano, mes, dia] = e.data.split('-');
-    const dataFmt = dia + '/' + mes + '/' + ano;
-    const valorTxt = e.valor != null ? 'R$ ' + Number(e.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '—';
+  const itens = CALENDARIO
+    .filter((e) => ctxPassa(calFilterCtx, e))
+    .sort((a, b) => a.data.localeCompare(b.data));
+  cont.innerHTML = itens.length ? itens.map((e) => {
     return '<tr class="row-clicavel" data-id="' + e.id + '">' +
-      '<td>' + dataFmt + '</td>' +
+      '<td>' + calDataFmt(e) + '</td>' +
       '<td>' + escapeHtml(e.titulo) + '</td>' +
       '<td>' + escapeHtml(e.tipo) + '</td>' +
-      '<td>' + valorTxt + '</td>' +
+      '<td>' + calValorFmt(e) + '</td>' +
       '<td><span class="cal-dot cal-evento--' + e.recorrencia + '" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span>' + (CAL_RECORRENCIA_LABEL[e.recorrencia] || e.recorrencia) + '</td>' +
       '</tr>';
-  }).join('');
+  }).join('') : '<tr><td colspan="5" class="text-muted text-center py-3">Nenhuma linha corresponde ao filtro.</td></tr>';
+  ctxAtualizarTh(calFilterCtx);
 }
 
 function mostrarCalGradeView() {
@@ -1634,8 +1662,8 @@ function renderListaOpcoes() {
   const visiveis = values.filter((v) => ctxPassa(opcoesFilterCtx, v));
   if (!visiveis.length) {
     container.innerHTML =
-      '<div class="table-responsive"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
-      '<thead><tr>' + opcoesThead(lista) + '</tr></thead>' +
+      '<div class="table-scroll-x table-sticky"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
+      '<thead class="table-light"><tr>' + opcoesThead(lista) + '</tr></thead>' +
       '<tbody><tr><td colspan="3" class="text-muted text-center py-3">' +
       'Nenhuma opção corresponde ao filtro.</td></tr></tbody></table></div>';
     ctxAtualizarTh(opcoesFilterCtx);
@@ -1688,8 +1716,8 @@ function renderListaOpcoes() {
   }).join('');
 
   container.innerHTML =
-    '<div class="table-responsive"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
-    '<thead><tr>' + opcoesThead(lista) + '</tr></thead>' +
+    '<div class="table-scroll-x table-sticky"><table class="table table-striped align-middle tabela-opcoes mb-0">' +
+    '<thead class="table-light"><tr>' + opcoesThead(lista) + '</tr></thead>' +
     '<tbody>' + linhas + '</tbody></table></div>';
   ctxAtualizarTh(opcoesFilterCtx);
 }
@@ -2412,6 +2440,9 @@ function setRegistrosView(view) {
 
 function configurarFiltrosTabela() {
   wireCtxFiltro(registrosFilterCtx, document.querySelector('#tabelaScroll thead'));
+  wireCtxFiltro(emprestimosFilterCtx, $('listaEmprestimos'));
+  wireCtxFiltro(usuariosFilterCtx, $('listaUsuarios'));
+  wireCtxFiltro(calFilterCtx, $('calListaView'));
 }
 
 // ============================================================
@@ -2655,6 +2686,79 @@ let _souMasterCI = false;
 
 let _usuariosCache = [];
 
+// Índices de coluna variam conforme o papel (Papel só aparece pro MASTER).
+function usuariosColStatus() { return _souMasterCI ? 2 : 1; }
+function usuariosColCriado() { return _souMasterCI ? 3 : 2; }
+
+function usuariosThead() {
+  const th = (col, label) => '<th class="th-filterable" data-col="' + col + '">' +
+    escapeHtml(label) + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>';
+  const papelTh = _souMasterCI ? th(1, 'Papel') : '';
+  return th(0, 'E-mail') + papelTh + th(usuariosColStatus(), 'Status') + th(usuariosColCriado(), 'Criado em');
+}
+
+function usuariosColVal(u, col) {
+  if (col === 0) return String(u.email || '');
+  if (_souMasterCI && col === 1) return String(u.role || '');
+  if (col === usuariosColStatus()) return u.ativo ? 'Ativo' : 'Inativo';
+  if (col === usuariosColCriado()) {
+    return u.criado_em ? new Date(u.criado_em).toLocaleDateString('pt-BR') : '';
+  }
+  return '';
+}
+
+const usuariosFilterCtx = {
+  theadSel: '#listaUsuarios thead th[data-col]',
+  getRows: () => _usuariosCache,
+  colVal: usuariosColVal,
+  filters: {},
+  onApply: renderUsuarios,
+};
+
+function renderUsuarios() {
+  const container = $('listaUsuarios');
+  if (!container) return;
+  if (!_usuariosCache.length) {
+    container.innerHTML = '<span class="text-muted">Nenhum usuário cadastrado.</span>';
+    return;
+  }
+  const visiveis = _usuariosCache.filter((u) => ctxPassa(usuariosFilterCtx, u));
+  const colspan = _souMasterCI ? 4 : 3;
+  const linhas = visiveis.length ? visiveis.map((u) => {
+    const dt = u.criado_em ? new Date(u.criado_em) : null;
+    const quando = dt
+      ? dt.toLocaleDateString('pt-BR') + ' ' +
+        dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : '—';
+    const ativo = !!u.ativo;
+    const emailEsc = escapeHtml(u.email);
+    const atIdx = u.email.indexOf('@');
+    const emailHtml = atIdx > -1
+      ? escapeHtml(u.email.slice(0, atIdx)) + '<span class="email-dominio">@' + escapeHtml(u.email.slice(atIdx + 1)) + '</span>'
+      : emailEsc;
+    const status = ativo
+      ? '<span class="badge-status badge-ativo">ATIVO</span>'
+      : '<span class="badge-status badge-inativo">INATIVO</span>';
+    // "PAPEL+" = permissões personalizadas (diferem do padrão do papel).
+    const papel = _souMasterCI
+      ? '<td>' + escapeHtml(u.role || '') +
+        (u.permissoes_customizadas ? '<span class="fw-bold" title="Permissões personalizadas">+</span>' : '') +
+        '</td>'
+      : '';
+    return '<tr class="row-clicavel" data-user-id="' + u.id + '">' +
+      '<td class="opt-nome">' + emailHtml + '</td>' +
+      papel +
+      '<td>' + status + '</td>' +
+      '<td>' + quando + '</td>' +
+      '</tr>';
+  }).join('') : '<tr><td colspan="' + colspan + '" class="text-muted text-center py-3">Nenhuma linha corresponde ao filtro.</td></tr>';
+  container.innerHTML =
+    '<div class="table-scroll-x table-sticky"><table class="table table-striped table-hover align-middle mb-0">' +
+    '<thead class="table-light"><tr>' + usuariosThead() + '</tr></thead>' +
+    '<tbody>' + linhas + '</tbody></table></div>';
+  ctxAtualizarTh(usuariosFilterCtx);
+}
+
 async function loadUsuarios() {
   const container = $('listaUsuarios');
   if (!container) return;
@@ -2666,45 +2770,8 @@ async function loadUsuarios() {
   } catch { _souMasterCI = false; }
 
   try {
-    const usuarios = await api('GET', _souMasterCI ? '/api/chamados-intecs/usuarios' : '/api/users');
-    _usuariosCache = usuarios;
-    if (!usuarios.length) {
-      container.innerHTML = '<span class="text-muted">Nenhum usuário cadastrado.</span>';
-      return;
-    }
-    const linhas = usuarios.map((u) => {
-      const dt = u.criado_em ? new Date(u.criado_em) : null;
-      const quando = dt
-        ? dt.toLocaleDateString('pt-BR') + ' ' +
-          dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-        : '—';
-      const ativo = !!u.ativo;
-      const emailEsc = escapeHtml(u.email);
-      const atIdx = u.email.indexOf('@');
-      const emailHtml = atIdx > -1
-        ? escapeHtml(u.email.slice(0, atIdx)) + '<span class="email-dominio">@' + escapeHtml(u.email.slice(atIdx + 1)) + '</span>'
-        : emailEsc;
-      const status = ativo
-        ? '<span class="badge-status badge-ativo">ATIVO</span>'
-        : '<span class="badge-status badge-inativo">INATIVO</span>';
-      // "PAPEL+" = permissões personalizadas (diferem do padrão do papel).
-      const papel = _souMasterCI
-        ? '<td>' + escapeHtml(u.role || '') +
-          (u.permissoes_customizadas ? '<span class="fw-bold" title="Permissões personalizadas">+</span>' : '') +
-          '</td>'
-        : '';
-      return '<tr class="row-clicavel" data-user-id="' + u.id + '">' +
-        '<td class="opt-nome">' + emailHtml + '</td>' +
-        papel +
-        '<td>' + status + '</td>' +
-        '<td>' + quando + '</td>' +
-        '</tr>';
-    }).join('');
-    const theadPapel = _souMasterCI ? '<th>Papel</th>' : '';
-    container.innerHTML =
-      '<div class="table-responsive"><table class="table table-striped table-hover align-middle mb-0">' +
-      '<thead><tr><th>E-mail</th>' + theadPapel + '<th>Status</th><th>Criado em</th></tr></thead>' +
-      '<tbody>' + linhas + '</tbody></table></div>';
+    _usuariosCache = await api('GET', _souMasterCI ? '/api/chamados-intecs/usuarios' : '/api/users');
+    renderUsuarios();
   } catch (err) {
     container.innerHTML = '<span class="text-danger">Erro ao carregar: ' + escapeHtml(err.message) + '</span>';
   }
@@ -2898,34 +2965,70 @@ function fmtData(d) {
   return partes.length === 3 ? partes[2] + '/' + partes[1] + '/' + partes[0] : d;
 }
 
+let _emprestimosCache = [];
+
+function empThead() {
+  const th = (col, label) => '<th class="th-filterable" data-col="' + col + '">' +
+    escapeHtml(label) + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>';
+  return th(0, 'PAT') + th(1, 'N/S') + th(2, 'UNIDADE') + th(3, 'DATA') + th(4, 'OBS') +
+    '<th class="text-end">Ação</th>';
+}
+
+function empColVal(e, col) {
+  switch (col) {
+    case 0: return String(e.pat || '');
+    case 1: return String(e.ns || '');
+    case 2: return String(e.unidade || '');
+    case 3: return fmtData(e.data);
+    case 4: return String(e.obs || '');
+  }
+  return '';
+}
+
+const emprestimosFilterCtx = {
+  theadSel: '#listaEmprestimos thead th[data-col]',
+  getRows: () => _emprestimosCache,
+  colVal: empColVal,
+  filters: {},
+  onApply: renderEmprestimos,
+};
+
+function renderEmprestimos() {
+  const container = $('listaEmprestimos');
+  if (!container) return;
+  if (!_emprestimosCache.length) {
+    container.innerHTML = '<span class="text-muted">Nenhum empréstimo em aberto.</span>';
+    return;
+  }
+  const visiveis = _emprestimosCache.filter((e) => ctxPassa(emprestimosFilterCtx, e));
+  const linhas = visiveis.length ? visiveis.map((e) => {
+    const nsAttr = e.ns ? ' data-ns="' + escapeHtml(e.ns) + '"' : '';
+    const acao = '<button type="button" class="acao-link acao-exibir" data-loan-id="' + e.id +
+      '" data-to="DEVOLVIDO" data-pat="' + escapeHtml(e.pat) + '"' + nsAttr +
+      ' data-unidade="' + escapeHtml(e.unidade) +
+      '"><i class="ph ph-arrow-u-down-left"></i> Devolver</button>';
+    return '<tr>' +
+      '<td>' + patLink(e.pat, e.ns) + '</td>' +
+      '<td>' + escapeHtml(e.ns || '—') + '</td>' +
+      '<td>' + escapeHtml(e.unidade) + '</td>' +
+      '<td>' + fmtData(e.data) + '</td>' +
+      '<td title="' + escapeHtml(e.obs) + '">' + escapeHtml(e.obs) + '</td>' +
+      '<td class="text-end">' + acao + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="text-muted text-center py-3">Nenhuma linha corresponde ao filtro.</td></tr>';
+  container.innerHTML =
+    '<div class="table-scroll-x table-sticky"><table class="table table-striped align-middle mb-0">' +
+    '<thead class="table-light"><tr>' + empThead() + '</tr></thead>' +
+    '<tbody>' + linhas + '</tbody></table></div>';
+  ctxAtualizarTh(emprestimosFilterCtx);
+}
+
 async function loadEmprestimos() {
   const container = $('listaEmprestimos');
   if (!container) return;
   container.innerHTML = '<span class="text-muted">Carregando...</span>';
   try {
-    const ativos = (await api('GET', '/api/loans')).filter((e) => e.status === 'EMPRESTADO');
-    if (!ativos.length) {
-      container.innerHTML = '<span class="text-muted">Nenhum empréstimo em aberto.</span>';
-      return;
-    }
-    const linhas = ativos.map((e) => {
-      const nsAttr = e.ns ? ' data-ns="' + escapeHtml(e.ns) + '"' : '';
-      const acao = '<button type="button" class="acao-link acao-exibir" data-loan-id="' + e.id +
-        '" data-to="DEVOLVIDO" data-pat="' + escapeHtml(e.pat) + '"' + nsAttr +
-        ' data-unidade="' + escapeHtml(e.unidade) +
-        '"><i class="ph ph-arrow-u-down-left"></i> Devolver</button>';
-      return '<tr>' +
-        '<td>' + patLink(e.pat, e.ns) + '</td>' +
-        '<td>' + escapeHtml(e.ns || '—') + '</td>' +
-        '<td>' + escapeHtml(e.unidade) + '</td>' +
-        '<td>' + fmtData(e.data) + '</td>' +
-        '<td title="' + escapeHtml(e.obs) + '">' + escapeHtml(e.obs) + '</td>' +
-        '<td class="text-end">' + acao + '</td></tr>';
-    }).join('');
-    container.innerHTML =
-      '<div class="table-responsive"><table class="table table-striped align-middle mb-0">' +
-      '<thead><tr><th>PAT</th><th>N/S</th><th>UNIDADE</th><th>DATA</th><th>OBS</th><th class="text-end">Ação</th></tr></thead>' +
-      '<tbody>' + linhas + '</tbody></table></div>';
+    _emprestimosCache = (await api('GET', '/api/loans')).filter((e) => e.status === 'EMPRESTADO');
+    renderEmprestimos();
   } catch (err) {
     container.innerHTML = '<span class="text-danger">Erro ao carregar: ' + escapeHtml(err.message) + '</span>';
   }
@@ -3098,6 +3201,29 @@ function renderTimeline(h) {
     }
   });
   return '<div class="timeline">' + itens.join('') + '</div>';
+}
+
+// ============================================================
+//  Tema claro/escuro (chave 'tema' no localStorage, aplicado
+//  cedo em index.html para evitar flash; aqui só liga o botão)
+// ============================================================
+function configurarTema() {
+  const btn = $('btnTemaToggle');
+  const icon = $('iconTema');
+  function atualizarIcone() {
+    const escuro = document.documentElement.getAttribute('data-theme') === 'dark';
+    icon.className = escuro ? 'ph ph-sun' : 'ph ph-moon';
+    btn.title = escuro ? 'Tema claro' : 'Tema escuro';
+    btn.setAttribute('aria-pressed', String(escuro));
+  }
+  atualizarIcone();
+  btn.addEventListener('click', () => {
+    const escuro = document.documentElement.getAttribute('data-theme') === 'dark';
+    const novo = escuro ? 'light' : 'dark';
+    localStorage.setItem('tema', novo);
+    window.aplicarTema(novo);
+    atualizarIcone();
+  });
 }
 
 // ============================================================
@@ -4102,8 +4228,6 @@ function renderLinhaDrive(l) {
     ? '<a href="https://drive.google.com/open?id=' + encodeURIComponent(l.docId) +
       '" target="_blank" rel="noopener" title="Abrir no Google Drive">' + logTrunc(arquivo) + '</a>'
     : logTrunc(arquivo);
-  const compartilhado = l.emDriveCompartilhado
-    ? ' <i class="ph ph-users-three text-muted" title="Drive compartilhado"></i>' : '';
   // Dono só aparece quando é outra pessoa — é o caso que interessa.
   const dono = l.proprietario && l.proprietario !== l.atorEmail
     ? '<div class="text-muted small">' + escapeHtml(l.proprietario) + '</div>' : '';
@@ -4113,7 +4237,7 @@ function renderLinhaDrive(l) {
   return '<tr>' +
     '<td class="text-nowrap">' + escapeHtml(fmtDataHora(l.dataEvento)) + '</td>' +
     '<td>' + drvBadge(l.evento) + '</td>' +
-    '<td>' + nome + compartilhado + dono + '</td>' +
+    '<td>' + nome + dono + '</td>' +
     '<td>' + escapeHtml(l.atorEmail || '—') + '</td>' +
     '<td><span' + tipApp + '>' + escapeHtml(DRV_ORIGEM_LABEL[l.origem] || l.origem || '—') + '</span></td>' +
     '</tr>';
@@ -6026,6 +6150,7 @@ function renderDashboard(d, filtros) {
 
   if (_chartUnidades) _chartUnidades.destroy();
   const ctx = $('chartUnidades').getContext('2d');
+  const escuro = document.documentElement.getAttribute('data-theme') === 'dark';
   _chartUnidades = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -6081,19 +6206,19 @@ function renderDashboard(d, filtros) {
           align: 'end',
           offset: 2,
           font: { family: 'Poppins', size: 11, weight: '600' },
-          color: '#2b2b2b',
+          color: escuro ? '#fff' : '#2b2b2b',
           formatter: (v) => v > 0 ? v : '',
         },
       },
       scales: {
         x: {
-          ticks: { font: { family: 'Poppins', size: 11 }, color: '#9a9a9a' },
+          ticks: { font: { family: 'Poppins', size: 11 }, color: escuro ? '#fff' : '#9a9a9a' },
           grid: { display: false },
           border: { display: false },
         },
         y: {
           ticks: { font: { family: 'Poppins', size: 11 }, color: '#9a9a9a', precision: 0 },
-          grid: { color: '#f0f0f0' },
+          grid: { color: escuro ? '#38383c' : '#f0f0f0' },
           border: { display: false },
           beginAtZero: true,
         },
@@ -6896,6 +7021,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initChoices();
   initFlatpickr();
   initIntecsMsaDatas();
+  configurarTema();
   configurarAuth();
   configurarFormInventario();
   inicializarCameraOverlay();
@@ -7154,18 +7280,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   // Lupa: busca em qualquer coluna, nas tabelas montadas no DOM. Registros e
   // as 3 tabelas de chamados filtram nos dados (renderTabela/render*).
-  wireBuscaTabela('empBusca', 'listaEmprestimos', 'btnLimparFiltrosEmprestimos');
+  wireBuscaTabela('empBusca', 'listaEmprestimos', 'btnLimparFiltrosEmprestimos',
+    () => Object.keys(emprestimosFilterCtx.filters).length > 0);
   wireBuscaTabela('opcoesBusca', 'listaOpcoes', 'btnLimparFiltrosOpcoes',
     () => Object.keys(opcoesFilterCtx.filters).length > 0);
   wireBuscaTabela('catBusca', 'catTbody');
   wireBuscaTabela('prBusca', 'prTbody');
   wireBuscaTabela('stBusca', 'stTbody');
-  wireBuscaTabela('usuariosBusca', 'listaUsuarios', 'btnLimparFiltrosUsuarios');
+  wireBuscaTabela('usuariosBusca', 'listaUsuarios', 'btnLimparFiltrosUsuarios',
+    () => Object.keys(usuariosFilterCtx.filters).length > 0);
   wireBuscaTabela('internetBusca', 'corpoTabelaInternet', 'btnLimparFiltrosInternet',
     () => Object.keys(internetFilterCtx.filters).length > 0);
   wireBuscaTabela('senhasBusca', 'corpoTabelaSenhas', 'btnLimparFiltrosSenhas');
   wireBuscaTabela('logBusca', 'logCorpo', 'btnLimparFiltrosLog');
-  wireBuscaTabela('calBusca', 'calListaTbody', 'btnLimparFiltrosCalendario');
+  wireBuscaTabela('calBusca', 'calListaTbody', 'btnLimparFiltrosCalendario',
+    () => Object.keys(calFilterCtx.filters).length > 0);
 
   // Botões de limpar filtro (funil-x) ao lado de cada lupa.
   const limparBusca = (id) => {
@@ -7174,8 +7303,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.value = '';
     el.dispatchEvent(new Event('input'));
   };
-  $('btnLimparFiltrosEmprestimos').addEventListener('click', () => limparBusca('empBusca'));
-  $('btnLimparFiltrosUsuarios').addEventListener('click', () => limparBusca('usuariosBusca'));
+  $('btnLimparFiltrosEmprestimos').addEventListener('click', () => {
+    Object.keys(emprestimosFilterCtx.filters).forEach((k) => delete emprestimosFilterCtx.filters[k]);
+    limparBusca('empBusca');
+    renderEmprestimos();
+  });
+  $('btnLimparFiltrosUsuarios').addEventListener('click', () => {
+    Object.keys(usuariosFilterCtx.filters).forEach((k) => delete usuariosFilterCtx.filters[k]);
+    limparBusca('usuariosBusca');
+    renderUsuarios();
+  });
   $('btnLimparFiltrosInternet').addEventListener('click', () => {
     Object.keys(internetFilterCtx.filters).forEach((k) => delete internetFilterCtx.filters[k]);
     limparBusca('internetBusca');
@@ -7183,7 +7320,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   $('btnLimparFiltrosSenhas').addEventListener('click', () => limparBusca('senhasBusca'));
   $('btnLimparFiltrosLog').addEventListener('click', () => limparBusca('logBusca'));
-  $('btnLimparFiltrosCalendario').addEventListener('click', () => limparBusca('calBusca'));
+  $('btnLimparFiltrosCalendario').addEventListener('click', () => {
+    Object.keys(calFilterCtx.filters).forEach((k) => delete calFilterCtx.filters[k]);
+    limparBusca('calBusca');
+    renderListaCalendario();
+  });
   $('btnAtualizarCalendario').addEventListener('click', () => {
     carregarCalendario().catch((err) => showAlert('alertCalendario', 'danger', 'Erro ao atualizar: ' + err.message));
   });
