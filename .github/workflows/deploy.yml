@@ -1,0 +1,27 @@
+name: Deploy VPS
+
+# /docker/gestaoti na VPS precisa ser um clone git de verdade (ver tutorial
+# no PR) antes deste workflow funcionar — ele só dá "git pull", não clona.
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /docker/gestaoti
+            git fetch origin master
+            git reset --hard origin/master
+            docker compose build
+            docker compose up -d
+            sleep 5
+            curl -f http://127.0.0.1:3000/api/health
