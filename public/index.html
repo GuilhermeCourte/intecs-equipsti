@@ -242,6 +242,17 @@
       .auth-panel .form-control:focus {
         border-color: var(--ink); box-shadow: 0 0 0 4px rgba(43,43,43,.12); background: #fff;
       }
+      /* O navegador pinta o autofill por cima do CSS normal (azulado no Chrome/
+         Edge, muda de tom sozinho no tema escuro) — sobrescreve com um inset
+         gigante pra manter o branco do campo em qualquer navegador/tema. */
+      .auth-panel .form-control:-webkit-autofill,
+      .auth-panel .form-control:-webkit-autofill:hover,
+      .auth-panel .form-control:-webkit-autofill:focus {
+        -webkit-text-fill-color: #212529;
+        -webkit-box-shadow: 0 0 0 1000px #fff inset;
+        box-shadow: 0 0 0 1000px #fff inset;
+        transition: background-color 9999s ease-in-out 0s;
+      }
       /* Título/subtítulo e botão no formato do login de chamados (cores charcoal) */
       .auth-title {
         display: block; font-size: clamp(1.45rem, 1.8vw, 2.1rem); font-weight: 800;
@@ -1502,9 +1513,15 @@
        A tela de login (#authView) fica de fora: mantém as
        variáveis no valor claro sempre, então não é afetada.
        ============================================================ */
+    /* #authView tem data-bs-theme="light" fixo no HTML — isso já reseta
+       sozinho todas as variáveis --bs-* (secondary-color, danger, etc.) e
+       o color-scheme nativo (autofill). Só as variáveis próprias do site
+       (--ink, --muted...) e o "color" explícito precisam ser repetidos
+       aqui, porque são herdados de fora (do <body>), não do Bootstrap. */
     html[data-theme="dark"] #authView {
       --ink: #2b2b2b; --ink-2: #1c1c1c; --ink-contrast: #fff;
       --muted: #9a9a9a; --line: #e4e4e4; --bg: #fff; --bg-soft: #f4f4f5;
+      color: var(--ink);
     }
     html[data-theme="dark"] {
       background: var(--bg);
@@ -1585,7 +1602,11 @@
       color: var(--ink) !important;
     }
     html[data-theme="dark"] .col-filter-item { border-bottom-color: var(--line); }
-    html[data-theme="dark"] .form-label { color: #b8b8bd; }
+    /* :not(#authView *): o rótulo E-mail/Senha do login usa cores próprias
+       (#555 no desktop, var(--muted) no mobile) que não devem mudar com o
+       tema — sem a exclusão, esta regra vencia por especificidade e
+       "vazava" a cor escura pro login. */
+    html[data-theme="dark"] .form-label:not(#authView *) { color: #b8b8bd; }
     html[data-theme="dark"] .pat-link { text-decoration-color: var(--line); }
     html[data-theme="dark"] .tl-dot { box-shadow: 0 0 0 3px var(--bg); }
     html[data-theme="dark"] #notifLista .notif-msg { color: #b8b8bd; }
@@ -1630,7 +1651,7 @@
 <body>
 
   <!-- ===================== TELA DE LOGIN ===================== -->
-  <div id="authView">
+  <div id="authView" data-bs-theme="light">
     <div class="auth-shell">
 
       <aside class="auth-aside">
