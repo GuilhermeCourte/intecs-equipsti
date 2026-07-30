@@ -1,7 +1,7 @@
 name: Deploy VPS
 
-# /docker/gestaoti na VPS precisa ser um clone git de verdade (ver tutorial
-# no PR) antes deste workflow funcionar — ele só dá "git pull", não clona.
+# /docker/gestaoti na VPS já é um clone git (setup feito manualmente, ver
+# PR #51). Este workflow só dá fetch/reset — não clona do zero.
 on:
   push:
     branches: [master]
