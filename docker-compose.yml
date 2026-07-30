@@ -9,8 +9,11 @@
 #   docker compose logs -f
 services:
   app:
+    # Sem "image:": com ela presente, o painel Docker da Hostinger tenta dar
+    # pull de gestaoti:latest num registro remoto antes de construir (falha
+    # com "access denied", já que essa imagem nunca foi publicada em lugar
+    # nenhum — só existe local, via build). Sem essa chave, ele constrói.
     build: .
-    image: gestaoti:latest
     container_name: gestaoti
     restart: unless-stopped
 
