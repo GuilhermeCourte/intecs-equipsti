@@ -22,7 +22,10 @@ services:
     #   - lock do sync do Google Drive (server/googleworkspace/service.js);
     #   - timers de lembrete do calendário -> e-mail duplicado.
 
-    env_file: .env
+    # Sem env_file: o editor de compose do Gerenciador Docker (Hostinger) não
+    # processa essa chave (referencia um arquivo que o painel não enxerga).
+    # As variáveis do .env vão coladas em bloco na seção "Ambiente" do painel,
+    # que injeta no container por fora do YAML.
 
     # Só no loopback: quem publica na internet é o nginx do host.
     ports:
