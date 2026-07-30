@@ -1,0 +1,46 @@
+# Dependências: reinstaladas no build com npm ci
+node_modules/
+
+# Segredos: injetados via env_file, nunca embutidos na imagem
+.env
+.env.local
+.env.*.local
+
+# Capturas de rede do eurosa usadas na engenharia reversa (~20 MB)
+*.har
+
+# Referências de design e material interno
+REFS_CHAMADOS/
+REF_DESIGN*.png
+intecsvsmsa.md
+plan.md
+scratch_icon.js
+
+# Artefatos de verificação visual
+.playwright-cli/
+output/
+
+# Scripts do RMM: rodam nas máquinas dos usuários, não no servidor
+scripts/
+
+# Vercel: hospedagem anterior, não vai para a imagem
+vercel.json
+api/
+
+# Ferramental de desenvolvimento
+.git/
+.gitignore
+.claude/
+CLAUDE.md
+.vscode/
+.idea/
+Dockerfile
+.dockerignore
+docker-compose.yml
+nginx/
+
+# Sistema operacional
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.log

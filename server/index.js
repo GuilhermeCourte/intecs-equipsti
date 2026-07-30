@@ -34,11 +34,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const app = express();
+// Atrás do proxy reverso (nginx na VPS): sem isto req.ip e req.protocol
+// refletem o proxy, não o cliente.
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(compression()); // JSON de inventário comprime ~85-90% — decisivo em rede lenta
 // 2mb: um registro vai com as 3 fotos no mesmo corpo, cada uma 800px/JPEG 0.7
-// em base64 — o default de 100kb do Express não cabe e gera 413 ao salvar
-// equipamento com foto. 2mb fica bem abaixo do limite de payload da Vercel (4.5mb).
+// em base64 — o default de 100kb não cabe. Mantido em sincronia com o
+// client_max_body_size do nginx (nginx/gestaoti.conf).
 app.use(express.json({ limit: '2mb' }));
 
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
@@ -62,6 +65,20 @@ const logMudou = (de, para, numeric = false) => {
   }
   return String(de ?? '') !== String(para ?? '');
 };
+
+// ===================== HEALTH =====================
+// Usado pelo healthcheck do container. Sem auth, então não devolve a mensagem
+// crua do driver (vazaria host/usuário do banco) — o detalhe vai para o log.
+// 503 quando o banco não responde: toda tela do sistema depende dele.
+app.get('/api/health', async (req, res) => {
+  try {
+    await query('SELECT 1 AS ok');
+    res.json({ ok: true, db: 'ok' });
+  } catch (err) {
+    console.error('Healthcheck: banco inacessível —', err.message);
+    res.status(503).json({ ok: false, db: 'erro' });
+  }
+});
 
 // ===================== AUTH =====================
 app.post('/api/auth/login', wrap(async (req, res) => {
