@@ -39,10 +39,11 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(cors());
 app.use(compression()); // JSON de inventário comprime ~85-90% — decisivo em rede lenta
-// 2mb: um registro vai com as 3 fotos no mesmo corpo, cada uma 800px/JPEG 0.7
-// em base64 — o default de 100kb não cabe. Mantido em sincronia com o
+// 15mb: um registro vai com as 3 fotos no mesmo corpo — o default de 100kb
+// não cabe. Folga generosa (fotos comprimidas ficam bem abaixo disso), só
+// pra travar request corrompido/anormal. Mantido em sincronia com o
 // client_max_body_size do nginx (nginx/gestaoti.conf).
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 const OPTION_LISTS = ['UNIDADE', 'STATUS', 'SETOR', 'EQUIPAMENTO', 'INSUMOS'];
 const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
