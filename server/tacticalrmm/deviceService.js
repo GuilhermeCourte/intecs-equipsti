@@ -141,7 +141,10 @@ export async function getResumoAgente(tacticalAgentId) {
       hostname: agent.hostname,
       make_model: agent.make_model,
       site_name: agent.site_name,
-      status_online: agent.status === 'online'
+      status_online: agent.status === 'online',
+      // Nome do campo difere do endpoint de listagem (logged_username): este é
+      // o detalhe do agente, cujo serializer do Tactical RMM usa outro nome.
+      logged_username: agent.logged_in_username || null
     };
   } catch (err) {
     console.warn('[tacticalrmm] agente', tacticalAgentId, 'não resolvido:', err.message);

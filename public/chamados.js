@@ -556,7 +556,7 @@ async function detectarMinhaMaquina() {
   if (salvo) {
     try {
       const agente = await api('GET', '/api/chamados-intecs/agente/' + encodeURIComponent(salvo));
-      return { id: agente.tactical_agent_id, hostname: agente.hostname || agente.tactical_agent_id };
+      return { id: agente.tactical_agent_id, hostname: agente.hostname || agente.tactical_agent_id, usuario: agente.logged_username };
     } catch {
       // Agente removido ou máquina reinstalada: esquece o ID e tenta por IP.
       localStorage.removeItem(AGENT_KEY);
@@ -565,17 +565,22 @@ async function detectarMinhaMaquina() {
   try {
     const { matches } = await api('POST', '/api/chamados-intecs/verificar-maquina');
     if (matches.length === 1) {
-      return { id: matches[0].tactical_agent_id, hostname: matches[0].hostname || matches[0].tactical_agent_id };
+      return { id: matches[0].tactical_agent_id, hostname: matches[0].hostname || matches[0].tactical_agent_id, usuario: matches[0].logged_username };
     }
   } catch { /* sem detecção — segue sem rótulo */ }
   return null;
+}
+
+// "HOSTNAME · usuario" — o usuário logado só entra quando o RMM informou um.
+function rotuloMaquina(hostname, usuario) {
+  return usuario ? `${hostname} · ${usuario}` : hostname;
 }
 
 // Monta o select conforme o modo que o servidor decidiu:
 //   SEDE    → só a própria máquina (ou "não identificada", que abre sem equipamento);
 //   UNIDADE → todas as máquinas da unidade, a detectada no topo.
 function montarOpcoesMaquina(minha, { modo, maquinas }) {
-  const minhaOpcao = minha ? [{ value: minha.id, label: minha.hostname + ' — minha máquina' }] : [];
+  const minhaOpcao = minha ? [{ value: minha.id, label: rotuloMaquina(minha.hostname, minha.usuario) + ' - minha máquina' }] : [];
   if (modo === 'SEDE') {
     setChoicesOptions('nc_maquina_select', minhaOpcao.length
       ? minhaOpcao
@@ -585,7 +590,7 @@ function montarOpcoesMaquina(minha, { modo, maquinas }) {
   const outras = (maquinas || [])
     .filter((m) => !minha || m.tactical_agent_id !== minha.id)
     .sort((a, b) => trim(a.hostname).localeCompare(trim(b.hostname)))
-    .map((m) => ({ value: m.tactical_agent_id, label: m.hostname || m.tactical_agent_id }));
+    .map((m) => ({ value: m.tactical_agent_id, label: rotuloMaquina(m.hostname || m.tactical_agent_id, m.logged_username) }));
   const opcoes = [...minhaOpcao, ...outras];
   // Lista vazia com seleção obrigatória seria beco sem saída (cache nunca
   // sincronizado): deixa abrir sem equipamento, como o portal fazia antes.

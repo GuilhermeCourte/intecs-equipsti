@@ -2647,7 +2647,8 @@ app.get('/api/chamados-intecs/maquinas', exigirAuth, carregarPerfilChamados, wra
     tactical_agent_id: a.tactical_agent_id,
     hostname: a.hostname,
     unidade: a.site_name,
-    status_online: !!a.status_online
+    status_online: !!a.status_online,
+    logged_username: a.logged_username || null
   });
 
   if (req.perfilCI.permissoesEfetivas.chamados_ver_todas_maquinas) {
