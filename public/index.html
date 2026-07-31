@@ -1606,6 +1606,13 @@
     html[data-theme="dark"] .choices.is-disabled .choices__inner {
       background: var(--bg-soft);
     }
+    /* Badge .bg-light.text-dark (módulo nos Logs, evento "view" na
+       auditoria do Drive): bg-light já vira --bg-soft escuro acima, mas
+       text-dark continua escuro fixo do Bootstrap — texto some no tema
+       escuro. */
+    html[data-theme="dark"] .badge.bg-light.text-dark {
+      color: var(--ink) !important;
+    }
     /* .table-light é a classe fixa do Bootstrap (bg claro + texto escuro)
        usada no <thead> de todas as tabelas do sistema — não inverte sozinha
        com o tema escuro, então precisa do mesmo tratamento aqui. */
