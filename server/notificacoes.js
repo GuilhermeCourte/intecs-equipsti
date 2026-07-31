@@ -11,6 +11,7 @@
 import { query, sql } from './db.js';
 import { enviarEmail } from './email.js';
 import { emailParaSolicitante } from './emailChamado.js';
+import { emitirTodos, emitirPara } from './realtime.js';
 
 const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
 
@@ -180,39 +181,52 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
       paramsSino
     );
 
+    // Sinaliza quem está com a tela aberta, para o sininho atualizar sem F5.
+    // Vai para todos os conectados de propósito: quem realmente recebeu linha
+    // é decidido pelo GET /api/notifications, que filtra pelo usuário do
+    // token — ninguém enxerga nada a mais. A alternativa (INSERT ... OUTPUT
+    // INSERTED.usuario_id, para mirar exatamente nos destinatários) trocaria
+    // um INSERT hoje infalível por um que quebra se alguém puser um trigger
+    // na tabela, e o catch lá embaixo engoliria a falha com console.warn —
+    // notificação sumindo em silêncio. Não vale o risco pela precisão.
+    emitirTodos('notificacao');
+
     // 2) E-mail (apenas quando email=true): BCC a todos os destinatários.
-    //    O envio é AGUARDADO de propósito: em serverless (Vercel) a invocação
-    //    congela assim que a resposta HTTP sai, e um disparo em segundo plano
-    //    seria interrompido no meio do diálogo SMTP — o e-mail nunca chegava.
+    //    O envio NÃO é aguardado: quem chama responde ao usuário na hora e o
+    //    diálogo SMTP corre em segundo plano. Ele já foi aguardado um dia, por
+    //    causa do serverless — na Vercel a invocação congelava assim que a
+    //    resposta HTTP saía e o e-mail era interrompido no meio. Com processo
+    //    24/7 na VPS isso não acontece, e abrir um chamado deixa de esperar
+    //    dois handshakes SMTP em série antes de responder.
     if (email) {
       const dest = await destinatariosEmail({ atorId, papeis: emailPapeis, usuarioIds: emailUsuarioIds });
       if (dest.length) {
         const corpoPronto = corpo;                  // ficha do chamado, quando houver
         const corpoTexto = mensagem || titulo;      // fallback genérico
         const quem = ator?.email || 'sistema';
-        try {
-          await enviarEmail({
-            bcc: dest,
-            subject: `[Gestão TI] ${titulo}`,
-            text: corpoPronto
-              ? corpoPronto.texto
-              : `${titulo}\n\n${corpoTexto}${renderMudancasTxt(mudancas)}\n\nAção realizada por: ${quem}`,
-            // Corpo pronto já é o documento inteiro — quem monta sabe melhor que
-            // o template genérico como aquele evento deve aparecer.
-            html: corpoPronto
-              ? corpoPronto.html
-              : montarEmailHtml({
-                tag: TIPO_LABEL[tipo] || 'Notificação',
-                titulo,
-                conteudoHtml: `<p style="margin:0 0 12px;">${esc(corpoTexto)}</p>` + renderMudancasHtml(mudancas),
-                rodapeHtml: `Ação realizada por <strong style="color:#2b2b2b;">${esc(quem)}</strong>.`
-              })
-          });
-        } catch (e) {
+        enviarEmail({
+          bcc: dest,
+          subject: `[Gestão TI] ${titulo}`,
+          text: corpoPronto
+            ? corpoPronto.texto
+            : `${titulo}\n\n${corpoTexto}${renderMudancasTxt(mudancas)}\n\nAção realizada por: ${quem}`,
+          // Corpo pronto já é o documento inteiro — quem monta sabe melhor que
+          // o template genérico como aquele evento deve aparecer.
+          html: corpoPronto
+            ? corpoPronto.html
+            : montarEmailHtml({
+              tag: TIPO_LABEL[tipo] || 'Notificação',
+              titulo,
+              conteudoHtml: `<p style="margin:0 0 12px;">${esc(corpoTexto)}</p>` + renderMudancasHtml(mudancas),
+              rodapeHtml: `Ação realizada por <strong style="color:#2b2b2b;">${esc(quem)}</strong>.`
+            })
+        }).catch((e) => {
           // Falha de e-mail nunca derruba a operação principal, mas precisa
           // aparecer no log com a resposta do servidor para ser diagnosticável.
+          // Tem que ser .catch e não try/catch: sem o await, a exceção chega
+          // pela promise, e rejeição sem tratamento derruba o processo.
           console.error('[email] falhou:', e.responseCode || '', e.response || e.message);
-        }
+        });
       }
     }
   } catch (err) {
@@ -235,7 +249,9 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
  * @param {string} [o.comentario]
  * @param {Array}  [o.mudancas]
  * @param {string} [o.equipamento]
- * @returns {Promise<boolean>} true se o e-mail saiu
+ * @returns {Promise<boolean>} true se o e-mail foi disparado (há destinatário
+ *   válido e o solicitante não é o próprio autor). A entrega em si acontece em
+ *   segundo plano — falha de SMTP aparece só no log.
  */
 export async function notificarSolicitante({ chamado, ator, titulo, chamada, comentario, mudancas, equipamento, tile }) {
   try {
@@ -243,6 +259,12 @@ export async function notificarSolicitante({ chamado, ator, titulo, chamada, com
     if (!donoId) return false;
     // Quem age não é avisado da própria ação — mesma regra do sininho.
     if (donoId === (Number(ator?.id) || 0)) return false;
+
+    // Sinal para o portal /chamados atualizar a lista sem F5. Aqui o alvo é
+    // uma pessoa só (o dono do chamado), então não faz sentido transmitir
+    // para todos como no sininho. Vem antes do e-mail de propósito: o canal
+    // in-app não depende de SMTP nenhum estar de pé.
+    emitirPara([donoId], 'chamado');
 
     const r = await query(
       'SELECT email FROM dbo.EQUIPSTI_usuarios WHERE id = @id AND ativo = 1',
@@ -257,7 +279,12 @@ export async function notificarSolicitante({ chamado, ator, titulo, chamada, com
       chamado, titulo, chamada, autor: ator?.email || 'a equipe de TI',
       comentario, mudancas, equipamento, tile
     });
-    return await enviarEmail({ to: destino, subject, html, text });
+    // Não aguardado, pela mesma razão de notificar(): o técnico não fica
+    // esperando o SMTP para ver o comentário dele salvo.
+    enviarEmail({ to: destino, subject, html, text }).catch((e) => {
+      console.error('[notificarSolicitante] falhou:', e.responseCode || '', e.response || e.message);
+    });
+    return true;
   } catch (e) {
     console.error('[notificarSolicitante] falhou:', e.responseCode || '', e.response || e.message);
     return false;
@@ -310,6 +337,11 @@ export async function notificarTeste(user) {
       { uid, tipo: S(a.tipo), acao: S(a.acao), titulo: S(a.titulo), msg: S(a.mensagem), link: S(a.link), ator: S(ATOR_TESTE) }
     );
   }
+
+  // Tempo real: o teste valida os canais, e agora são três. Sem isto o sininho
+  // só mostraria as amostras depois de um F5 — justamente o que o canal veio
+  // resolver. Mira só em quem pediu o teste: as amostras são dele.
+  emitirPara([uid], 'notificacao');
 
   // E-mail — 1 mensagem ao próprio usuário, demonstrando como chegam por e-mail
   // os eventos que disparam e-mail na vida real (empréstimos e chamados).

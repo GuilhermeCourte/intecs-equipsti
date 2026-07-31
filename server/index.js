@@ -4,6 +4,7 @@
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import path from 'node:path';
@@ -13,6 +14,7 @@ import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 import { notificar, notificarTeste, notificarSolicitante } from './notificacoes.js';
+import { inscrever } from './realtime.js';
 import { registrarLog, listarLogs, MODULOS_LOG } from './logs.js';
 import { emailParaEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
@@ -82,7 +84,102 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ===================== AUTH =====================
-app.post('/api/auth/login', wrap(async (req, res) => {
+// Freio de força bruta nas rotas que emitem token. Sem ele dá para tentar senha
+// em volume sem nada segurar: o bcrypt.compare é lento de propósito, mas isso
+// só atrasa o atacante — e ainda vira um jeito barato de queimar CPU do
+// servidor. Contagem em memória, que basta porque a instância é única (ver
+// docker-compose.yml). skipSuccessfulRequests: quem acerta não gasta cota.
+//
+// São DUAS camadas de propósito. O escritório inteiro sai por um IP público só,
+// então uma cota só por IP faria uma pessoa errando a senha trancar todos os
+// colegas junto. A de baixo é por conta; a de cima, por IP, e larga o bastante
+// para nenhum uso normal encostar nela.
+//
+// req.ip chega correto porque o nginx manda X-Forwarded-For e o app tem
+// trust proxy = 1 (ver acima).
+
+// Descreve de onde veio a tentativa, cruzando o IP com o cache do Tactical RMM.
+// O IP que chega é o PÚBLICO — atrás do NAT ele identifica o LOCAL, não a
+// máquina (o IP da MBO cobre 7 delas). Por isso o rótulo para na unidade, sem
+// fingir apontar um computador.
+//
+// "origem externa" é o caso mais interessante de todos: tentativa vinda de um
+// IP que não bate com nenhuma unidade. Diz origem, e não "usuário externo",
+// porque o IP não identifica pessoa — pode ser um técnico de casa ou do 4G.
+async function descreverOrigemIp(ip) {
+  try {
+    const agentes = await deviceIntecsRepo.buscarAgentesPorIp(ip);
+    if (!agentes.length) return `IP ${ip} · origem externa`;
+    const locais = [...new Set(agentes.map((a) =>
+      [a.client_name, a.site_name].filter(Boolean).join(' / ')).filter(Boolean))];
+    // Sem rótulo é só higiene de string: no Tactical RMM todo agente pertence
+    // obrigatoriamente a um cliente e a um site, então na prática não acontece.
+    return locais.length ? `IP ${ip} · ${locais.join(', ')}` : `IP ${ip}`;
+  } catch {
+    return `IP ${ip}`;
+  }
+}
+
+// Grava o bloqueio na aba Logs. Só o BLOQUEIO, não cada senha errada: como são
+// necessárias 10 falhas do mesmo valor para chegar aqui, um engano isolado
+// (senha digitada no campo de e-mail) nunca vira linha — o que torna seguro
+// guardar exatamente o que foi digitado, que é o dado útil num ataque.
+async function registrarBloqueioLogin(req, cota) {
+  try {
+    // Só a PRIMEIRA requisição bloqueada vira linha. O handler roda em todas as
+    // seguintes, e sem isto alguém insistindo mil vezes geraria mil linhas
+    // idênticas — afogando o resto da auditoria. (O onLimitReached, que fazia
+    // exatamente isso, está deprecado na v8 da lib.)
+    const rl = req.rateLimit;
+    if (rl && rl.used !== rl.limit + 1) return;
+    await registrarLog({
+      modulo: 'ACESSO',
+      acao: 'LOGIN_BLOQUEADO',
+      entidadeId: req.ip,
+      entidadeRotulo: await descreverOrigemIp(req.ip),
+      campo: cota,
+      usuario: trim(req.body?.email) || 'desconhecido'
+    });
+  } catch (e) {
+    console.warn('[acesso] falha ao registrar bloqueio:', e.message);
+  }
+}
+
+// Por (IP + conta tentada): segura quem fica testando senha de UMA pessoa, sem
+// afetar quem está do lado. O ipKeyGenerator normaliza IPv6 — concatenar req.ip
+// cru trataria cada endereço da mesma faixa /64 como um cliente diferente.
+const limiteConta = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    ipKeyGenerator(req.ip) + '|' + String(req.body?.email || '').trim().toLowerCase(),
+  message: { error: 'Muitas tentativas seguidas para este usuário. Aguarde alguns minutos.' },
+  handler: async (req, res, next, options) => {
+    await registrarBloqueioLogin(req, 'Cota por usuário');
+    res.status(options.statusCode).json(options.message);
+  }
+});
+
+// Por IP: pega quem espalha a mesma senha por várias contas, o que escapa da
+// cota por conta. Teto alto porque é compartilhado pelo escritório — ninguém
+// erra a senha 100 vezes em 15 minutos sem ser máquina.
+const limitePorIp = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.' },
+  handler: async (req, res, next, options) => {
+    await registrarBloqueioLogin(req, 'Cota por IP');
+    res.status(options.statusCode).json(options.message);
+  }
+});
+
+app.post('/api/auth/login', limitePorIp, limiteConta, wrap(async (req, res) => {
   const email = trim(req.body.email).toLowerCase();
   const senha = String(req.body.senha || '');
   if (!email || !senha) return res.status(400).json({ error: 'Informe e-mail e senha.' });
@@ -94,13 +191,27 @@ app.post('/api/auth/login', wrap(async (req, res) => {
         `SELECT id, email, senha_hash, ativo FROM dbo.EQUIPSTI_usuarios
           WHERE CHARINDEX('@', email) > 1 AND LOWER(LEFT(email, CHARINDEX('@', email) - 1)) = @usuario`,
         { usuario: S(email) });
-  if (r.recordset.length > 1) {
+  // Confere a senha contra TODOS os homônimos antes de decidir qualquer coisa.
+  // Antes, "informe o e-mail completo" saía só por existirem dois usuários com
+  // aquele nome — o que confirmava a existência das contas para quem só
+  // chutasse o nome, sem senha. Agora essa mensagem exige que a pessoa já tenha
+  // acertado uma senha válida; para todo o resto a resposta é sempre a mesma.
+  //
+  // De quebra resolve o caso real: dois homônimos com senhas diferentes agora
+  // entram digitando só o nome, sem precisar do e-mail inteiro.
+  //
+  // O teto de 5 existe porque cada comparação é um bcrypt (lento de propósito):
+  // sem ele, um nome que casasse com muitos usuários viraria carga de CPU.
+  const candidatos = r.recordset.slice(0, 5);
+  const validos = [];
+  for (const c of candidatos) {
+    if (await bcrypt.compare(senha, c.senha_hash)) validos.push(c);
+  }
+  if (!validos.length) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+  if (validos.length > 1) {
     return res.status(401).json({ error: 'Mais de um usuário com esse nome. Informe o e-mail completo.' });
   }
-  const u = r.recordset[0];
-  if (!u || !(await bcrypt.compare(senha, u.senha_hash))) {
-    return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
-  }
+  const u = validos[0];
   if (!u.ativo) return res.status(403).json({ error: 'Usuário inativo. Contate o administrador.' });
   res.json({ token: gerarToken(u), email: u.email });
 }));
@@ -148,6 +259,43 @@ app.post('/api/notifications/test', exigirAuth, wrap(async (req, res) => {
   const r = await notificarTeste({ id: req.user.sub, email: req.user.email });
   res.json({ ok: true, ...r });
 }));
+
+// Canal de tempo real (SSE). Manda só um sinal — quem recarrega é o cliente,
+// chamando GET /api/notifications (sininho) ou a lista do portal. Ver
+// server/realtime.js para o porquê de trafegar sinal e não dado.
+//
+// Três detalhes que parecem opcionais e não são:
+//
+// 1) NÃO usa wrap(): ele responde 500 em JSON no catch, e aqui os cabeçalhos
+//    já saíram — o res.status() estouraria ERR_HTTP_HEADERS_SENT dentro do
+//    próprio catch, virando unhandledRejection (que no Node 22 mata o
+//    processo). Handler síncrono, sem async: verificar token, setar
+//    cabeçalhos e inscrever não esperam nada.
+// 2) 'no-transform' desliga o compression() global. text/event-stream casa
+//    com o filtro padrão do pacote e o sinal ficaria represado no buffer do
+//    gzip, saindo só depois de dezenas de eventos acumulados.
+// 3) 'X-Accel-Buffering: no' desliga o buffer do nginx apenas nesta resposta,
+//    sem depender de editar o gestaoti.conf — que o deploy não toca, por
+//    rodar no host e não no container.
+app.get('/api/notifications/stream', exigirAuth, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  res.write(': conectado\n\n');
+
+  const desinscrever = inscrever(req.user.sub, res);
+
+  // O JWT vence (JWT_EXPIRES_HOURS, 12h por padrão) mas o socket não morre
+  // junto: sem isto uma sessão vencida seguiria recebendo sinal por dias.
+  // Ao fechar, o cliente reconecta, leva 401 e cai no logout que já existe.
+  const restaMs = (Number(req.user.exp) || 0) * 1000 - Date.now();
+  const expirar = setTimeout(() => res.end(),
+    Math.max(1000, Math.min(restaMs, 2 ** 31 - 1)));
+
+  req.on('close', () => { clearTimeout(expirar); desinscrever(); });
+});
 
 // ===================== BIOMETRIA (WebAuthn) =====================
 // Lista as credenciais biométricas de um usuário.
@@ -198,7 +346,7 @@ app.post('/api/biometric/register/verify', exigirAuth, wrap(async (req, res) => 
 
 // Inicia o login biométrico: gera challenge. O cliente informa a credencial
 // deste aparelho (credId) para apontá-la diretamente, sem o seletor do Google.
-app.post('/api/biometric/auth/options', wrap(async (req, res) => {
+app.post('/api/biometric/auth/options', limitePorIp, wrap(async (req, res) => {
   const credId = trim(req.body?.credId);
   const allow = credId ? [{ id: credId }] : [];
   const { flowId, options } = await opcoesAutenticacao(allow);
@@ -206,7 +354,7 @@ app.post('/api/biometric/auth/options', wrap(async (req, res) => {
 }));
 
 // Conclui o login biométrico: valida e emite o JWT (mesmo do login normal).
-app.post('/api/biometric/auth/verify', wrap(async (req, res) => {
+app.post('/api/biometric/auth/verify', limitePorIp, wrap(async (req, res) => {
   const { flowId, response } = req.body || {};
   if (!flowId || !response) return res.status(400).json({ error: 'Requisição inválida.' });
 
@@ -1278,8 +1426,8 @@ app.delete('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calen
 // ---- Avisos por e-mail antes do vencimento -----------------------------
 // Toda a aritmética de datas é feita em UTC "puro" (Date.UTC) sobre strings
 // YYYY-MM-DD, para não sofrer com o fuso do servidor. O "hoje" de referência
-// é o de São Paulo, para a janela bater com o calendário brasileiro tanto
-// local quanto na Vercel (onde o processo roda em UTC).
+// é o de São Paulo, para a janela bater com o calendário brasileiro mesmo com
+// o processo em UTC (o container roda assim de propósito — ver Dockerfile).
 const UM_DIA_MS = 86400000;
 const ymdParaUTC = (s) => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
 const utcParaYmd = (ms) => {
@@ -1366,18 +1514,10 @@ async function rodarLembretesCalendario() {
   return enviados;
 }
 
-// Gatilho do agendador. Na Vercel é chamado pelo Vercel Cron (header
-// Authorization: Bearer <CRON_SECRET>); localmente, pelo timer interno abaixo.
-// Sem CRON_SECRET definido, a rota fica desligada (404).
-app.get('/api/calendario/lembretes/run', wrap(async (req, res) => {
-  const segredo = (process.env.CRON_SECRET || '').trim();
-  if (!segredo) return res.status(404).json({ error: 'Não encontrado.' });
-  const auth = String(req.headers.authorization || '');
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : String(req.query.token || '');
-  if (token !== segredo) return res.status(401).json({ error: 'Não autorizado.' });
-  const enviados = await rodarLembretesCalendario();
-  res.json({ ok: true, enviados });
-}));
+// Nota: existia aqui um GET /api/calendario/lembretes/run, gatilho para o
+// Vercel Cron chamar de fora. Ele dependia de CRON_SECRET, que nunca foi
+// definida — então respondia 404 desde sempre. Quem dispara os lembretes é o
+// agendador interno, no fim deste arquivo.
 
 // ===================== PATs (origem dos empréstimos) =====================
 app.get('/api/pats', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
@@ -1694,6 +1834,7 @@ async function inserirChamadoMsaSeNovo({ codigo, dataSolic, problema, statusMsa,
 // travar o carregamento da aba quando há muitos chamados sem unidade.
 const SYNC_MAX_DETALHE = 60;
 
+
 // Puxa a lista de chamados do eurosa e sincroniza a aba INTECS vs MSA: cria uma
 // linha para cada chamado novo (backfill + novos), mantém o status_msa dos já
 // existentes atualizado, e preenche a unidade (do sistema) puxando o detalhe do
@@ -1707,16 +1848,22 @@ async function sincronizarIntecsMsa() {
   const assoc = {};
   assocRows.recordset.forEach((r) => { assoc[trim(r.detalhe)] = r.valor; });
 
-  // Linhas existentes (para saber quais ainda não têm unidade).
+  // Linhas existentes (para saber o status atual e quais ainda não têm unidade).
   const existRows = await query(
-    'SELECT numero_chamado_msa, unidade FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE numero_chamado_msa IS NOT NULL');
-  const existUnidade = {};
-  existRows.recordset.forEach((r) => { existUnidade[r.numero_chamado_msa] = r.unidade; });
+    'SELECT numero_chamado_msa, unidade, status_msa FROM dbo.EQUIPSTI_chamados_intecsmsa WHERE numero_chamado_msa IS NOT NULL');
+  const existente = {};
+  existRows.recordset.forEach((r) => { existente[r.numero_chamado_msa] = r; });
 
   const semUnidade = [];   // { codigo, chave } a buscar o detalhe
   for (const ch of lista) {
     const codigo = trim(ch.Codigo);
     if (!codigo) continue;
+    // Chamado que já está Finalizado aqui não muda mais (o eurosa não reabre),
+    // então não há status para refrescar nem unidade para buscar. É o que tira
+    // a maior parte das idas ao banco: o laço abaixo é serial, e hoje 65 dos
+    // 72 chamados estão nesse estado.
+    const ja = existente[codigo];
+    if (ja && trim(ja.status_msa) === 'Finalizado') continue;
     const statusMsa = mapStatusMsa(ch.St);
     const inseriu = await inserirChamadoMsaSeNovo({
       codigo,
@@ -1730,7 +1877,7 @@ async function sincronizarIntecsMsa() {
         'UPDATE dbo.EQUIPSTI_chamados_intecsmsa SET status_msa = @s WHERE numero_chamado_msa = @c',
         { s: S(statusMsa), c: S(codigo) });
     }
-    const temUnidade = !inseriu && trim(existUnidade[codigo]);
+    const temUnidade = !inseriu && trim(ja?.unidade);
     if (!temUnidade && ch.Chave) semUnidade.push({ codigo, chave: ch.Chave });
   }
 
@@ -1989,11 +2136,13 @@ function eurosaSessionExpired(result) {
     (typeof result.data === 'object' && result.data?.erro);
 }
 
-async function eurosaFetchChamados(pesquisa = '') {
-  // Body espelhado exatamente do que o browser envia (HAR capturado em 2026-06-16)
+async function eurosaFetchChamados(teto = EUROSA_TETO_PAGINA) {
+  // Body espelhado exatamente do que o browser envia (HAR capturado em 2026-06-16),
+  // mais Tudo/Tatual para não vir cortado em 15 (ver eurosaFetchTodosChamados).
   const body = new URLSearchParams({
     Dados: JSON.stringify({
-      Pesquisa: pesquisa, Ativo: '', Ordem: [],
+      Pesquisa: '', Ativo: '', Ordem: [],
+      Tudo: 'true', Tatual: String(teto),
       DataCriacao: '', DataInicioCriacao: '', DataFimCriacao: '',
       DataFinalizacao: '', DataInicioFinalizacao: '', DataFimFinalizacao: '',
       DataExpira: '', DataInicioExpira: '', HoraInicioExpira: '',
@@ -2033,39 +2182,45 @@ async function eurosaCall(fn) {
   return result;
 }
 
-// /Chamados/lista do eurosa sempre devolve no máximo 15 registros (confirmado:
-// mesmo sem nenhum filtro, "total" vem correto mas o array vem truncado em 15),
-// então uma única chamada nunca traz o histórico inteiro. Contorna varrendo por
-// mês: Pesquisa aceita o prefixo MM+AA do código do chamado (ex.: "0726" pega
-// os chamados 0726-xxxxxx) e cada mês fica bem abaixo do limite de página.
-// Início empírico: não há chamados anteriores a 07/2025 nesta conta.
-const EUROSA_HISTORICO_INICIO = { mes: 7, ano: 2025 };
+// /Chamados/lista devolve só 15 registros por padrão. Quem levanta esse teto
+// são dois campos que a própria tela do eurosa usa no botão "carregar mais":
+// 'Tatual' (quantos registros pular) e 'Tudo: true' (devolver tudo até esse
+// número numa resposta só). Achados no App_v2.js do portal, no handler da
+// classe .Mais:
+//
+//     tAtual = '"Tatual":"' + attrA.find('.TbodyC .TrC').length + '",';
+//     carregaGridPadrao(h, '"Tudo":"true","Tatual":"' + valA + '",');
+//
+// Com eles, uma requisição traz o histórico inteiro. Antes disto o contorno
+// era varrer mês a mês pelo prefixo do código (uma requisição por mês, sempre
+// crescendo) — desnecessário agora.
+//
+// O teto é alto de propósito: o valor não muda o tempo de resposta. Medido com
+// 72, 1.000, 10.000, 100.000 e 1.000.000 — sempre ~450ms e os mesmos 56 KB.
+// Age como um LIMIT do SQL, não como tamanho de buffer.
+const EUROSA_TETO_PAGINA = 10000;
 
 async function eurosaFetchTodosChamados() {
   if (!eurosaCookie) await eurosaLogin();
 
-  const hoje = new Date();
-  const prefixos = [];
-  let { mes, ano } = EUROSA_HISTORICO_INICIO;
-  while (ano < hoje.getFullYear() || (ano === hoje.getFullYear() && mes <= hoje.getMonth() + 1)) {
-    prefixos.push(String(mes).padStart(2, '0') + String(ano % 100).padStart(2, '0'));
-    mes++; if (mes > 12) { mes = 1; ano++; }
-  }
-
-  const porMes = await Promise.all(prefixos.map(async (prefixo) => {
-    const result = await eurosaCall(() => eurosaFetchChamados(prefixo));
+  const buscar = async (teto) => {
+    const result = await eurosaCall(() => eurosaFetchChamados(teto));
     const data = result.data;
     const lista = Array.isArray(data) ? data : (data?.root ?? data?.Lista ?? data?.lista ?? []);
-    const doMes = lista.filter((r) => String(r.Codigo || '').startsWith(prefixo + '-'));
-    if (doMes.length >= 15) {
-      console.warn('[chamados sweep] mês', prefixo, 'atingiu o limite de página (15) — pode haver chamados faltando nesse mês');
-    }
-    return doMes;
-  }));
+    return { lista, total: Number(data?.total) };
+  };
 
-  const porCodigo = new Map();
-  for (const doMes of porMes) for (const ch of doMes) porCodigo.set(ch.Codigo, ch);
-  return [...porCodigo.values()];
+  let { lista, total } = await buscar(EUROSA_TETO_PAGINA);
+  // 'total' vem com a contagem real mesmo quando o array é cortado. Se um dia
+  // o volume passar do teto, ele denuncia e a segunda tentativa já pede o
+  // número exato — em vez de perder chamado em silêncio, como acontecia
+  // quando o corte em 15 era invisível.
+  if (Number.isFinite(total) && total > lista.length) {
+    console.warn('[chamados] teto de', EUROSA_TETO_PAGINA, 'estourado:', total,
+      'chamados no eurosa. Refazendo a busca com o total exato.');
+    ({ lista } = await buscar(total));
+  }
+  return lista;
 }
 
 app.get('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
@@ -2528,6 +2683,11 @@ async function nomeEquipamentoDoChamado(chamado) {
 // customizado cai no genérico — o aviso continua saindo, só sem texto próprio.
 // 'tile' escolhe o ícone e a cor do topo do e-mail (ver emailChamado.js).
 const TEXTO_SOLICITANTE = {
+  EM_ATENDIMENTO: {
+    tile: 'resposta',
+    titulo: 'Seu chamado está em atendimento',
+    chamada: 'Um técnico já está cuidando disso. Avisamos assim que houver novidade.'
+  },
   AGUARDANDO_USUARIO: {
     tile: 'aguardando',
     titulo: 'Precisamos de uma informação sua',
@@ -3242,36 +3402,69 @@ app.get('/api/drive-logs/diagnostico', exigirAuth, exigirPermissao('aba_logs'), 
 }));
 
 // ===================== ESTÁTICO (front-end vanilla) =====================
-// Usado no desenvolvimento local; na Vercel os estáticos são servidos pela CDN
-// (ver vercel.json para o roteamento de /chamados em produção).
 app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.html')));
 app.use(express.static(PUBLIC_DIR));
 
-export default app;
+// ===================== AGENDAMENTO =====================
+// Milissegundos até a próxima ocorrência de HH:00 no fuso de São Paulo. O
+// processo roda em UTC de propósito (ver Dockerfile), então o horário local
+// precisa vir do Intl — getHours() daria a hora UTC. É a mesma razão de
+// hojeEmSaoPaulo() lá em cima.
+function msAteHoraSaoPaulo(hora) {
+  const partes = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit',
+    second: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date());
+  const valor = (tipo) => Number(partes.find((p) => p.type === tipo).value);
+  const agora = valor('hour') * 3600 + valor('minute') * 60 + valor('second');
+  const faltam = (hora * 3600 - agora + 86400) % 86400;
+  // faltam === 0 significa "é exatamente a hora agora": agenda para amanhã,
+  // senão o timer dispararia em rajada dentro do mesmo segundo.
+  return (faltam || 86400) * 1000;
+}
 
-// Sobe o servidor apenas localmente (na Vercel o app é importado como função).
-if (!process.env.VERCEL) {
-  const PORT = Number(process.env.PORT || 3000);
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`API + app em http://localhost:${PORT}`);
-  });
+// Roda fn todo dia na hora indicada. Reagenda a cada disparo em vez de usar
+// setInterval de 24h: assim não acumula desvio e acompanha o fuso se o horário
+// de verão voltar algum dia.
+function agendarDiario(hora, fn) {
+  const proximo = () => setTimeout(() => { fn(); proximo(); }, msAteHoraSaoPaulo(hora));
+  proximo();
+}
 
-  // Avisos do calendário: só rodam com processo vivo (local/self-hosted). Na
-  // Vercel o mesmo trabalho é feito pelo Vercel Cron chamando o endpoint acima.
-  const dispararLembretes = () => rodarLembretesCalendario()
-    .then((n) => { if (n) console.log(`Calendário: ${n} aviso(s) enviado(s).`); })
-    .catch((e) => console.error('Lembretes calendário:', e.message));
-  setTimeout(dispararLembretes, 30_000);
-  setInterval(dispararLembretes, 6 * 60 * 60 * 1000);
+const PORT = Number(process.env.PORT || 3000);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`API + app em http://localhost:${PORT}`);
+});
 
-  // Auditoria do Drive: o Google só guarda 6 meses, então não dá para depender
-  // só de alguém abrir a aba. Mesma limitação do calendário — na Vercel isto
-  // precisaria virar um cron em vercel.json.
-  if (googleDrive.configurado()) {
-    const sincronizarDrive = () => googleDrive.sincronizar()
-      .then((r) => { if (r.inseridos) console.log(`Google Drive: ${r.inseridos} evento(s) novo(s).`); })
-      .catch((e) => console.error('Sync Google Drive:', e.message));
-    setTimeout(sincronizarDrive, 60_000);
-    setInterval(sincronizarDrive, 6 * 60 * 60 * 1000);
-  }
+// Avisos do calendário às 07h de Brasília. Antes era "a cada 6h a partir do
+// boot", o que fazia cada deploy embaralhar o horário — um aviso de "vence
+// hoje" podia sair às 03h da manhã. Não há disparo no boot de propósito, pelo
+// mesmo motivo; rodarLembretesCalendario() é idempotente (ultimo_aviso_data),
+// então um dia perdido por deploy exatamente às 07h se resolve no dia seguinte.
+const HORA_LEMBRETES = 7;
+agendarDiario(HORA_LEMBRETES, () => rodarLembretesCalendario()
+  .then((n) => { if (n) console.log(`Calendário: ${n} aviso(s) enviado(s).`); })
+  .catch((e) => console.error('Lembretes calendário:', e.message)));
+console.log(`Lembretes do calendário: próximo disparo em ${Math.round(msAteHoraSaoPaulo(HORA_LEMBRETES) / 60000)} min (${HORA_LEMBRETES}h de Brasília).`);
+
+// Expurgo das notificações antigas, de madrugada. O sininho só enxerga os
+// últimos 3 dias, mas nada nunca apagava o resto: a tabela só crescia. 90 dias
+// é folga generosa sobre a janela de leitura.
+agendarDiario(3, () => query(
+  'DELETE FROM dbo.EQUIPSTI_notificacoes WHERE criado_em < DATEADD(day, -90, SYSUTCDATETIME())')
+  .then((r) => {
+    const n = r.rowsAffected?.[0] || 0;
+    if (n) console.log(`Notificações: ${n} linha(s) antiga(s) removida(s).`);
+  })
+  .catch((e) => console.error('Expurgo de notificações:', e.message)));
+
+// Auditoria do Drive: o Google só guarda 6 meses, então não dá para depender
+// só de alguém abrir a aba. Aqui o horário não importa (é sincronização de
+// dados, não aviso para gente), então segue relativo ao boot.
+if (googleDrive.configurado()) {
+  const sincronizarDrive = () => googleDrive.sincronizar()
+    .then((r) => { if (r.inseridos) console.log(`Google Drive: ${r.inseridos} evento(s) novo(s).`); })
+    .catch((e) => console.error('Sync Google Drive:', e.message));
+  setTimeout(sincronizarDrive, 60_000);
+  setInterval(sincronizarDrive, 6 * 60 * 60 * 1000);
 }

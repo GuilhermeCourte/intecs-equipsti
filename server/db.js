@@ -16,7 +16,12 @@ const config = {
     encrypt: String(process.env.DB_ENCRYPT).toLowerCase() === 'true',
     trustServerCertificate: String(process.env.DB_TRUST_SERVER_CERT).toLowerCase() === 'true'
   },
-  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
+  // min: 2 — o SQL Server é remoto (ver DB_HOST), então reabrir conexão custa
+  // handshake + login. Com min: 0 toda conexão ociosa caía em 30s e a primeira
+  // requisição depois de um período parado pagava isso. Fazia sentido em
+  // serverless, onde o processo morria de qualquer jeito; num processo 24/7 é
+  // só latência jogada fora.
+  pool: { max: 10, min: 2, idleTimeoutMillis: 30000 }
 };
 
 // Instância nomeada (ex.: SQLEXPRESS): usa instanceName e ignora a porta.

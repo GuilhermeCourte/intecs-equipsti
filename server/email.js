@@ -23,11 +23,18 @@ function getTransporter() {
     auth: process.env.SMTP_USER
       ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
       : undefined,
-    // Como o envio é aguardado antes da resposta HTTP, um SMTP lento não pode
-    // segurar a requisição indefinidamente (na Vercel a função tem tempo limite).
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
+    // Conexão reaproveitada entre envios. Era inútil em serverless (cada
+    // invocação era um processo novo); com o processo vivo 24/7 na VPS, os
+    // e-mails seguintes pulam handshake TCP + TLS + AUTH inteiros.
+    pool: true,
+    maxConnections: 2,
+    // Os timeouts eram apertados para caber no tempo limite da função na
+    // Vercel. Agora o envio acontece fora do caminho da resposta HTTP (ver
+    // notificacoes.js), então vale esperar um SMTP lento em vez de desistir
+    // e perder a mensagem.
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000
   });
   return transporter;
 }

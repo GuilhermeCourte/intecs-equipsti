@@ -171,6 +171,7 @@ async function entrar() {
   await carregarCategorias();
   await carregarPrioridadesEStatus();
   await carregarChamados();
+  conectarTempoReal();
   // Só depois das categorias/prioridades carregarem, senão o modal abriria
   // com os selects vazios. Vale uma vez: reabrir a página não repete.
   if (_abrirNovoAoEntrar) {
@@ -223,28 +224,100 @@ async function carregarCategorias() {
   setChoicesOptions('nc_categoria', _categorias.map((c) => ({ value: String(c.id), label: c.nome })));
 }
 
+// ---------- Canal de tempo real (SSE) ----------
+// Até agora o solicitante só ficava sabendo de mudança no chamado dele por
+// e-mail: este portal não tem sininho. O servidor manda só um sinal ("mexeram
+// no seu chamado") e quem recarrega é o carregarChamados() daqui.
+//
+// Consumido com fetch e não com EventSource: assim o Authorization vai como
+// cabeçalho normal (nenhum JWT no access_log do nginx), e a reconexão fica
+// explícita — o EventSource desiste em definitivo quando a resposta vem com
+// status != 200, que é o 502 do nginx enquanto o container sobe num deploy.
+let _rtAbort = null;
+let _rtRetry = null;
+let _rtRefresh = null;
+
+// Agrupa rajada: uma mudança de status dispara notificar() e
+// notificarSolicitante() quase juntos, e viriam como dois sinais seguidos.
+function agendarRefreshChamados() {
+  clearTimeout(_rtRefresh);
+  _rtRefresh = setTimeout(() => carregarChamados({ silencioso: true }), 1000);
+}
+
+async function conectarTempoReal() {
+  if (_rtAbort || !TOKEN || document.hidden) return;
+  _rtAbort = new AbortController();
+  try {
+    const res = await fetch('/api/notifications/stream', {
+      headers: { Authorization: 'Bearer ' + TOKEN },
+      signal: _rtAbort.signal
+    });
+    if (res.status === 401) { _rtAbort = null; return sair(); }
+    if (!res.ok) throw new Error('stream ' + res.status);
+    const leitor = res.body.getReader();
+    const dec = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await leitor.read();
+      if (done) break;
+      // Não é preciso parsear SSE: o que não for o ':ping' é sinal. O buffer
+      // existe porque um chunk pode cortar a linha no meio.
+      buffer += dec.decode(value, { stream: true });
+      if (buffer.includes('event:')) { buffer = ''; agendarRefreshChamados(); }
+      else if (buffer.length > 4096) buffer = '';
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') console.warn('Tempo real caiu:', err.message);
+  }
+  _rtAbort = null;
+  // Reconexão explícita: o servidor some a cada deploy e ninguém mais faria isto.
+  if (TOKEN && !document.hidden) _rtRetry = setTimeout(conectarTempoReal, 15_000);
+}
+
+function desconectarTempoReal() {
+  clearTimeout(_rtRetry);
+  if (_rtAbort) { _rtAbort.abort(); _rtAbort = null; }
+}
+
+// Aba escondida não precisa de canal aberto. Ao voltar, uma atualização
+// silenciosa põe a lista em dia — é por o canal trafegar só sinal que basta.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return desconectarTempoReal();
+  if (!TOKEN || !_perfil) return;
+  conectarTempoReal();
+  carregarChamados({ silencioso: true });
+});
+
 function popularSubcategorias(categoriaId) {
   const cat = _categorias.find((c) => String(c.id) === String(categoriaId));
   const subs = cat ? cat.subcategorias : [];
   setChoicesOptions('nc_subcategoria', subs.map((s) => ({ value: String(s.id), label: s.nome })));
 }
 
-async function carregarChamados() {
-  $('listaStatus').textContent = '';
-  $('listaPaginacao').innerHTML = '';
-  const skCard = `
+// silencioso: atualização que o usuário não pediu (chegou sinal do servidor).
+// Sem esqueleto e sem tela de erro — quem está lendo a lista não pode ver ela
+// piscar, nem perder o que já está na tela por uma falha de rede que ninguém
+// provocou. renderLista() preserva página, filtro e busca, e _primeiraRender já
+// é false, então também não re-anima.
+async function carregarChamados({ silencioso = false } = {}) {
+  if (!silencioso) {
+    $('listaStatus').textContent = '';
+    $('listaPaginacao').innerHTML = '';
+    const skCard = `
     <div class="sk-card">
       <div class="sk-col"><span class="sk sk-sm"></span><span class="sk sk-lg"></span><span class="sk sk-md"></span></div>
       <div class="sk-col sk-right"><span class="sk sk-pill"></span><span class="sk sk-pill"></span></div>
     </div>`;
-  $('listaChamados').innerHTML = skCard.repeat(3);
-  if (!_listaCache.length) $('statsGrid').innerHTML = '<div class="sk-stat"></div>'.repeat(4);
+    $('listaChamados').innerHTML = skCard.repeat(3);
+    if (!_listaCache.length) $('statsGrid').innerHTML = '<div class="sk-stat"></div>'.repeat(4);
+  }
   try {
     const lista = await api('GET', '/api/chamados-intecs');
     _listaCache = Array.isArray(lista) ? lista : [];
     renderStats();
     renderLista();
   } catch (err) {
+    if (silencioso) return;
     _listaCache = [];
     $('statsGrid').innerHTML = '';
     $('listaChamados').innerHTML = `
