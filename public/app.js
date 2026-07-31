@@ -2,8 +2,8 @@
 //  App de Gestão TI — cliente da API (Node + SQL Server)
 // ============================================================
 
-// Mesma origem: localmente o Node serve front + API (porta 3000) e na Vercel
-// o front e a função /api ficam no mesmo domínio. Por isso, caminho relativo.
+// Mesma origem: o Node serve front + API no mesmo processo (nginx só faz proxy
+// na frente). Por isso, caminho relativo.
 const API = '';
 
 let TOKEN = localStorage.getItem('token') || '';
@@ -3924,7 +3924,8 @@ const LOG_MODULOS = [
   ['REGISTROS', 'Registros'], ['EMPRESTIMOS', 'Empréstimos'],
   ['CHAMADOS_INTECS', 'Chamados INTECS'], ['CHAMADOS_MSA', 'Chamados MSA'],
   ['CONEXAO_REMOTA', 'Conexão Remota'], ['INTERNET', 'Internet'], ['SENHAS', 'Senhas'],
-  ['CALENDARIO', 'Calendário'], ['OPCOES', 'Opções'], ['USUARIOS', 'Usuários']
+  ['CALENDARIO', 'Calendário'], ['OPCOES', 'Opções'], ['USUARIOS', 'Usuários'],
+  ['ACESSO', 'Acesso']
 ];
 const LOG_MODULO_LABEL = Object.fromEntries(LOG_MODULOS);
 const LOG_PAGE = 50;
@@ -6360,6 +6361,72 @@ async function carregarNotificacoes() {
   }
 }
 
+// ---------- Canal de tempo real (SSE) ----------
+// O servidor manda só um sinal ("mudou alguma coisa"), sem dado nenhum — quem
+// recarrega é o carregarNotificacoes() aqui de cima. É o que torna a retomada
+// depois de uma queda trivial: reconectou, recarrega uma vez e está em dia.
+//
+// Consumido com fetch (e não com EventSource) por dois motivos: o Authorization
+// vai como cabeçalho normal, então nenhum JWT vai parar no access_log do nginx;
+// e o EventSource não reconectaria de qualquer forma — pela spec ele desiste em
+// definitivo quando a resposta vem com status != 200, que é exatamente o 502 do
+// nginx enquanto o container sobe num deploy.
+let _rtAbort = null;
+let _rtRetry = null;
+let _rtRefresh = null;
+
+// Agrupa rajadas: rodarLembretesCalendario() chama notificar() dentro de um
+// laço, então um dia com 20 avisos chegaria como 20 sinais seguidos.
+function agendarRefreshNotificacoes() {
+  clearTimeout(_rtRefresh);
+  _rtRefresh = setTimeout(carregarNotificacoes, 400);
+}
+
+async function conectarTempoReal() {
+  if (_rtAbort || !TOKEN || document.hidden) return;
+  _rtAbort = new AbortController();
+  try {
+    const res = await fetch(API + '/api/notifications/stream', {
+      headers: { Authorization: 'Bearer ' + TOKEN },
+      signal: _rtAbort.signal
+    });
+    if (res.status === 401) { _rtAbort = null; return sairDoApp(); }
+    if (!res.ok) throw new Error('stream ' + res.status);
+    const leitor = res.body.getReader();
+    const dec = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await leitor.read();
+      if (done) break;
+      // Não é preciso parsear SSE de verdade: o que não for o ':ping' é sinal.
+      // O buffer existe porque um chunk pode cortar a linha no meio.
+      buffer += dec.decode(value, { stream: true });
+      if (buffer.includes('event:')) { buffer = ''; agendarRefreshNotificacoes(); }
+      else if (buffer.length > 4096) buffer = '';
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') console.warn('Tempo real caiu:', err.message);
+  }
+  _rtAbort = null;
+  // Reconexão explícita: o servidor some a cada deploy e ninguém mais faria isto.
+  if (TOKEN && !document.hidden) _rtRetry = setTimeout(conectarTempoReal, 15_000);
+}
+
+function desconectarTempoReal() {
+  clearTimeout(_rtRetry);
+  if (_rtAbort) { _rtAbort.abort(); _rtAbort = null; }
+}
+
+// Aba escondida não precisa de canal aberto nem de recarregar nada. Ao voltar,
+// um carregarNotificacoes() põe o badge em dia — é justamente por o canal
+// trafegar só sinal que isso basta.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return desconectarTempoReal();
+  if (!TOKEN) return;
+  conectarTempoReal();
+  carregarNotificacoes();
+});
+
 async function abrirNotificacao(id, link) {
   try { await api('PUT', `/api/notifications/${id}/read`, {}); } catch (e) { console.error(e); }
   const btn = $('btnNotificacoes');
@@ -6397,6 +6464,7 @@ async function entrarNoApp(email, restaurarAba = false) {
   if (!_ciPerfil) await carregarMeuPerfilCI().catch(() => {});
   aplicarPermissoesAbas();
   carregarNotificacoes();
+  conectarTempoReal();
   // Aba inicial: a salva, se permitida e salva há menos de 1h; senão a primeira aba permitida.
   const abaAtivaTimestamp = Number(localStorage.getItem('abaAtivaTimestamp')) || 0;
   const abaSalvaValida = restaurarAba && (Date.now() - abaAtivaTimestamp) < 3600000;
@@ -6426,6 +6494,10 @@ async function entrarNoApp(email, restaurarAba = false) {
 
 function sairDoApp() {
   dadosCarregados = false;
+  // Antes de zerar o TOKEN: o laço de reconexão consulta ele para decidir se
+  // tenta de novo. E aqui não há location.reload() que limpasse sozinho — o
+  // portal /chamados tem, este não.
+  desconectarTempoReal();
   TOKEN = '';
   _ciPerfil = null; // próximo login recarrega papel/permissões
   invalidarCacheTodos(); // não herdar registros/facetas na próxima sessão da aba

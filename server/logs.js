@@ -9,16 +9,22 @@
 //  registrarLog() NUNCA lança — qualquer falha é só logada, para
 //  nunca derrubar a operação principal (criar registro, chamado,
 //  conectar numa máquina...). E é SEMPRE aguardado antes do
-//  res.json: em serverless (Vercel) a invocação congela assim que
-//  a resposta HTTP sai, e um INSERT em segundo plano se perderia
-//  no meio — mesma razão de notificacoes.js.
+//  res.json. Isso começou como restrição do serverless (na Vercel a
+//  invocação congelava assim que a resposta saía e o INSERT se
+//  perdia), mas continua de propósito na VPS: é um INSERT de
+//  milissegundos, e auditoria sumindo em silêncio é pior que a
+//  latência que ele custa. Diferente do e-mail em notificacoes.js,
+//  que passou a ser disparado em segundo plano.
 // ============================================================
 import { query, sql } from './db.js';
 
 // Módulos válidos — whitelist da rota GET /api/logs e do <select> do front.
 export const MODULOS_LOG = [
   'REGISTROS', 'EMPRESTIMOS', 'CHAMADOS_INTECS', 'CHAMADOS_MSA',
-  'CONEXAO_REMOTA', 'INTERNET', 'SENHAS', 'CALENDARIO', 'OPCOES', 'USUARIOS'
+  'CONEXAO_REMOTA', 'INTERNET', 'SENHAS', 'CALENDARIO', 'OPCOES', 'USUARIOS',
+  // ACESSO é o único módulo que não registra ação de gente logada: são as
+  // tentativas de login bloqueadas por excesso de erro (ver server/index.js).
+  'ACESSO'
 ];
 
 // NVARCHAR curto (com tamanho definido na coluna) — trunca defensivamente.

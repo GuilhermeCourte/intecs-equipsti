@@ -6,9 +6,6 @@ node_modules/
 .env.local
 .env.*.local
 
-# Vercel (vínculo do projeto + credenciais)
-.vercel
-
 # Logs
 *.log
 npm-debug.log*

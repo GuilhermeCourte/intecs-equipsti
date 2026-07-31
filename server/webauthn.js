@@ -27,6 +27,17 @@ function consumirChallenge(chave) {
   return item.challenge;
 }
 
+// Challenge só some do Map quando é consumido — quem abre o modal da biometria
+// e desiste deixa a entrada lá para sempre. Em serverless dava no mesmo (o
+// processo reciclava em minutos); num processo que vive meses é vazamento.
+const limpeza = setInterval(() => {
+  const agora = Date.now();
+  for (const [chave, item] of challenges) {
+    if (item.expira < agora) challenges.delete(chave);
+  }
+}, CHALLENGE_TTL_MS);
+limpeza.unref(); // faxina não é motivo para o processo continuar vivo
+
 // ---- base64url <-> Uint8Array ----
 const b64 = (u8) => Buffer.from(u8).toString('base64url');
 const fromB64 = (s) => new Uint8Array(Buffer.from(s, 'base64url'));
