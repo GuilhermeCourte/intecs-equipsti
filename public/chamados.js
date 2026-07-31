@@ -631,7 +631,11 @@ function configurarChamados() {
   initChoicesSelect('nc_categoria');
   initChoicesSelect('nc_subcategoria');
   initChoicesSelect('nc_prioridade', { placeholder: false });
-  initChoicesSelect('nc_maquina_select');
+  initChoicesSelect('nc_maquina_select', {
+    searchEnabled: true, searchPlaceholderValue: 'Buscar...',
+    // sem fuzzy: só entra quem realmente contém o texto digitado
+    fuseOptions: { threshold: 0, ignoreLocation: true }
+  });
 
   $('btnNovo').addEventListener('click', abrirModalNovo);
 
