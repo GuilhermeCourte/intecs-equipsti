@@ -79,6 +79,21 @@
     html::-webkit-scrollbar { display: none; }
 
     .hidden { display: none !important; }
+    /* Foto ampliada: overlay preso ao próprio modal-content (não ao viewport). */
+    .foto-ampliada-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, .85);
+      border-radius: var(--radius);
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+    }
+    .foto-ampliada-overlay.aberto { display: flex; }
+    /* Caixa encolhe pro tamanho real da foto — o X fica ancorado nela, não no overlay inteiro. */
+    .foto-ampliada-box { display: inline-block; position: relative; line-height: 0; }
+    .foto-ampliada-box img { display: block; max-width: 92vw; max-height: 85vh; object-fit: contain; border-radius: 8px; }
     /* Sessão persistida: esconde o login até o token ser validado (sem flash). */
     html.sessao-ativa #authView { display: none !important; }
     .form-label { font-weight: 600; font-size: .85rem; letter-spacing: .3px; color: #555; }
@@ -3063,6 +3078,12 @@
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalRegistrar" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
+        <div class="foto-ampliada-overlay">
+          <div class="foto-ampliada-box">
+            <img src="" alt="">
+            <button type="button" class="foto-ampliada-fechar border-0 position-absolute top-0 end-0 m-2 p-0 lh-1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.8rem"><i class="ph ph-x-circle"></i></button>
+          </div>
+        </div>
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title"><i class="ph ph-clipboard-text me-2"></i>Novo Registro</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -3155,7 +3176,7 @@
               <div class="row g-2 align-items-start">
                 <div class="col-4 d-none" id="foto_1_slot">
                   <div id="foto_1_preview" class="d-none position-relative">
-                    <img id="foto_1_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <img id="foto_1_thumb" src="" class="img-fluid rounded border w-100 foto-thumb" style="max-height:140px;object-fit:cover;cursor:pointer">
                     <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="btnDeletarFoto_1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="btnRefazerFoto_1"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
@@ -3163,7 +3184,7 @@
                 </div>
                 <div class="col-4 d-none" id="foto_2_slot">
                   <div id="foto_2_preview" class="d-none position-relative">
-                    <img id="foto_2_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <img id="foto_2_thumb" src="" class="img-fluid rounded border w-100 foto-thumb" style="max-height:140px;object-fit:cover;cursor:pointer">
                     <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="btnDeletarFoto_2" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="btnRefazerFoto_2"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
@@ -3171,7 +3192,7 @@
                 </div>
                 <div class="col-4 d-none" id="foto_3_slot">
                   <div id="foto_3_preview" class="d-none position-relative">
-                    <img id="foto_3_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <img id="foto_3_thumb" src="" class="img-fluid rounded border w-100 foto-thumb" style="max-height:140px;object-fit:cover;cursor:pointer">
                     <button type="button" class="border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="btnDeletarFoto_3" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" id="btnRefazerFoto_3"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
@@ -3809,6 +3830,12 @@
   <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEditar" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down">
       <div class="modal-content">
+        <div class="foto-ampliada-overlay">
+          <div class="foto-ampliada-box">
+            <img src="" alt="">
+            <button type="button" class="foto-ampliada-fechar border-0 position-absolute top-0 end-0 m-2 p-0 lh-1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.8rem"><i class="ph ph-x-circle"></i></button>
+          </div>
+        </div>
         <form id="formEditar" class="needs-validation" novalidate>
           <div class="modal-header bg-primary text-white">
             <h5 class="modal-title" id="modalEditarTitulo">Editar Registro</h5>
@@ -3901,7 +3928,7 @@
               <div class="row g-2 align-items-start">
                 <div class="col-4 d-none" id="edit_foto_1_slot">
                   <div id="edit_foto_1_preview" class="d-none position-relative">
-                    <img id="edit_foto_1_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <img id="edit_foto_1_thumb" src="" class="img-fluid rounded border w-100 foto-thumb" style="max-height:140px;object-fit:cover;cursor:pointer">
                     <button type="button" class="foto-edit-only border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_1" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="foto-edit-only btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_1"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
@@ -3909,7 +3936,7 @@
                 </div>
                 <div class="col-4 d-none" id="edit_foto_2_slot">
                   <div id="edit_foto_2_preview" class="d-none position-relative">
-                    <img id="edit_foto_2_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <img id="edit_foto_2_thumb" src="" class="img-fluid rounded border w-100 foto-thumb" style="max-height:140px;object-fit:cover;cursor:pointer">
                     <button type="button" class="foto-edit-only border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_2" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="foto-edit-only btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_2"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>
@@ -3917,7 +3944,7 @@
                 </div>
                 <div class="col-4 d-none" id="edit_foto_3_slot">
                   <div id="edit_foto_3_preview" class="d-none position-relative">
-                    <img id="edit_foto_3_thumb" src="" class="img-fluid rounded border w-100" style="max-height:140px;object-fit:cover">
+                    <img id="edit_foto_3_thumb" src="" class="img-fluid rounded border w-100 foto-thumb" style="max-height:140px;object-fit:cover;cursor:pointer">
                     <button type="button" class="foto-edit-only border-0 position-absolute top-0 end-0 m-1 p-0 lh-1" id="edit_btnDeletarFoto_3" style="background:none;color:white;filter:drop-shadow(0 0 2px rgba(0,0,0,.9));font-size:1.3rem"><i class="ph ph-x-circle"></i></button>
                     <button type="button" class="foto-edit-only btn btn-sm btn-outline-secondary w-100 mt-1" id="edit_btnRefazerFoto_3"><i class="ph ph-camera-rotate"></i> Refazer</button>
                   </div>

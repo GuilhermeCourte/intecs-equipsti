@@ -6951,6 +6951,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   ciCapturarDeepLinkChamado();
   if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
   modalEditar = new bootstrap.Modal($('modalEditar'));
+  document.querySelectorAll('.foto-thumb').forEach((img) => {
+    img.addEventListener('click', () => {
+      if (!img.src) return;
+      const overlay = img.closest('.modal-content').querySelector('.foto-ampliada-overlay');
+      overlay.querySelector('img').src = img.src;
+      overlay.classList.add('aberto');
+    });
+  });
+  document.querySelectorAll('.foto-ampliada-overlay').forEach((overlay) => {
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay || ev.target.closest('.foto-ampliada-fechar')) {
+        overlay.classList.remove('aberto');
+      }
+    });
+    overlay.closest('.modal').addEventListener('hidden.bs.modal', () => overlay.classList.remove('aberto'));
+  });
   modalMsg = new bootstrap.Modal($('modalMsg'));
   modalAsk = null; // substituído por dialog custom (#askOverlay)
   modalHistorico = new bootstrap.Modal($('modalHistorico'));
