@@ -2399,6 +2399,20 @@ function thFiltravel(cols) {
     escapeHtml(c.label).replace(/\n/g, '<br>') + ' <i class="ph ph-funnel-simple col-filter-icon"></i></th>').join('');
 }
 
+// Skeleton de carregamento das tabelas — mesmo shimmer do dashboard, para a
+// tabela não ficar vazia enquanto a API responde. `larguras` traz a largura da
+// célula de cada coluna; 'pill' rende um badge redondo (colunas de status).
+function skelTh(larguras) {
+  return larguras.map(w => '<th><span class="skel skel-line" style="height:9px;width:' +
+    (w === 'pill' ? '58px' : w) + '"></span></th>').join('');
+}
+function skelTr(larguras, linhas = 8) {
+  const tr = '<tr>' + larguras.map(w => '<td>' + (w === 'pill'
+    ? '<span class="skel skel-pill"></span>'
+    : '<span class="skel skel-line" style="width:' + w + '"></span>') + '</td>').join('') + '</tr>';
+  return tr.repeat(linhas);
+}
+
 // Aplica o filtro da tabela de Registros (funil de coluna e/ou busca da lupa).
 // O dropdown abre com as facetas (leves); o dump completo só é necessário
 // aqui, para filtrar de verdade — e, se falhar, o erro fica visível em vez
@@ -6569,14 +6583,19 @@ function renderChamados() {
   ctxAtualizarTh(chamadosFilterCtx);
 }
 
+// Larguras do skeleton, na ordem de CHAMADOS_COLS.
+const CHAMADOS_SKEL = ['44px', '76px', '65%', 'pill', '55%'];
+
 async function carregarChamados() {
   $('chamadosStatus').textContent = 'Carregando…';
-  $('chamadosThead').innerHTML = '';
-  $('chamadosTbody').innerHTML = '';
+  $('chamadosThead').innerHTML = skelTh(CHAMADOS_SKEL);
+  $('chamadosTbody').innerHTML = skelTr(CHAMADOS_SKEL);
   try {
     const data = await api('GET', '/api/chamados');
     _chamadosTodos = Array.isArray(data) ? data : (data.root ?? data.Lista ?? data.lista ?? []);
     if (!_chamadosTodos.length) {
+      $('chamadosThead').innerHTML = '';
+      $('chamadosTbody').innerHTML = '';
       $('chamadosStatus').textContent = 'Nenhum chamado encontrado.';
       return;
     }
@@ -6584,6 +6603,8 @@ async function carregarChamados() {
 
     renderChamados();
   } catch (e) {
+    $('chamadosThead').innerHTML = '';
+    $('chamadosTbody').innerHTML = '';
     $('chamadosStatus').textContent = 'Erro: ' + e.message;
   }
 }
@@ -6625,6 +6646,9 @@ const INTECSMSA_COLS = [
   { key: 'data_entrega_equip',    label: 'DATA ENTREGA',           fmt: imDataBR },
 ];
 
+// Larguras do skeleton, na ordem de INTECSMSA_COLS (colunas de status = badge).
+const INTECSMSA_SKEL = INTECSMSA_COLS.map(c => c.key.startsWith('status_') ? 'pill' : '70%');
+
 function imDataBR(v) { return v ? v.split('-').reverse().join('/') : ''; }
 
 // Regra de negócio do spec: STATUS MSA é derivado das datas de movimentação.
@@ -6644,7 +6668,7 @@ function imStatusBadge(st) {
   if (!st) return '';
   const dark = st === 'Finalizado';
   const estilo = dark
-    ? 'background:var(--ink);color:#fff;'
+    ? 'background:var(--ink);color:var(--ink-contrast);'
     : 'background:var(--bg-soft);color:var(--ink);border:1px solid var(--line);';
   return `<span class="badge" style="${estilo}">${escapeHtml(st)}</span>`;
 }
@@ -6727,7 +6751,7 @@ async function carregarIntecsMsa() {
       renderIntecsMsa();
       $('imStatus').textContent += ' · atualizando...';
     } else {
-      $('imTbody').innerHTML = '';
+      $('imTbody').innerHTML = skelTr(INTECSMSA_SKEL);
       $('imStatus').textContent = 'Sincronizando com a MSA…';
     }
 
@@ -6741,6 +6765,7 @@ async function carregarIntecsMsa() {
       // Sync falhou mas o cache está na tela: avisa sem derrubar a tabela.
       $('imStatus').textContent += ' · não foi possível atualizar agora';
     } else {
+      $('imTbody').innerHTML = '';
       $('imStatus').textContent = 'Erro: ' + e.message;
     }
   } finally {
