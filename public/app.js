@@ -372,7 +372,8 @@ function initChoices() {
       shouldSort: false,
       allowHTML: false,
       placeholder: !FILTRO_STATUS_IDS.has(id),
-      placeholderValue: 'Selecione...'
+      placeholderValue: 'Selecione...',
+      position: 'bottom'
     });
   });
 }
