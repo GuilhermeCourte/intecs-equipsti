@@ -2199,6 +2199,10 @@ function ctxPassa(ctx, r) {
   return true;
 }
 
+function ctxTemFiltro(ctx) {
+  return Object.keys(ctx.filters).length > 0;
+}
+
 function ctxAtualizarTh(ctx) {
   document.querySelectorAll(ctx.theadSel).forEach((th) => {
     th.classList.toggle('col-filter-ativo', ctx.filters[th.getAttribute('data-col')] != null);
@@ -3241,6 +3245,11 @@ function configurarTema() {
     localStorage.setItem('tema', novo);
     window.aplicarTema(novo);
     atualizarIcone();
+    // O Chart.js recebe as cores de rótulo e eixo como valores fixos no
+    // momento em que é construído — não são variáveis CSS que reagem sozinhas.
+    // Sem redesenhar aqui, quem trocasse de escuro para claro ficaria com
+    // texto branco sobre fundo branco no gráfico por unidade.
+    if (_dashData) renderDashboard(_dashData, getSelectedUnidades());
   });
 }
 
@@ -4098,6 +4107,10 @@ function renderLogsTabela() {
     ? linhas.map((l) => renderLinhaLog(l, true)).join('')
     : '<tr><td colspan="6" class="text-muted">Nenhum log encontrado.</td></tr>';
   ativarTooltipsLog($('lgTbody'));
+  // Com funil de coluna ativo a rolagem infinita some: o filtro só enxerga as
+  // linhas já carregadas, então o "Carregando mais..." puxaria página após
+  // página sem nada novo aparecer na tabela.
+  $('lgSentinel').classList.toggle('d-none', _lgAllLoaded || ctxTemFiltro(lgFilterCtx));
   ctxAtualizarTh(lgFilterCtx);
 }
 
@@ -4121,7 +4134,7 @@ async function loadLogs(reset = true) {
     renderLogsTabela();
     _lgOffset += novos.length;
     _lgAllLoaded = novos.length < LOG_PAGE;
-    $('lgSentinel').classList.toggle('d-none', _lgAllLoaded);
+    $('lgSentinel').classList.toggle('d-none', _lgAllLoaded || ctxTemFiltro(lgFilterCtx));
   } catch (err) {
     showAlert('alertLogs', 'danger', 'Erro ao carregar logs: ' + err.message);
     if (reset) $('lgTbody').innerHTML = '<tr><td colspan="6" class="text-danger">Falha ao carregar.</td></tr>';
@@ -4152,6 +4165,7 @@ function renderLogsModuloTabela() {
     ? linhas.map((l) => renderLinhaLog(l, false)).join('')
     : '<tr><td colspan="5" class="text-muted">Nenhum log encontrado.</td></tr>';
   ativarTooltipsLog($('lmTbody'));
+  $('lmSentinel').classList.toggle('d-none', _lmAllLoaded || ctxTemFiltro(lmFilterCtx));
   ctxAtualizarTh(lmFilterCtx);
 }
 
@@ -4167,7 +4181,7 @@ async function loadLogsModulo(reset = true) {
     renderLogsModuloTabela();
     _lmOffset += novos.length;
     _lmAllLoaded = novos.length < LOG_PAGE;
-    $('lmSentinel').classList.toggle('d-none', _lmAllLoaded);
+    $('lmSentinel').classList.toggle('d-none', _lmAllLoaded || ctxTemFiltro(lmFilterCtx));
   } catch (err) {
     $('lmTbody').innerHTML = '<tr><td colspan="5" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
   } finally {
@@ -4267,6 +4281,7 @@ function renderDriveTabela() {
   $('lgTbody').innerHTML = linhas.length
     ? linhas.map((l) => renderLinhaDrive(l)).join('')
     : '<tr><td colspan="6" class="text-muted">Nenhum evento encontrado.</td></tr>';
+  $('lgSentinel').classList.toggle('d-none', _drvAllLoaded || ctxTemFiltro(lgFilterCtx));
   ctxAtualizarTh(lgFilterCtx);
 }
 
@@ -4352,7 +4367,7 @@ async function loadDriveLogs(reset = true) {
     }
     _drvRows = reset ? novos : _drvRows.concat(novos);
     renderDriveTabela();
-    $('lgSentinel').classList.toggle('d-none', _drvAllLoaded);
+    $('lgSentinel').classList.toggle('d-none', _drvAllLoaded || ctxTemFiltro(lgFilterCtx));
   } catch (err) {
     // Inline, nunca em modal: a tela recarrega sozinha a cada troca de filtro.
     if (reset) $('lgTbody').innerHTML = '<tr><td colspan="6" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
@@ -6067,6 +6082,13 @@ let _chartUnidades = null;
 let _dashData = null;
 let _dashChamados = [];
 
+// Mostra/esconde um bloco do dashboard. Bloco sem dado — seja porque o
+// endpoint devolveu 403 (o usuário não tem a aba de origem) ou porque a
+// chamada falhou — simplesmente não entra na tela.
+function dashBloco(id, visivel) {
+  $(id).classList.toggle('hidden', !visivel);
+}
+
 function fmtMoeda(v) {
   return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
@@ -6144,20 +6166,11 @@ function renderDashboard(d, filtros) {
       }
     : d.geral;
 
-  // Stats
+  // Stats — o valor de locação não tem tile próprio: aparece por unidade e no
+  // total do rodapé da tabela "Detalhe por Unidade".
   $('dash-total-equip').textContent = g.total_equipamentos;
-
-  $('dash-valor-locacao').textContent = fmtMoeda(g.valor_locacao);
   $('dash-emprestados').textContent = g.emprestados;
   $('dash-insumos').textContent = g.total_insumos;
-
-  // Chamados MSA — total global
-  {
-    const abertos = _dashChamados.filter(c => c.St !== 'Resolvido' && c.St !== 'Cancelado').length;
-    $('dash-chamados-abertos').innerHTML = _dashChamados.length
-      ? `${abertos} <span style="font-size:.85rem;font-weight:500;color:var(--dash-orange)">em aberto</span>`
-      : '—';
-  }
 
   // Chart sub-label
   $('dashChartSub').textContent = unidades.length + (unidades.length === 1 ? ' unidade' : ' unidades');
@@ -6231,7 +6244,9 @@ function renderDashboard(d, filtros) {
       },
       scales: {
         x: {
-          ticks: { font: { family: 'Poppins', size: 11 }, color: escuro ? '#fff' : '#9a9a9a' },
+          // Nome da unidade na mesma cor do número acima da barra: os dois são
+          // leitura primária do gráfico, não legenda de apoio.
+          ticks: { font: { family: 'Poppins', size: 11 }, color: escuro ? '#fff' : '#2b2b2b' },
           grid: { display: false },
           border: { display: false },
         },
@@ -6286,26 +6301,317 @@ function renderDashboard(d, filtros) {
   `;
 }
 
-async function carregarDashboard() {
+// "desde 14:32" quando caiu hoje; com a data junto quando é mais antigo, senão
+// a hora sozinha seria ambígua. Entrada em UTC ("YYYY-MM-DD HH:MM:SS").
+function desdeQuando(isoUtc) {
+  if (!isoUtc) return '';
+  const t = new Date(String(isoUtc).replace(' ', 'T') + 'Z');
+  if (isNaN(t.getTime())) return '';
+  const hora = t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const hoje = new Date();
+  const mesmoDia = t.getDate() === hoje.getDate() && t.getMonth() === hoje.getMonth()
+    && t.getFullYear() === hoje.getFullYear();
+  return mesmoDia
+    ? `desde ${hora}`
+    : `desde ${String(t.getDate()).padStart(2, '0')}/${String(t.getMonth() + 1).padStart(2, '0')} ${hora}`;
+}
+
+// ---------- Consolidado das unidades (fonte: /api/conexoes, aba_internet) ----------
+// Quem entra na conta: só unidade com monitor vinculado. UP = online;
+// DOWN/INSTAVEL = problema; PAUSADO/NAO_VERIFICADO/DESCONHECIDO ficam de fora
+// (não dá para afirmar nem uma coisa nem outra, e contá-los como offline
+// mentiria na frase). Cores e rótulos são os mesmos da aba Internet.
+function renderConsolidadoUnidades(r) {
+  const comMonitor = (r?.unidades || []).filter(u => u.status !== 'SEM_MONITOR');
+  if (!comMonitor.length) return dashBloco('dashStatusUnidades', false);
+
+  const problema = comMonitor.filter(u => u.status === 'DOWN' || u.status === 'INSTAVEL');
+  const online = comMonitor.filter(u => u.status === 'UP');
+  const semMonitor = r.unidades.length - comMonitor.length;
+
+  // Tudo no ar não precisa de número: a contagem só interessa quando falta
+  // alguém, e aí ela vem junto de quem é.
+  const frase = !problema.length && online.length === comMonitor.length
+    ? 'Todas as unidades online'
+    : `${online.length}/${comMonitor.length} unidades online`;
+
+  const partes = [`<div class="dash-status-txt">
+      <span class="dash-dot dash-dot--${problema.length ? 'red' : 'green'}"></span>${frase}
+    </div>`];
+
+  partes.push(...problema.map(u => `<span class="dash-status-chip">
+      <span class="dash-dot dash-dot--${u.status === 'DOWN' ? 'red' : 'orange'}"></span>
+      ${escapeHtml(u.monitor || u.unidade)} ${CX_ROTULO[u.status].toLowerCase()} ${escapeHtml(desdeQuando(u.desde))}
+    </span>`));
+
+  const obs = [];
+  if (semMonitor) obs.push(`${semMonitor} sem monitor`);
+  if (r.atualizadoEm) obs.push(tempoRelativo(r.atualizadoEm));
+  if (obs.length) partes.push(`<span class="dash-status-obs">${escapeHtml(obs.join(' · '))}</span>`);
+
+  const el = $('dashStatusUnidades');
+  el.className = 'dash-status' + (problema.length ? ' dash-status--alerta' : '');
+  el.innerHTML = partes.join('');
+  dashBloco('dashStatusUnidades', true);
+}
+
+// ---------- Chamados: Intecs (helpdesk interno) + MSA (eurosa) ----------
+// Nenhum dos dois respeita o filtro de unidades do dashboard: o /api/chamados
+// do eurosa não traz unidade na lista (só no detalhe de cada chamado), e
+// misturar um tile filtrado com outro global enganaria mais do que ajudaria.
+function renderChamadosDash(ci, msaRaw) {
+  if (ci) {
+    $('dash-ci-abertos').textContent = ci.abertos ?? 0;
+    // Um tile de 1/5 de largura não cabe as quatro contagens sem quebrar linha
+    // e esticar a faixa inteira. Mostra o que é mais urgente e cala o resto —
+    // a quebra completa está no dashboard da própria aba Chamados.
+    const sub = [];
+    if (ci.vencidos) sub.push(`<span style="color:var(--dash-red);font-weight:700">${ci.vencidos} vencido${ci.vencidos > 1 ? 's' : ''}</span>`);
+    if (ci.sla_proximos_vencimento) sub.push(`<span style="color:var(--dash-orange)">${ci.sla_proximos_vencimento} vence em 2h</span>`);
+    if (!sub.length && ci.em_andamento) sub.push(`${ci.em_andamento} em andamento`);
+    $('dash-ci-sub').innerHTML = sub.join(' · ') || 'nada em aberto';
+  }
+  dashBloco('dashStatIntecs', !!ci);
+
+  if (msaRaw) {
+    const abertos = _dashChamados.filter(c => c.St !== 'Resolvido' && c.St !== 'Cancelado').length;
+    $('dash-chamados-abertos').textContent = _dashChamados.length ? abertos : '—';
+  }
+  dashBloco('dashStatMsa', !!msaRaw);
+}
+
+// ---------- Eventos do mês (fonte: /api/calendario/eventos, aba_calendario) ----------
+function itemEventoDash(x, vencido) {
+  const d = x.data;
+  const rec = x.evt.recorrencia;
+  const sub = [x.evt.tipo, rec === 'MENSAL' ? 'mensal' : (rec === 'ANUAL' ? 'anual' : null)]
+    .filter(Boolean).join(' · ');
+  return `<div class="dash-item">
+    <span class="dash-item-quando">${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}</span>
+    <span class="dash-dot cal-evento--${rec}" style="margin-top:.28rem"></span>
+    <span class="dash-item-corpo">
+      <div class="dash-item-tit">${escapeHtml(x.evt.titulo)}${vencido ? ' <span class="badge bg-danger" style="font-size:.55rem;vertical-align:middle">VENCIDO</span>' : ''}</div>
+      ${sub ? `<div class="dash-item-sub">${escapeHtml(sub)}</div>` : ''}
+    </span>
+    ${x.evt.valor ? `<span class="dash-item-val">${fmtMoeda(x.evt.valor)}</span>` : ''}
+  </div>`;
+}
+
+// Ocorrência de um evento DENTRO de um mês específico, ou null se não cai nele.
+// proximaOcorrenciaCalendario() só olha para frente a partir de hoje; navegar
+// pelos meses exige a pergunta inversa: "o que cai em novembro?".
+//
+// Faz o clamp de fim de mês que o servidor já fazia (proximaOcorrencia, em
+// server/index.js): um MENSAL do dia 31 cai em 30/11, não vaza para 01/12.
+function ocorrenciaNoMes(evt, ano, mes) {
+  const [a, m, d] = evt.data.split('-').map(Number);
+  const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+  if (evt.recorrencia === 'MENSAL') return new Date(ano, mes, Math.min(d, ultimoDia));
+  if (evt.recorrencia === 'ANUAL')  return (m - 1 === mes) ? new Date(ano, mes, Math.min(d, ultimoDia)) : null;
+  return (a === ano && m - 1 === mes) ? new Date(ano, mes, d) : null;
+}
+
+let _dashEventos = [];
+let _dashMesOffset = 0;   // 0 = mês corrente; navegação é 100% no cliente
+
+function renderEventosDoMes(eventos) {
+  if (!Array.isArray(eventos)) return dashBloco('dashPanelEventos', false);
+  _dashEventos = eventos;
+  _dashMesOffset = 0;
+  desenharEventosDoMes();
+  dashBloco('dashPanelEventos', true);
+}
+
+function desenharEventosDoMes() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const base = new Date(hoje.getFullYear(), hoje.getMonth() + _dashMesOffset, 1);
+  const ano = base.getFullYear(), mes = base.getMonth();
+  const ehCorrente = _dashMesOffset === 0;
+
+  const doMes = _dashEventos
+    .map(e => ({ evt: e, data: ocorrenciaNoMes(e, ano, mes) }))
+    .filter(x => x.data)
+    .sort((a, b) => a.data - b.data);
+
+  const html = [];
+
+  // Vencidos só no mês corrente, sob divisor próprio: são pendências de hoje,
+  // não "eventos de agosto" — misturá-los ao navegar para setembro confundiria.
+  if (ehCorrente) {
+    // Vencido só existe em NENHUMA — recorrente já projeta para a próxima
+    // volta. Para esses, proximaOcorrenciaCalendario devolve a data literal.
+    const vencidos = _dashEventos
+      .filter(e => e.recorrencia === 'NENHUMA')
+      .map(e => ({ evt: e, data: proximaOcorrenciaCalendario(e) }))
+      .filter(x => x.data < hoje)
+      .sort((a, b) => a.data - b.data);
+    if (vencidos.length) {
+      html.push('<div class="dash-item-divisor">VENCIDOS</div>');
+      html.push(...vencidos.map(x => itemEventoDash(x, true)));
+      if (doMes.length) html.push(`<div class="dash-item-divisor">${MESES_PT[mes].toUpperCase()}</div>`);
+    }
+  }
+  html.push(...doMes.map(x => itemEventoDash(x, false)));
+
+  $('dashEventosSub').textContent = MESES_PT[mes] + (ano !== hoje.getFullYear() ? ' ' + ano : '');
+  $('dashEventosLista').innerHTML = html.length
+    ? html.join('')
+    : `<div class="dash-vazio">Nenhum evento em ${MESES_PT[mes].toLowerCase()}.</div>`;
+}
+
+function configurarNavEventos() {
+  $('dashMesAnt').addEventListener('click', () => { _dashMesOffset--; desenharEventosDoMes(); });
+  $('dashMesProx').addEventListener('click', () => { _dashMesOffset++; desenharEventosDoMes(); });
+}
+
+// ---------- Atalhos: cada bloco leva à aba de onde o dado veio ----------
+// O destino mora no HTML (data-ir / data-ir-sub) para ficar ao lado do bloco
+// que ele abre. Mesma mecânica de ativação do deep-link ?conexoes.
+function irParaAba(abaId, subId, extras = {}) {
+  if (!permiteAba(abaId)) return;
+  const aba = $(abaId);
+  if (!aba) return;
+
+  // Sub-aba que JÁ está ativa não dispara shown.bs.tab ao ser mostrada de novo
+  // — e é ele quem aplica a intenção de view. Nesse caso, aplicar na mão.
+  const subEl = subId ? $(subId) : null;
+  const subJaAtiva = !!subEl && subEl.classList.contains('active');
+
+  // A sub-aba INTECS abre no dashboard dela por padrão; vindo do tile de
+  // chamados o destino é a LISTA. O flag é consumido pelo shown.bs.tab.
+  if (extras.view === 'lista' && !subJaAtiva) _forcarViewChamadosIntecs = true;
+
+  bootstrap.Tab.getOrCreateInstance(aba).show();
+  if (subEl) bootstrap.Tab.getOrCreateInstance(subEl).show();
+
+  if (extras.view === 'lista' && subJaAtiva) mostrarViewChamadosIntecs();
+  if (extras.lista) selecionarListaOpcoes(extras.lista);
+}
+
+// A aba Opções abre sempre em UNIDADE; vindo do tile de insumos ela já tem que
+// chegar em INSUMOS. O Choices.js não emite change ao ser alterado por API,
+// então o evento vai na mão — é ele que dispara o re-render da lista.
+function selecionarListaOpcoes(lista) {
+  const sel = $('listaAlvo');
+  if (!sel) return;
+  if (choicesMap.listaAlvo) choicesMap.listaAlvo.setChoiceByValue(lista);
+  else sel.value = lista;
+  sel.dispatchEvent(new Event('change'));
+}
+
+// Só vira clicável o bloco cuja aba de destino o usuário realmente tem: sem
+// isto o cursor prometeria uma navegação que não acontece.
+function aplicarAtalhosDashboard() {
+  $('dashboardContent').querySelectorAll('[data-ir]').forEach((el) => {
+    const pode = permiteAba(el.dataset.ir);
+    el.classList.toggle('dash-clicavel', pode);
+    if (pode) {
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+    } else {
+      el.removeAttribute('role');
+      el.removeAttribute('tabindex');
+    }
+  });
+}
+
+function configurarAtalhosDashboard() {
+  const conteudo = $('dashboardContent');
+  const acionar = (ev) => {
+    // As setas de mês e o funil de unidades ficam dentro de blocos com
+    // data-ir; clicar neles não pode navegar para outra aba.
+    if (ev.target.closest('button, a, input, label')) return;
+    const alvo = ev.target.closest('[data-ir]');
+    if (alvo && alvo.classList.contains('dash-clicavel')) {
+      irParaAba(alvo.dataset.ir, alvo.dataset.irSub,
+        { lista: alvo.dataset.irLista, view: alvo.dataset.irView });
+    }
+  };
+  conteudo.addEventListener('click', acionar);
+  conteudo.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    if (!ev.target.matches('[data-ir][role="button"]')) return;
+    ev.preventDefault();   // Espaço rolaria a página
+    acionar(ev);
+  });
+}
+
+// ---------- Avisos de acesso (fonte: /api/logs?seguranca=alerta, aba_logs) ----------
+const AVISO_ROTULO = {
+  LOGIN_BLOQUEADO: 'Login bloqueado',
+  SENHA_REVELADA: 'Senha revelada',
+  SENHA_REDEFINIDA: 'Senha redefinida',
+  CONEXAO: 'Conexão remota',
+  SCRIPT_EXECUTADO: 'Script executado'
+};
+
+function rotuloAviso(l) {
+  // ATUALIZADO só chega aqui vindo do par (USUARIOS, campo PAPEL|PERMISSÕES).
+  if (l.acao === 'ATUALIZADO') return l.campo === 'PAPEL' ? 'Papel alterado' : 'Permissões alteradas';
+  return AVISO_ROTULO[l.acao] || l.acao;
+}
+
+function renderAvisosAcesso(logs) {
+  if (!Array.isArray(logs)) return dashBloco('dashPanelAvisos', false);
+
+  $('dashAvisosLista').innerHTML = logs.length
+    ? logs.map((l) => {
+        // dataHora vem em UTC (ISO com Z, do driver do SQL Server).
+        const hora = new Date(l.dataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const alerta = l.acao === 'LOGIN_BLOQUEADO';
+        const sub = [l.usuario, l.valorNovo || l.campo].filter(Boolean).join(' · ');
+        return `<div class="dash-item${alerta ? ' dash-item--alerta' : ''}">
+          <span class="dash-item-quando">${hora}</span>
+          <span class="dash-item-ico"><i class="ph ${alerta ? 'ph-warning' : 'ph-dot-outline'}"></i></span>
+          <span class="dash-item-corpo">
+            <div class="dash-item-tit">${escapeHtml(rotuloAviso(l))}${l.entidadeRotulo ? ' · ' + escapeHtml(l.entidadeRotulo) : ''}</div>
+            ${sub ? `<div class="dash-item-sub">${escapeHtml(sub)}</div>` : ''}
+          </span>
+        </div>`;
+      }).join('')
+    : '<div class="dash-vazio">Nenhum evento de segurança nos últimos 7 dias.</div>';
+  dashBloco('dashPanelAvisos', true);
+}
+
+// forcar: só no clique do botão de atualizar. A carga automática ao abrir a aba
+// usa o cache de 15 min do servidor para não raspar o eurosa a cada visita.
+async function carregarDashboard({ forcar = false } = {}) {
   $('dashboardLoading').classList.remove('hidden');
   $('dashboardContent').classList.add('hidden');
   $('alertDashboard').innerHTML = '';
   try {
-    const [d, chamadosRaw] = await Promise.all([
+    // Só /api/dashboard é obrigatório. Os outros cinco são blocos opcionais:
+    // cada um herda a permissão da aba de origem e, num 403 (ou numa falha de
+    // integração externa), some da tela em vez de derrubar a Visão Geral.
+    const sete = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [d, msaRaw, ci, cx, cal, avisos] = await Promise.all([
       api('GET', '/api/dashboard'),
-      api('GET', '/api/chamados').catch(() => null),
+      api('GET', '/api/chamados' + (forcar ? '?forcar=1' : '')).catch(() => null),
+      api('GET', '/api/chamados-intecs/dashboard').catch(() => null),
+      api('GET', '/api/conexoes').catch(() => null),
+      api('GET', '/api/calendario/eventos').catch(() => null),
+      api('GET', `/api/logs?seguranca=alerta&limit=6&de=${encodeURIComponent(sete)}`).catch(() => null),
     ]);
     _dashData = d;
 
     // Armazena chamados globalmente para filtragem
-    _dashChamados = chamadosRaw
-      ? (Array.isArray(chamadosRaw) ? chamadosRaw : (chamadosRaw.root ?? chamadosRaw.Lista ?? chamadosRaw.lista ?? []))
+    _dashChamados = msaRaw
+      ? (Array.isArray(msaRaw) ? msaRaw : (msaRaw.root ?? msaRaw.Lista ?? msaRaw.lista ?? []))
       : [];
 
     // Popula o filtro de unidades
     popularFiltroDashboard(d.por_unidade);
 
+    // Só o inventário reage ao filtro de unidades; os demais blocos são
+    // globais e por isso ficam fora de renderDashboard().
     renderDashboard(d, getSelectedUnidades());
+    renderConsolidadoUnidades(cx);
+    renderChamadosDash(ci, msaRaw);
+    renderEventosDoMes(cal);
+    renderAvisosAcesso(avisos);
+
+    dashBloco('dashGridEventosAvisos', !!cal || !!avisos);
+    aplicarAtalhosDashboard();
 
     $('dashboardLoading').classList.add('hidden');
     $('dashboardContent').classList.remove('hidden');
@@ -7176,8 +7482,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // de 1400px) — reposiciona o slider para não ficar deslocado da aba ativa.
   window.addEventListener('resize', () => requestAnimationFrame(() => posicionarSlider(false)));
 
-  $('tab-dashboard').addEventListener('shown.bs.tab', carregarDashboard);
-  $('btnAtualizarDashboard').addEventListener('click', carregarDashboard);
+  // Arrow em vez de referência direta: o handler receberia o Event como
+  // primeiro argumento e ele cairia no parâmetro de opções.
+  $('tab-dashboard').addEventListener('shown.bs.tab', () => carregarDashboard());
+  $('btnAtualizarDashboard').addEventListener('click', () => carregarDashboard({ forcar: true }));
+  configurarNavEventos();
+  configurarAtalhosDashboard();
   window.addEventListener('scroll', () => {
     const btn = $('dashFiltroBtn');
     if (btn) bootstrap.Dropdown.getInstance(btn)?.hide();

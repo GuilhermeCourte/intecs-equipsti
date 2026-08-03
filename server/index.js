@@ -15,7 +15,7 @@ import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 import { notificar, notificarTeste, notificarSolicitante } from './notificacoes.js';
 import { inscrever } from './realtime.js';
-import { registrarLog, listarLogs, MODULOS_LOG } from './logs.js';
+import { registrarLog, listarLogs, MODULOS_LOG, NIVEIS_SEGURANCA } from './logs.js';
 import { emailParaEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
@@ -1840,7 +1840,9 @@ const SYNC_MAX_DETALHE = 60;
 // existentes atualizado, e preenche a unidade (do sistema) puxando o detalhe do
 // chamado para as linhas que ainda estão sem unidade.
 async function sincronizarIntecsMsa() {
-  const lista = await eurosaFetchTodosChamados();
+  // Passa pelo mesmo cache de /api/chamados: é a mesma lista, e não faz sentido
+  // duas entradas raspando o eurosa com segundos de diferença.
+  const { lista } = await chamadosMsa();
 
   // Associação unidade da MSA -> unidade do sistema (EQUIPSTI_opcoes.detalhe).
   const assocRows = await query(
@@ -2223,10 +2225,54 @@ async function eurosaFetchTodosChamados() {
   return lista;
 }
 
+// Cache do scraping. Sem ele, cada abertura do dashboard, cada abertura da aba
+// Chamados e cada sync do Intecs vs MSA dispara um POST /Chamados/lista — e o
+// cockpit, que fica aberto numa tela o dia inteiro, viraria um fluxo contínuo
+// contra um portal de terceiro. Com 15 min o teto é de 4 buscas/hora, não
+// importa quantas telas estejam abertas. Mesmo padrão do uptimerobot/service.js.
+//
+// Efeito colateral bom: o cookie do eurosa esfria menos, então o login de 3 hops
+// roda menos vezes do que hoje.
+const EUROSA_CACHE_MS = 15 * 60 * 1000;
+let _msaCache = { ts: 0, lista: null, buscando: null };
+
+// Falha do eurosa NÃO descarta o que já está em mãos: devolve o último
+// resultado bom carimbado com a hora em que foi obtido, e quem exibe mostra
+// essa hora. Só propaga o erro quando não há nada em cache.
+async function chamadosMsa({ forcar = false } = {}) {
+  const servirCache = () => ({
+    lista: _msaCache.lista,
+    atualizadoEm: uptimeRobot.dataUtc(Math.floor(_msaCache.ts / 1000)),
+    doCache: true
+  });
+
+  // Busca em voo atende todo mundo, inclusive quem pediu forcar: ela JÁ é a
+  // versão nova. Sem isto, dashboard e cockpit abrindo juntos com o cache frio
+  // viram duas raspagens — e um clique repetido no atualizar, várias.
+  if (_msaCache.buscando) return _msaCache.buscando;
+  if (!forcar && _msaCache.lista && Date.now() - _msaCache.ts < EUROSA_CACHE_MS) return servirCache();
+
+  _msaCache.buscando = (async () => {
+    try {
+      const lista = await eurosaFetchTodosChamados();
+      _msaCache = { ..._msaCache, ts: Date.now(), lista };
+      return { lista, atualizadoEm: uptimeRobot.dataUtc(Math.floor(_msaCache.ts / 1000)), doCache: false };
+    } catch (err) {
+      if (!_msaCache.lista) throw err;
+      console.warn('[chamados] eurosa falhou (' + err.message + ') — servindo cache de',
+        new Date(_msaCache.ts).toISOString());
+      return servirCache();
+    } finally {
+      _msaCache.buscando = null;
+    }
+  })();
+  return _msaCache.buscando;
+}
+
 app.get('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
-  const lista = await eurosaFetchTodosChamados();
-  console.log('[chamados] total:', lista.length);
-  res.json({ root: lista, total: lista.length });
+  const { lista, atualizadoEm, doCache } = await chamadosMsa({ forcar: req.query.forcar === '1' });
+  console.log('[chamados] total:', lista.length, doCache ? '(cache)' : '(eurosa)');
+  res.json({ root: lista, total: lista.length, atualizadoEm });
 }));
 
 async function eurosaGetChamadoDetalhe(chave) {
@@ -3312,8 +3358,11 @@ app.get('/api/logs', exigirAuth, exigirPermissao('aba_logs'), wrap(async (req, r
   const q = trim(req.query.q || '') || null;
   const de = req.query.de ? new Date(req.query.de) : null;
   const ate = req.query.ate ? new Date(req.query.ate) : null;
+  // ?seguranca=alerta|todos — recorte usado pelo card de avisos do dashboard
+  // e do cockpit. Valor fora da whitelist é ignorado (vira listagem normal).
+  const seguranca = NIVEIS_SEGURANCA.includes(req.query.seguranca) ? req.query.seguranca : null;
   const linhas = await listarLogs({
-    modulo, q,
+    modulo, q, seguranca,
     de: de && !isNaN(de) ? de : null,
     ate: ate && !isNaN(ate) ? ate : null,
     limit: parseInt(req.query.limit, 10) || 50,
@@ -3404,6 +3453,9 @@ app.get('/api/drive-logs/diagnostico', exigirAuth, exigirPermissao('aba_logs'), 
 
 // ===================== ESTÁTICO (front-end vanilla) =====================
 app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.html')));
+// Painel de parede: tela cheia, sem interação, aberto em aba própria pelo
+// dashboard. Sem gate aqui — os blocos herdam a permissão de cada endpoint.
+app.get('/cockpit', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cockpit.html')));
 app.use(express.static(PUBLIC_DIR));
 
 // ===================== AGENDAMENTO =====================

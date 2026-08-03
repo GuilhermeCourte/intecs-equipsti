@@ -1257,8 +1257,9 @@
       white-space: nowrap;
       transition: background .15s;
       flex-shrink: 0;
+      text-decoration: none; /* a pílula do Cockpit é um <a> */
     }
-    .btn-dash-refresh:hover { background: var(--bg-soft); }
+    .btn-dash-refresh:hover { background: var(--bg-soft); color: var(--ink); }
     #dashFiltroMenu .dash-check-item {
       display: flex;
       align-items: center;
@@ -1475,15 +1476,127 @@
       #dashboardContent { animation: none; }
     }
 
+    /* Consolidado das unidades — faixa no topo da Visão Geral. Fica verde
+       quando está tudo no ar e vermelha assim que uma loja cai: é a única
+       informação aqui que muda sozinha e que ninguém deveria ter que procurar. */
+    .dash-status {
+      display: flex; align-items: center; flex-wrap: wrap; gap: .45rem .9rem;
+      background: #fff; border: 1px solid var(--line);
+      border-left: 4px solid var(--dash-green);
+      border-radius: 14px; padding: .75rem 1.1rem; margin-bottom: 1rem;
+    }
+    .dash-status--alerta { border-left-color: var(--dash-red); }
+    .dash-status-txt {
+      display: flex; align-items: center; gap: .45rem;
+      font-size: .92rem; font-weight: 700;
+    }
+    .dash-status-chip {
+      display: inline-flex; align-items: center; gap: .35rem;
+      font-size: .72rem; font-weight: 600; padding: .22rem .6rem;
+      border-radius: 999px; background: var(--bg-soft);
+    }
+    .dash-status-chip .dash-dot { margin-right: 0; }
+    .dash-status-obs { font-size: .72rem; color: var(--muted); margin-left: auto; }
+
+    /* Eventos do mês + Avisos, lado a lado */
+    .dash-grid-2 {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 1rem; margin-bottom: 1rem;
+    }
+    .dash-grid-2 > .dash-panel {
+      margin-bottom: 0; display: flex; flex-direction: column;
+    }
+
+    /* Itens das duas listas: mesma métrica dos itens do calendário, sem o
+       cursor/hover — aqui não se clica em nada. */
+    /* Teto dimensionado para caber sem rolar o caso normal (até 6 itens: os do
+       mês mais a rolagem para o seguinte, e os 6 avisos que a rota devolve).
+       Mês cheio de vencimentos passa disso e rola — com barra fina e sempre
+       visível, senão o corte parece conteúdo faltando em vez de rolagem. */
+    .dash-lista {
+      flex: 1; min-height: 0; max-height: 320px; overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+      overscroll-behavior: contain;   /* não arrasta a página junto no fim da lista */
+    }
+    .dash-lista::-webkit-scrollbar { width: 8px; }
+    .dash-lista::-webkit-scrollbar-thumb {
+      background: var(--line); border-radius: 4px;
+      border: 2px solid transparent; background-clip: content-box;
+    }
+    .dash-lista::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
+    .dash-lista::-webkit-scrollbar-track { background: transparent; }
+    .dash-item {
+      display: flex; align-items: flex-start; gap: .6rem;
+      padding: .55rem 1.1rem; border-bottom: 1px solid var(--line);
+    }
+    .dash-item:last-child { border-bottom: none; }
+    .dash-item-quando {
+      font-size: .72rem; font-weight: 700; color: var(--muted);
+      min-width: 52px; flex-shrink: 0; padding-top: .1rem;
+    }
+    .dash-item-ico { flex-shrink: 0; font-size: .95rem; line-height: 1.2; }
+    .dash-item--alerta .dash-item-ico { color: var(--dash-red); }
+    .dash-item-corpo { flex: 1; min-width: 0; }
+    .dash-item-tit { font-size: .82rem; font-weight: 600; line-height: 1.25; }
+    .dash-item-sub {
+      font-size: .7rem; color: var(--muted); margin-top: .1rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .dash-item-val {
+      font-size: .72rem; font-weight: 700; color: var(--dash-green);
+      flex-shrink: 0; padding-top: .1rem;
+    }
+    /* Blocos que levam à aba de origem do dado. A classe só é aplicada quando
+       o usuário tem a aba de destino — quem não tem não ganha cursor nem hover
+       prometendo uma navegação que não vai acontecer. */
+    .dash-clicavel { cursor: pointer; transition: background .15s, box-shadow .15s; }
+    .dash-stat.dash-clicavel:hover { background: var(--bg-soft); }
+    .dash-status.dash-clicavel:hover,
+    .dash-panel.dash-clicavel:hover { box-shadow: 0 2px 10px rgba(0,0,0,.07); }
+    .dash-clicavel:focus-visible { outline: 2px solid var(--dash-blue); outline-offset: -2px; }
+    /* O painel de eventos é clicável, mas as setas de mês dentro dele não
+       navegam — o listener ignora clique em button/a/input. */
+    .dash-panel.dash-clicavel .dash-mes-btn { cursor: pointer; }
+
+    /* Navegação de mês dos eventos */
+    .dash-mes-nav { display: flex; align-items: center; gap: .15rem; flex-shrink: 0; }
+    .dash-mes-nav .dash-panel-sub {
+      margin-top: 0; min-width: 78px; text-align: center; user-select: none;
+    }
+    .dash-mes-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; padding: 0;
+      border: 0; border-radius: 6px; background: transparent;
+      color: var(--muted); font-size: .95rem; line-height: 1;
+      transition: background .15s, color .15s;
+    }
+    .dash-mes-btn:hover { background: var(--bg-soft); color: var(--ink); }
+    .dash-item-divisor {
+      padding: .3rem 1.1rem; background: var(--bg-soft);
+      border-bottom: 1px solid var(--line);
+      font-size: .64rem; font-weight: 700; letter-spacing: .5px; color: var(--muted);
+    }
+    .dash-vazio {
+      padding: 1.5rem 1.1rem; text-align: center;
+      font-size: .78rem; color: var(--muted);
+    }
+
     /* Mobile */
     @media (max-width: 575.98px) {
       .dash-stats-row { flex-wrap: wrap; }
+      /* Grade de 2 colunas. As três regras abaixo valem para qualquer número
+         de tiles (a faixa de chamados tem 2, a de inventário tem 3): o último
+         ocupa a linha inteira quando sobra ímpar, e quem está na última linha
+         não leva borda de baixo. */
       .dash-stat { flex: 1 1 50%; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
       .dash-stat:nth-child(2n) { border-right: none; }
-      .dash-stat:last-child { flex: 1 1 100%; border-right: none; border-bottom: none; }
+      .dash-stat:last-child { border-right: none; border-bottom: none; }
+      .dash-stat:last-child:nth-child(odd) { flex: 1 1 100%; }
       .dash-stat:nth-last-child(2):nth-child(odd) { border-bottom: none; }
       .dash-stat-value { font-size: 1.35rem; }
       .dash-title { font-size: 1.35rem; }
+      .dash-grid-2 { grid-template-columns: 1fr; }
+      .dash-status-obs { margin-left: 0; flex-basis: 100%; }
     }
 
     /* ---------- Notificações (sininho) ---------- */
@@ -1600,6 +1713,7 @@
     html[data-theme="dark"] #notifLista .notif-item,
     html[data-theme="dark"] .btn-dash-refresh,
     html[data-theme="dark"] .dash-stats-row,
+    html[data-theme="dark"] .dash-status,
     html[data-theme="dark"] .dash-panel {
       background: var(--bg);
     }
@@ -1935,7 +2049,7 @@
             <div class="dash-header">
               <div>
                 <h2 class="dash-title">Visão Geral</h2>
-                <p class="dash-subtitle d-none d-sm-block">Inventário de equipamentos, locações e insumos.</p>
+                <p class="dash-subtitle d-none d-sm-block">Inventário, chamados e status das unidades.</p>
               </div>
               <div class="d-flex align-items-center gap-2">
                 <div class="dropdown">
@@ -1948,17 +2062,51 @@
                 <button class="btn-dash-refresh" id="btnAtualizarDashboard">
                   <i class="ph ph-arrow-clockwise"></i>
                 </button>
+                <!-- Leva rótulo (e não só ícone como o ↻) porque "cockpit" não
+                     se adivinha por desenho. Abre em aba própria: a ideia é
+                     deixar fixo numa tela. -->
+                <a class="btn-dash-refresh" id="btnCockpit" href="/cockpit" target="_blank" rel="noopener">
+                  <i class="ph ph-monitor-play"></i> Cockpit
+                </a>
               </div>
             </div>
 
             <!-- Loading: skeleton com a mesma estrutura do conteúdo real -->
             <div id="dashboardLoading" aria-busy="true" aria-label="Carregando dados do dashboard">
+              <div class="dash-status">
+                <span class="skel skel-line" style="width:230px;height:15px"></span>
+              </div>
+
               <div class="dash-stats-row">
                 <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
                 <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
                 <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
+                <div class="dash-stat">
+                  <span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span>
+                  <span class="skel skel-line" style="width:70%;height:10px;margin-top:.5rem"></span>
+                </div>
                 <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
-                <div class="dash-stat"><span class="skel skel-stat-top"></span><span class="skel skel-stat-value"></span></div>
+              </div>
+
+              <div class="dash-grid-2">
+                <div class="dash-panel">
+                  <div class="dash-panel-head"><span class="skel skel-line" style="width:130px"></span></div>
+                  <div class="dash-lista">
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                  </div>
+                </div>
+                <div class="dash-panel">
+                  <div class="dash-panel-head"><span class="skel skel-line" style="width:130px"></span></div>
+                  <div class="dash-lista">
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                    <div class="dash-item"><span class="skel skel-line" style="width:46px;height:10px"></span><span class="skel skel-line" style="flex:1"></span></div>
+                  </div>
+                </div>
               </div>
 
               <div class="dash-panel">
@@ -2013,27 +2161,57 @@
 
             <div id="dashboardContent" class="hidden">
 
-              <!-- Stats row -->
+              <!-- Consolidado das unidades (aba_internet) -->
+              <div class="dash-status hidden" id="dashStatusUnidades"
+                   data-ir="tab-internet" data-ir-sub="sub-tab-conexao"></div>
+
+              <!-- Stats: inventário + chamados na mesma faixa. Os dois de
+                   chamados escondem-se sozinhos quando falta permissão. -->
               <div class="dash-stats-row">
-                <div class="dash-stat">
+                <div class="dash-stat" data-ir="tab-registros">
                   <div class="dash-stat-top"><i class="ph ph-desktop-tower"></i> Equipamentos</div>
                   <div class="dash-stat-value" id="dash-total-equip">—</div>
                 </div>
-                <div class="dash-stat">
+                <div class="dash-stat" data-ir="tab-emprestimos">
                   <div class="dash-stat-top"><i class="ph ph-hand-arrow-up"></i> Emprestados</div>
                   <div class="dash-stat-value" id="dash-emprestados">—</div>
                 </div>
-                <div class="dash-stat">
+                <!-- Insumos são uma lista da aba Opções (EQUIPSTI_opcoes) -->
+                <div class="dash-stat" data-ir="tab-gerenciar" data-ir-lista="INSUMOS">
                   <div class="dash-stat-top"><i class="ph ph-package"></i> Insumos em Estoque</div>
                   <div class="dash-stat-value" id="dash-insumos">—</div>
                 </div>
-                <div class="dash-stat">
-                  <div class="dash-stat-top"><i class="ph ph-currency-dollar"></i> Valor de Locação</div>
-                  <div class="dash-stat-value dash-stat-value--green" id="dash-valor-locacao">—</div>
+                <div class="dash-stat hidden" id="dashStatIntecs"
+                     data-ir="tab-chamados" data-ir-sub="sub-tab-intecs" data-ir-view="lista">
+                  <div class="dash-stat-top"><i class="ph ph-lifebuoy"></i> Chamados Intecs</div>
+                  <div class="dash-stat-value" id="dash-ci-abertos">—</div>
+                  <div class="dash-stat-sub" id="dash-ci-sub"></div>
                 </div>
-                <div class="dash-stat">
+                <div class="dash-stat hidden" id="dashStatMsa" data-ir="tab-chamados" data-ir-sub="sub-tab-intecsmsa">
                   <div class="dash-stat-top"><i class="ph ph-headset"></i> Chamados MSA</div>
-                  <div class="dash-stat-value" id="dash-chamados-abertos">— <span style="font-size:.85rem;font-weight:500;color:var(--dash-orange)">em aberto</span></div>
+                  <div class="dash-stat-value" id="dash-chamados-abertos">—</div>
+                </div>
+              </div>
+
+              <!-- Avisos de acesso (aba_logs) + Eventos do mês (aba_calendario) -->
+              <div class="dash-grid-2 hidden" id="dashGridEventosAvisos">
+                <div class="dash-panel hidden" id="dashPanelAvisos" data-ir="tab-logs">
+                  <div class="dash-panel-head">
+                    <div class="dash-panel-title"><i class="ph ph-shield-warning"></i> Avisos de acesso</div>
+                    <div class="dash-panel-sub">últimos 7 dias</div>
+                  </div>
+                  <div class="dash-lista" id="dashAvisosLista"></div>
+                </div>
+                <div class="dash-panel hidden" id="dashPanelEventos" data-ir="tab-calendario">
+                  <div class="dash-panel-head">
+                    <div class="dash-panel-title"><i class="ph ph-calendar-dots"></i> Eventos do mês</div>
+                    <div class="dash-mes-nav">
+                      <button type="button" class="dash-mes-btn" id="dashMesAnt" aria-label="Mês anterior"><i class="ph ph-caret-left"></i></button>
+                      <span class="dash-panel-sub" id="dashEventosSub"></span>
+                      <button type="button" class="dash-mes-btn" id="dashMesProx" aria-label="Próximo mês"><i class="ph ph-caret-right"></i></button>
+                    </div>
+                  </div>
+                  <div class="dash-lista" id="dashEventosLista"></div>
                 </div>
               </div>
 
@@ -4595,7 +4773,7 @@
   <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="app.js?v=19"></script>
+  <script type="module" src="app.js?v=20"></script>
   <script>
     /* Mostra a barra de scroll das tabelas e listas roláveis enquanto rola e a
        oculta pouco depois de parar (~700ms). Funciona para X e Y. */
