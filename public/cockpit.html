@@ -137,6 +137,7 @@
     }
     .cp-mini-item i { font-size: .95rem; align-self: center; }
     .cp-mini-item b { font-size: 1.15rem; font-weight: 800; color: var(--ink-2); letter-spacing: -.5px; }
+    .cp-mini-item.alerta b { color: var(--vermelho); }
     .cp-relogio {
       display: flex; align-items: center; gap: .8rem;
       padding-left: 1.3rem; border-left: 1px solid var(--line);
@@ -307,6 +308,7 @@
       <div class="cp-mini" id="cpMini">
         <span class="cp-mini-item"><i class="ph ph-package"></i><b id="cpInsumos">—</b> insumos</span>
         <span class="cp-mini-item"><i class="ph ph-hand-arrow-up"></i><b id="cpEmprestados">—</b> emprestados</span>
+        <span class="cp-mini-item" id="cpVpsItem"><i class="ph ph-hard-drives"></i><b id="cpVpsEstado">—</b></span>
       </div>
       <div class="cp-relogio">
         <span class="cp-data" id="cpData">—</span>

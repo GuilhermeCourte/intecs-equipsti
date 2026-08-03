@@ -112,6 +112,26 @@ function renderUnidades(r) {
   $('cpUnidades').innerHTML = html.join('');
 }
 
+// Mesmos rótulos do VPS_ESTADO_LABEL em app.js — cockpit.js não importa
+// nada de lá (painel autônomo, sem bundler), então duplica só o necessário.
+const VPS_ESTADO_LABEL = {
+  running: 'Online', stopped: 'Desligada', error: 'Erro', destroyed: 'Destruída', suspended: 'Suspensa',
+  starting: 'Iniciando', stopping: 'Parando', creating: 'Criando', recreating: 'Recriando',
+  restoring: 'Restaurando', recovery: 'Recuperação', stopping_recovery: 'Saindo da recuperação',
+  initial: 'Inicial', suspending: 'Suspendendo', unsuspending: 'Reativando', destroying: 'Destruindo'
+};
+
+// Mostra só a VM principal (a maioria das contas tem uma só) — se houver
+// problema em qualquer uma, o item vira vermelho e mostra o estado dela.
+function renderVps(lista) {
+  if (!lista || !lista.length) return;
+  const problema = lista.find((vm) => vm.estadoCor !== 'ok');
+  $('cpVpsItem').classList.toggle('alerta', !!problema);
+  $('cpVpsEstado').textContent = problema
+    ? (VPS_ESTADO_LABEL[problema.state] || problema.state || 'indisponível')
+    : `${lista[0].cpu != null ? lista[0].cpu.toFixed(0) + '% CPU' : '—'} · ${lista[0].ramPercent != null ? lista[0].ramPercent.toFixed(0) + '% RAM' : '—'}`;
+}
+
 // Recebe os dois de uma vez porque dividem o mesmo bloco: cada um chega no seu
 // ritmo (Intecs a cada minuto, MSA a cada 15) e o último valor bom do outro
 // tem que continuar na tela.
@@ -263,6 +283,13 @@ const BLOCOS = [
     id: 'blocoUnidades', carimbo: 'cpUnidCarimbo', ms: 60_000,
     rota: () => '/api/conexoes',
     render: (d) => renderUnidades(d)
+  },
+  {
+    // 5 min = mesmo TTL do cache de métricas no backend (server/hostinger),
+    // não adianta bater mais rápido que isso.
+    id: 'cpVpsItem', ms: 5 * 60_000,
+    rota: () => '/api/vps/resumo',
+    render: (d) => renderVps(d)
   },
   {
     id: 'blocoChamados', carimbo: 'cpChamCarimbo', ms: 60_000,
