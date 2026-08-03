@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <!-- Aplica o tema antes da pintura (evita o flash). Chave própria, separada
+       da do app: o tema aqui é propriedade da TELA onde o painel está pendurado,
+       não do usuário — e o padrão precisa ser escuro, não o claro do admin. -->
+  <script>
+    (function () {
+      try {
+        var modo = localStorage.getItem('tema-cockpit') === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', modo);
+      } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0d10">
+  <title>GTI · Cockpit</title>
+  <link rel="icon" type="image/png" href="favicon_intecs.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <style>
+    /* ============================================================
+       Cockpit — painel de parede.
+       Tema escuro fixo (não segue o toggle do app): a tela fica ligada
+       o dia inteiro e o claro cansa. Grade de 100vh sem rolagem — o que
+       não couber tem que ser cortado por regra, não empurrado para baixo
+       de uma dobra que ninguém vai rolar.
+       ============================================================ */
+    /* Escuro é o padrão (tela ligada o dia todo), mas o claro existe para
+       quando o cockpit vive num monitor de mesa em sala clara. */
+    :root {
+      --bg:        #0d0d10;
+      --surface:   #16161b;
+      --line:      #26262e;
+      --ink:       #f2f2f5;
+      --ink-2:     #b9b9c4;
+      --muted:     #6e6e7c;
+      --chip:      #21212a;
+      --campo:     #1e1e25;
+      --alerta-bg: rgba(240,71,93,.12);
+      --verde:     #22c55e;
+      --vermelho:  #f0475d;
+      --laranja:   #ff8c42;
+      --azul:      #5b8cff;
+      --radius:    16px;
+    }
+    html[data-theme="light"] {
+      --bg:        #f1f1f4;
+      --surface:   #ffffff;
+      --line:      #e3e3e9;
+      --ink:       #16161a;
+      --ink-2:     #45454f;
+      --muted:     #8a8a95;
+      --chip:      #f0f0f4;
+      --campo:     #f7f7fa;
+      --alerta-bg: rgba(220,38,38,.07);
+      --verde:     #16a34a;
+      --vermelho:  #dc2626;
+      --laranja:   #e07016;
+      --azul:      #3b6fe0;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Poppins, system-ui, sans-serif;
+      overflow: hidden;                 /* painel fixo: nunca rola */
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------- Grade ---------- */
+    .cp {
+      height: 100vh;
+      height: 100dvh;
+      display: grid;
+      /* A linha de cima é de números (cabe em pouca altura); as listas de baixo
+         é que ganham com espaço — cada 40px viram mais um aviso ou evento. */
+      grid-template-rows: auto minmax(0, .78fr) minmax(0, 1.22fr);
+      gap: 14px;
+      padding: 14px 18px 16px;
+    }
+    .cp-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+    .cp-bloco {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex; flex-direction: column;
+      min-height: 0; min-width: 0;
+    }
+    .oculto { display: none !important; }   /* vale para o rodapé também */
+    /* Quando um bloco some por falta de permissão, o irmão ocupa a linha. */
+    .cp-linha:has(> .cp-bloco.oculto) { grid-template-columns: 1fr; }
+
+    .cp-bloco-tit {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: .78rem; font-weight: 700; letter-spacing: 1.4px;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 12px; flex-shrink: 0;
+    }
+    .cp-bloco-tit .cp-carimbo {
+      margin-left: auto; letter-spacing: 0; text-transform: none;
+      font-weight: 500; font-size: .72rem;
+    }
+    .cp-corpo { flex: 1; min-height: 0; overflow: hidden; }
+    .cp-mes-nav { margin-left: auto; display: flex; align-items: center; gap: .1rem; }
+    .cp-mes-nav .cp-carimbo { margin-left: 0; min-width: 84px; text-align: center; user-select: none; }
+    .cp-mes-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
+      background: transparent; color: var(--muted); font-size: .9rem; line-height: 1;
+      transition: background .15s, color .15s;
+    }
+    .cp-mes-btn:hover { background: var(--chip); color: var(--ink); }
+
+    /* ---------- Cabeçalho ---------- */
+    .cp-topo {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0 4px;
+    }
+    .cp-marca {
+      font-size: 1rem; font-weight: 800; letter-spacing: 2px;
+      display: flex; align-items: center; gap: .55rem;
+    }
+    .cp-marca img { height: 26px; width: auto; }
+    /* Insumos e emprestados: mudam devagar e não competem com unidades nem
+       chamados. Vão no espaço morto do cabeçalho, em corpo pequeno de propósito. */
+    .cp-mini { margin-left: auto; display: flex; align-items: center; gap: 1.3rem; }
+    .cp-mini-item {
+      display: flex; align-items: baseline; gap: .35rem;
+      font-size: .74rem; font-weight: 600; letter-spacing: .6px;
+      color: var(--muted); text-transform: uppercase;
+    }
+    .cp-mini-item i { font-size: .95rem; align-self: center; }
+    .cp-mini-item b { font-size: 1.15rem; font-weight: 800; color: var(--ink-2); letter-spacing: -.5px; }
+    .cp-relogio {
+      display: flex; align-items: center; gap: .8rem;
+      padding-left: 1.3rem; border-left: 1px solid var(--line);
+    }
+    .cp-data { font-size: .9rem; color: var(--ink-2); font-weight: 500; }
+    .cp-hora { font-size: 1.6rem; font-weight: 800; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+    .cp-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--chip); border: 1px solid var(--line); color: var(--ink-2);
+      font-size: 1rem; cursor: pointer; transition: color .15s, border-color .15s;
+    }
+    .cp-btn:hover { color: var(--ink); border-color: var(--muted); }
+    /* Pulso: prova que a tela está viva. Sem ele, um painel congelado é
+       indistinguível de um painel com números estáveis. */
+    .cp-pulso {
+      width: 9px; height: 9px; border-radius: 50%; background: var(--verde);
+      animation: pulsar 2.4s ease-in-out infinite;
+    }
+    .cp-pulso.morto { background: var(--vermelho); animation: none; }
+    @keyframes pulsar { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
+    /* ---------- Unidades ---------- */
+    .cp-unid-num {
+      font-size: clamp(2.6rem, 6.2vh, 4.4rem); font-weight: 800;
+      line-height: 1; letter-spacing: -3px; display: flex; align-items: baseline; gap: .7rem;
+    }
+    .cp-unid-num small { font-size: .28em; font-weight: 700; letter-spacing: 2px; color: var(--muted); }
+    .cp-unid-num.ok  { color: var(--verde); }
+    .cp-unid-num.mal { color: var(--vermelho); }
+    /* O bloco inteiro acende quando alguma unidade cai: é o que se lê de longe. */
+    #blocoUnidades.alerta {
+      border-color: rgba(240,71,93,.5);
+      background: linear-gradient(180deg, var(--alerta-bg), transparent 60%), var(--surface);
+    }
+    .cp-fora { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+    .cp-fora-item {
+      display: flex; align-items: center; gap: .6rem;
+      font-size: clamp(.9rem, 2vh, 1.15rem); font-weight: 600;
+    }
+    .cp-fora-item i { color: var(--vermelho); font-size: 1.1em; }
+    .cp-fora-item.instavel i { color: var(--laranja); }
+    .cp-fora-quando { margin-left: auto; font-size: .8em; font-weight: 500; color: var(--muted); }
+    .cp-online {
+      margin-top: auto; padding-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 12px;
+      font-size: .78rem; font-weight: 600; color: var(--ink-2);
+    }
+    .cp-online span { display: inline-flex; align-items: center; gap: .35rem; }
+    .cp-ponto { width: 7px; height: 7px; border-radius: 50%; background: var(--verde); flex-shrink: 0; }
+
+    /* ---------- Chamados ---------- */
+    .cp-chamados { display: flex; gap: 2.2rem; }
+    .cp-num-bloco { display: flex; flex-direction: column; }
+    .cp-num {
+      font-size: clamp(2.6rem, 6.2vh, 4.4rem); font-weight: 800;
+      line-height: 1; letter-spacing: -3px; font-variant-numeric: tabular-nums;
+    }
+    .cp-num-rot { font-size: .72rem; font-weight: 700; letter-spacing: 1.6px; color: var(--muted); margin-top: 4px; }
+    .cp-chamados-det { margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+    .cp-tag {
+      font-size: clamp(.78rem, 1.7vh, .95rem); font-weight: 700;
+      padding: .3rem .75rem; border-radius: 999px;
+      background: var(--chip); color: var(--ink-2);
+    }
+    .cp-tag.mal    { background: rgba(240,71,93,.16); color: var(--vermelho); }
+    .cp-tag.atencao{ background: rgba(255,140,66,.16); color: var(--laranja); }
+
+    /* ---------- Listas (avisos + eventos) ---------- */
+    /* Rola: num mês cheio de vencimentos o resto tem que ser alcançável por
+       quem chega perto da tela. Barra fina para não poluir de longe. */
+    .cp-lista {
+      height: 100%; overflow-y: auto; overflow-x: hidden;
+      display: flex; flex-direction: column; gap: 2px;
+      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+    }
+    .cp-lista::-webkit-scrollbar { width: 6px; }
+    .cp-lista::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+    .cp-lista::-webkit-scrollbar-track { background: transparent; }
+    .cp-li, .cp-divisor { flex-shrink: 0; }
+    .cp-li {
+      display: flex; align-items: flex-start; gap: .65rem;
+      padding: .42rem 0; border-bottom: 1px solid var(--line);
+      font-size: clamp(.82rem, 1.75vh, 1rem);
+    }
+    .cp-li:last-child { border-bottom: none; }
+    .cp-li-quando { font-weight: 700; color: var(--muted); min-width: 54px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .cp-li-ico { flex-shrink: 0; line-height: 1.3; color: var(--muted); }
+    .cp-li.alerta .cp-li-ico { color: var(--vermelho); }
+    .cp-li-corpo { flex: 1; min-width: 0; }
+    .cp-li-tit { font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cp-li-sub { font-size: .8em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cp-li-val { font-weight: 700; color: var(--verde); flex-shrink: 0; font-size: .9em; }
+    .cp-divisor {
+      font-size: .62rem; font-weight: 700; letter-spacing: 1.4px; color: var(--muted);
+      padding: .5rem 0 .2rem;
+    }
+    .cp-badge-venc {
+      font-size: .58rem; font-weight: 800; letter-spacing: .5px;
+      background: rgba(240,71,93,.18); color: var(--vermelho);
+      padding: .1rem .38rem; border-radius: 4px; vertical-align: middle;
+    }
+    .cp-vazio {
+      display: flex; align-items: center; justify-content: center; height: 100%;
+      color: var(--muted); font-size: .9rem; gap: .5rem;
+    }
+    .cp-vazio i { font-size: 1.2rem; color: var(--verde); }
+    .cp-dot-evt { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: .45em; }
+    .cp-dot-evt.MENSAL  { background: var(--azul); }
+    .cp-dot-evt.ANUAL   { background: var(--laranja); }
+    .cp-dot-evt.NENHUMA { background: #6b7280; }
+
+    /* ---------- Login (o JWT vence em 12h; sem isto a tela amanhece morta) ---------- */
+    #cpLogin {
+      position: fixed; inset: 0; z-index: 50; background: var(--bg);
+      display: flex; align-items: center; justify-content: center; padding: 1rem;
+    }
+    #cpLogin.oculto { display: none; }
+    .cp-login-card {
+      width: 100%; max-width: 360px; background: var(--surface);
+      border: 1px solid var(--line); border-radius: var(--radius); padding: 28px;
+    }
+    .cp-login-card h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: 1.5px; margin: 0 0 .3rem; }
+    .cp-login-card p { color: var(--muted); font-size: .84rem; margin: 0 0 1.2rem; }
+    .cp-login-card input {
+      width: 100%; padding: .65rem .85rem; margin-bottom: .6rem;
+      background: var(--campo); border: 1px solid var(--line); border-radius: 10px;
+      color: var(--ink); font-family: inherit; font-size: .92rem;
+    }
+    .cp-login-card input:focus { outline: 2px solid var(--azul); outline-offset: -1px; }
+    .cp-login-card button {
+      width: 100%; padding: .68rem; margin-top: .4rem;
+      background: var(--azul); color: #fff; border: 0; border-radius: 10px;
+      font-family: inherit; font-weight: 700; font-size: .92rem; cursor: pointer;
+    }
+    .cp-login-card button:disabled { opacity: .6; cursor: default; }
+    .cp-login-erro { color: var(--vermelho); font-size: .8rem; margin-top: .7rem; min-height: 1rem; }
+
+    @media (prefers-reduced-motion: reduce) { .cp-pulso { animation: none; } }
+    /* Telas pequenas não são o caso de uso, mas evita a grade colapsar feio. */
+    @media (max-width: 900px) {
+      .cp-linha { grid-template-columns: 1fr; }
+      .cp { grid-template-rows: auto auto auto auto; height: auto; }
+      body { overflow: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="cpLogin" class="oculto">
+    <form class="cp-login-card" id="cpFormLogin">
+      <h1>GTI · COCKPIT</h1>
+      <p>A sessão expirou. Entre novamente para retomar o painel.</p>
+      <input type="text" id="cpEmail" placeholder="E-mail" autocomplete="username" required>
+      <input type="password" id="cpSenha" placeholder="Senha" autocomplete="current-password" required>
+      <button type="submit" id="cpBtnEntrar">Entrar</button>
+      <div class="cp-login-erro" id="cpLoginErro"></div>
+    </form>
+  </div>
+
+  <div class="cp" id="cpApp">
+
+    <!-- Cabeçalho -->
+    <header class="cp-topo">
+      <div class="cp-marca">
+        <img src="favicon_intecs.png" alt="">
+        GESTÃO TI <span style="color:var(--muted)">·</span> COCKPIT
+      </div>
+      <div class="cp-mini" id="cpMini">
+        <span class="cp-mini-item"><i class="ph ph-package"></i><b id="cpInsumos">—</b> insumos</span>
+        <span class="cp-mini-item"><i class="ph ph-hand-arrow-up"></i><b id="cpEmprestados">—</b> emprestados</span>
+      </div>
+      <div class="cp-relogio">
+        <span class="cp-data" id="cpData">—</span>
+        <span class="cp-hora" id="cpHora">--:--</span>
+        <span class="cp-pulso" id="cpPulso" title="painel ativo"></span>
+        <button class="cp-btn" id="cpBtnTema" type="button" aria-label="Alternar tema">
+          <i class="ph ph-sun" id="cpIconeTema"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Linha 1: unidades + chamados -->
+    <div class="cp-linha">
+      <section class="cp-bloco" id="blocoUnidades">
+        <div class="cp-bloco-tit">
+          <i class="ph ph-broadcast"></i> Conexão das unidades
+          <span class="cp-carimbo" id="cpUnidCarimbo"></span>
+        </div>
+        <div class="cp-corpo" id="cpUnidades" style="display:flex;flex-direction:column"></div>
+      </section>
+
+      <section class="cp-bloco" id="blocoChamados">
+        <div class="cp-bloco-tit">
+          <i class="ph ph-lifebuoy"></i> Chamados
+          <span class="cp-carimbo" id="cpChamCarimbo"></span>
+        </div>
+        <div class="cp-corpo" id="cpChamados" style="display:flex;flex-direction:column"></div>
+      </section>
+    </div>
+
+    <!-- Linha 2: avisos + eventos -->
+    <div class="cp-linha">
+      <section class="cp-bloco" id="blocoAvisos">
+        <div class="cp-bloco-tit">
+          <i class="ph ph-shield-warning"></i> Avisos de segurança
+          <span class="cp-carimbo" id="cpAvisosCarimbo">últimos 7 dias</span>
+        </div>
+        <div class="cp-corpo"><div class="cp-lista" id="cpAvisos"></div></div>
+      </section>
+
+      <section class="cp-bloco" id="blocoEventos">
+        <div class="cp-bloco-tit">
+          <i class="ph ph-calendar-dots"></i> Eventos do mês
+          <span class="cp-mes-nav">
+            <button type="button" class="cp-mes-btn" id="cpMesAnt" aria-label="Mês anterior"><i class="ph ph-caret-left"></i></button>
+            <span class="cp-carimbo" id="cpEventosCarimbo"></span>
+            <button type="button" class="cp-mes-btn" id="cpMesProx" aria-label="Próximo mês"><i class="ph ph-caret-right"></i></button>
+          </span>
+        </div>
+        <div class="cp-corpo"><div class="cp-lista" id="cpEventos"></div></div>
+      </section>
+    </div>
+
+  </div>
+
+  <script src="cockpit.js?v=1"></script>
+</body>
+</html>

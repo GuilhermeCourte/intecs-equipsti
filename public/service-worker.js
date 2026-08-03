@@ -1,11 +1,15 @@
 // Service Worker — estratégia network-first para conteúdo da própria origem
 // (mantém o app sempre atualizado) com fallback para cache quando offline.
-const CACHE = 'inv-cache-v13';
+const CACHE = 'inv-cache-v14';
 const SHELL = [
   './',
   './index.html',
   './app.js',
-  './manifest.json'
+  './manifest.json',
+  // O cockpit fica ligado numa tela o dia inteiro: precisa sobreviver a uma
+  // queda de rede mostrando o último estado, e não a tela de offline.
+  './cockpit.html',
+  './cockpit.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -40,6 +44,9 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
       })
-      .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+      // /cockpit é servido pelo Node a partir de cockpit.html — sem este desvio
+      // a tela de parede cairia no index.html offline, que é o app inteiro.
+      .catch(() => caches.match(req).then((r) =>
+        r || caches.match(url.pathname === '/cockpit' ? './cockpit.html' : './index.html')))
   );
 });

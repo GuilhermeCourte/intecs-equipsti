@@ -27,6 +27,36 @@ export const MODULOS_LOG = [
   'ACESSO'
 ];
 
+// Recorte de segurança do log: os pares (modulo, acao[, campo]) que valem um
+// aviso na Visão Geral e no cockpit. A definição vive aqui, e não no front,
+// porque `acao` sozinha não basta — ATUALIZADO é genérico e aparece em todo
+// módulo; só o par com `campo` separa "mudaram as permissões de alguém" de
+// "trocaram o e-mail".
+//
+// ALERTA: alguém foi barrado, ganhou poder ou leu um segredo.
+// INFO:   acesso legítimo à máquina de outra pessoa — rotina do técnico, mas
+//         auditável. Fica fora do card do dashboard, que encheria todo dia.
+//
+// Duas coisas que NÃO dá para listar aqui porque não são gravadas: falha de
+// login individual (só o bloqueio agregado, após 10 tentativas) e 403 de
+// permissão negada.
+export const EVENTOS_SEGURANCA = {
+  ALERTA: [
+    { modulo: 'ACESSO',   acao: 'LOGIN_BLOQUEADO' },
+    { modulo: 'USUARIOS', acao: 'ATUALIZADO', campo: 'PERMISSÕES' },
+    { modulo: 'USUARIOS', acao: 'ATUALIZADO', campo: 'PAPEL' },
+    { modulo: 'USUARIOS', acao: 'SENHA_REDEFINIDA' },
+    { modulo: 'SENHAS',   acao: 'SENHA_REVELADA' }
+  ],
+  INFO: [
+    { modulo: 'CONEXAO_REMOTA', acao: 'CONEXAO' },
+    { modulo: 'CONEXAO_REMOTA', acao: 'SCRIPT_EXECUTADO' }
+  ]
+};
+
+// Valores aceitos em ?seguranca= — whitelist da rota GET /api/logs.
+export const NIVEIS_SEGURANCA = ['alerta', 'todos'];
+
 // NVARCHAR curto (com tamanho definido na coluna) — trunca defensivamente.
 const trunc = (v, n) => (v == null ? null : String(v).slice(0, n));
 const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
@@ -84,13 +114,14 @@ export async function registrarLog({
  * @param {string} [f.q]           busca (LIKE) em ação/campo/valores/rótulo/usuário/justificativa
  * @param {Date}   [f.de]          data_hora >= de
  * @param {Date}   [f.ate]         data_hora < ate  (limite superior EXCLUSIVO)
+ * @param {string} [f.seguranca]   'alerta' | 'todos' — recorte de EVENTOS_SEGURANCA
  * @param {number} [f.limit=50]
  * @param {number} [f.offset=0]
  * @returns {Promise<Array>} linhas { id, modulo, entidadeId, entidadeRotulo, acao, campo,
  *   valorAnterior, valorNovo, justificativa, usuario, usuarioId, dataHora }.
  *   dataHora sai crua (Date do driver → ISO com 'Z' no JSON) — o front formata em hora local.
  */
-export async function listarLogs({ modulo = null, entidadeId = null, q = null, de = null, ate = null, limit = 50, offset = 0 } = {}) {
+export async function listarLogs({ modulo = null, entidadeId = null, q = null, de = null, ate = null, seguranca = null, limit = 50, offset = 0 } = {}) {
   const params = {};
   const where = [];
 
@@ -107,6 +138,22 @@ export async function listarLogs({ modulo = null, entidadeId = null, q = null, d
   }
   if (de instanceof Date && !isNaN(de)) { params.de = { type: sql.DateTime2, value: de }; where.push('data_hora >= @de'); }
   if (ate instanceof Date && !isNaN(ate)) { params.ate = { type: sql.DateTime2, value: ate }; where.push('data_hora < @ate'); }
+  if (seguranca) {
+    // Um OR de pares em vez de várias chamadas filtradas no cliente: assim o
+    // ORDER BY id DESC + limit vê o conjunto inteiro, e um módulo barulhento
+    // (CONEXAO_REMOTA) não empurra um LOGIN_BLOQUEADO para fora do resultado.
+    const pares = seguranca === 'todos'
+      ? [...EVENTOS_SEGURANCA.ALERTA, ...EVENTOS_SEGURANCA.INFO]
+      : EVENTOS_SEGURANCA.ALERTA;
+    const ors = pares.map((p, i) => {
+      params[`sm${i}`] = S(p.modulo);
+      params[`sa${i}`] = S(p.acao);
+      let cond = `(modulo = @sm${i} AND acao = @sa${i}`;
+      if (p.campo) { params[`sc${i}`] = S(p.campo); cond += ` AND campo = @sc${i}`; }
+      return `${cond})`;
+    });
+    where.push(`(${ors.join(' OR ')})`);
+  }
 
   params.limit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
   params.offset = Math.max(parseInt(offset, 10) || 0, 0);
