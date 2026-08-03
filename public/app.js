@@ -1278,6 +1278,14 @@ function vpsMbParaGb(mb) {
   return mb == null ? '—' : (mb / 1024).toFixed(1) + ' GB';
 }
 
+// Stats de container (memória usada, rede) vêm em MB; abaixo de 1 MB fica
+// mais legível em KB.
+function formatarMbContainerVps(mb) {
+  if (mb == null) return '—';
+  if (mb < 1) return Math.round(mb * 1024) + ' KB';
+  return mb.toFixed(1) + ' MB';
+}
+
 // O endpoint de métricas da Hostinger não dá o uptime real (conferido contra
 // o hPanel: fica travado em minutos mesmo com a VPS rodando há dias) — então
 // calcula a partir de uma referência de "início", do jeito que o próprio
@@ -1555,13 +1563,21 @@ const VPS_TEMPO_PT = {
 // Status bruto do container (ex.: "Up 4 hours (healthy)", "Exited (0) 3 hours
 // ago") vira algo mais curto em PT — a saúde já aparece separada (ver `saude`
 // no chamador), então o "(healthy)" embutido no texto é redundante e sai.
+// "About an hour" / "3 hours" → "cerca de 1 hora" / "3 horas". O docker usa
+// "a"/"an" no lugar de "1" pra durações de 1 unidade (ex.: "a minute").
+function traduzirDuracaoVps(s) {
+  const cercaDe = /^about\s+/i.test(s);
+  s = s.replace(/^about\s+/i, '').replace(/^an?\s+/i, '1 ');
+  return (cercaDe ? 'cerca de ' : '') + s;
+}
+
 function formatarStatusContainerVps(status) {
   if (!status) return '—';
   let s = status.replace(/\s*\((?:un)?healthy\)|\s*\(health:\s*starting\)/i, '').trim();
   if (/^up\s/i.test(s)) {
-    s = 'no ar há ' + s.replace(/^up\s+/i, '').replace(/^about\s+/i, 'cerca de ');
+    s = 'no ar há ' + traduzirDuracaoVps(s.replace(/^up\s+/i, ''));
   } else if (/^exited/i.test(s)) {
-    s = 'parado há ' + s.replace(/^exited\s*\([^)]*\)\s*/i, '').replace(/\s*ago$/i, '').replace(/^about\s+/i, 'cerca de ');
+    s = 'parado há ' + traduzirDuracaoVps(s.replace(/^exited\s*\([^)]*\)\s*/i, '').replace(/\s*ago$/i, ''));
   } else if (/^created$/i.test(s)) {
     s = 'criado';
   } else if (/^restarting/i.test(s)) {
@@ -1582,13 +1598,16 @@ function renderDockerProjeto(p, vmId, idx) {
         const cdot = VPS_DOT_POR_COR[c.estadoCor] || 'orange';
         const saude = c.health ? ' · ' + escapeHtml(c.health) : '';
         const portas = c.portas.length ? escapeHtml(c.portas.join(', ')) : '—';
+        const stats = c.stats
+          ? ` · CPU ${c.stats.cpuPercent.toFixed(1)}% · RAM ${c.stats.memPercent.toFixed(1)}% (${formatarMbContainerVps(c.stats.memUsadaMb)}) · Rede ↓${formatarMbContainerVps(c.stats.netEntradaMb)} ↑${formatarMbContainerVps(c.stats.netSaidaMb)}`
+          : '';
         return `
           <div class="vps-docker-container">
             <div class="d-flex align-items-center gap-2 flex-wrap">
               <span class="dash-dot dash-dot--${cdot}"></span>
               <span class="fw-semibold">${escapeHtml(c.name)}</span>
             </div>
-            <div class="text-muted small">${escapeHtml(formatarStatusContainerVps(c.status))}${saude}</div>
+            <div class="text-muted small">${escapeHtml(formatarStatusContainerVps(c.status))}${saude}${stats}</div>
             <div class="text-muted small">${portas}</div>
           </div>`;
       }).join('')
@@ -6739,13 +6758,50 @@ function renderConsolidadoUnidades(r) {
 
   const obs = [];
   if (semMonitor) obs.push(`${semMonitor} sem monitor`);
-  if (r.atualizadoEm) obs.push(tempoRelativo(r.atualizadoEm));
+  // "agora" não diz nada de novo (é óbvio que acabou de atualizar) — só vale
+  // mostrar quando já faz tempo.
+  const relativo = r.atualizadoEm ? tempoRelativo(r.atualizadoEm) : '';
+  if (relativo && relativo !== 'agora') obs.push(relativo);
   if (obs.length) partes.push(`<span class="dash-status-obs">${escapeHtml(obs.join(' · '))}</span>`);
 
   const el = $('dashStatusUnidades');
   el.className = 'dash-status' + (problema.length ? ' dash-status--alerta' : '');
   el.innerHTML = partes.join('');
   dashBloco('dashStatusUnidades', true);
+}
+
+// ---------- Status da VPS (fonte: /api/vps/resumo, aba_vps) ----------
+// Mesmo formato do consolidado das unidades: banner verde quando tudo roda,
+// vermelho com um chip por VM em estado ruim.
+function renderVpsStatusDash(lista) {
+  if (!lista || !lista.length) return dashBloco('dashStatusVps', false);
+
+  const problema = lista.filter(vm => vm.estadoCor !== 'ok');
+  const fmtPct = (v) => (v == null ? '—' : v.toFixed(0) + '%');
+
+  const estadoTxt = (vm) => VPS_ESTADO_LABEL[vm.state] || vm.state || 'indisponível';
+
+  const frase = lista.length === 1
+    ? (problema.length
+        ? `Servidor ${escapeHtml(estadoTxt(lista[0]))}`
+        : `VPS · CPU ${fmtPct(lista[0].cpu)} · RAM ${fmtPct(lista[0].ramPercent)}`)
+    : `${lista.length - problema.length}/${lista.length} VPS rodando`;
+
+  const partes = [`<div class="dash-status-txt">
+      <span class="dash-dot dash-dot--${problema.length ? 'red' : 'green'}"></span>${frase}
+    </div>`];
+
+  if (lista.length > 1) {
+    partes.push(...problema.map(vm => `<span class="dash-status-chip">
+        <span class="dash-dot dash-dot--red"></span>
+        ${escapeHtml(vm.hostname)} ${escapeHtml(estadoTxt(vm))}
+      </span>`));
+  }
+
+  const el = $('dashStatusVps');
+  el.className = 'dash-status' + (problema.length ? ' dash-status--alerta' : '');
+  el.innerHTML = partes.join('');
+  dashBloco('dashStatusVps', true);
 }
 
 // ---------- Chamados: Intecs (helpdesk interno) + MSA (eurosa) ----------
@@ -6973,17 +7029,18 @@ async function carregarDashboard({ forcar = false } = {}) {
   $('dashboardContent').classList.add('hidden');
   $('alertDashboard').innerHTML = '';
   try {
-    // Só /api/dashboard é obrigatório. Os outros cinco são blocos opcionais:
+    // Só /api/dashboard é obrigatório. Os outros seis são blocos opcionais:
     // cada um herda a permissão da aba de origem e, num 403 (ou numa falha de
     // integração externa), some da tela em vez de derrubar a Visão Geral.
     const sete = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const [d, msaRaw, ci, cx, cal, avisos] = await Promise.all([
+    const [d, msaRaw, ci, cx, cal, avisos, vps] = await Promise.all([
       api('GET', '/api/dashboard'),
       api('GET', '/api/chamados' + (forcar ? '?forcar=1' : '')).catch(() => null),
       api('GET', '/api/chamados-intecs/dashboard').catch(() => null),
       api('GET', '/api/conexoes').catch(() => null),
       api('GET', '/api/calendario/eventos').catch(() => null),
       api('GET', `/api/logs?seguranca=alerta&limit=6&de=${encodeURIComponent(sete)}`).catch(() => null),
+      api('GET', '/api/vps/resumo').catch(() => null),
     ]);
     _dashData = d;
 
@@ -6999,10 +7056,12 @@ async function carregarDashboard({ forcar = false } = {}) {
     // globais e por isso ficam fora de renderDashboard().
     renderDashboard(d, getSelectedUnidades());
     renderConsolidadoUnidades(cx);
+    renderVpsStatusDash(vps);
     renderChamadosDash(ci, msaRaw);
     renderEventosDoMes(cal);
     renderAvisosAcesso(avisos);
 
+    dashBloco('dashGridStatus', !!cx || !!vps);
     dashBloco('dashGridEventosAvisos', !!cal || !!avisos);
     aplicarAtalhosDashboard();
 

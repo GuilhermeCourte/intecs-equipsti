@@ -1321,6 +1321,15 @@ app.get('/api/vps', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res
   }
 }));
 
+// Resumo compacto (estado + CPU/RAM atuais) para o Dashboard e o Cockpit.
+app.get('/api/vps/resumo', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  try {
+    res.json(await hostinger.resumo());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}));
+
 app.get('/api/vps/:id/metricas', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
   const faixa = req.query.faixa === '7d' ? '7d' : '24h';
   try {
@@ -1581,8 +1590,10 @@ async function rodarLembretesCalendario() {
 // agendador interno, no fim deste arquivo.
 
 // ===================== PATs (origem dos empréstimos) =====================
+// Só lista PATs que já passaram pela aba Empréstimos (EQUIPSTI_emprestimos).
+// Isso obriga o cadastro correto do empréstimo antes de usá-lo como backup no INTECS vs MSA.
 app.get('/api/pats', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
-  const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_registros
+  const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_emprestimos
     WHERE pat IS NOT NULL AND LTRIM(RTRIM(pat)) <> '' ORDER BY pat`);
   res.json(r.recordset.map((row) => row.pat));
 }));

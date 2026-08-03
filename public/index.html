@@ -1522,6 +1522,11 @@
     .dash-grid-2 > .dash-panel {
       margin-bottom: 0; display: flex; flex-direction: column;
     }
+    /* Unidades + VPS lado a lado: mesmo truque do .dash-panel acima, e se só
+       um dos dois tiver dado (ex.: usuário sem aba_vps), o outro ocupa a linha
+       inteira em vez de deixar metade vazia. */
+    .dash-grid-2 > .dash-status { margin-bottom: 0; }
+    .dash-grid-2:has(> .dash-status.hidden) { grid-template-columns: 1fr; }
 
     /* Itens das duas listas: mesma métrica dos itens do calendário, sem o
        cursor/hover — aqui não se clica em nada. */
@@ -2153,8 +2158,13 @@
 
             <!-- Loading: skeleton com a mesma estrutura do conteúdo real -->
             <div id="dashboardLoading" aria-busy="true" aria-label="Carregando dados do dashboard">
-              <div class="dash-status">
-                <span class="skel skel-line" style="width:230px;height:15px"></span>
+              <div class="dash-grid-2">
+                <div class="dash-status">
+                  <span class="skel skel-line" style="width:230px;height:15px"></span>
+                </div>
+                <div class="dash-status">
+                  <span class="skel skel-line" style="width:180px;height:15px"></span>
+                </div>
               </div>
 
               <div class="dash-stats-row">
@@ -2241,9 +2251,12 @@
 
             <div id="dashboardContent" class="hidden">
 
-              <!-- Consolidado das unidades (aba_internet) -->
-              <div class="dash-status hidden" id="dashStatusUnidades"
-                   data-ir="tab-internet" data-ir-sub="sub-tab-conexao"></div>
+              <!-- Consolidado das unidades (aba_internet) + Status da VPS (aba_vps), lado a lado -->
+              <div class="dash-grid-2 hidden" id="dashGridStatus">
+                <div class="dash-status hidden" id="dashStatusUnidades"
+                     data-ir="tab-internet" data-ir-sub="sub-tab-conexao"></div>
+                <div class="dash-status hidden" id="dashStatusVps" data-ir="tab-vps"></div>
+              </div>
 
               <!-- Stats: inventário + chamados na mesma faixa. Os dois de
                    chamados escondem-se sozinhos quando falta permissão. -->
@@ -3980,6 +3993,9 @@
 
             <!-- 5. Backup INTECS -->
             <div class="col-12 mt-3"><h6 class="fw-semibold mb-0 fs-5"><i class="ph ph-hard-drives me-1"></i> Backup (empréstimo INTECS)</h6></div>
+            <div class="col-12">
+              <div class="form-text mt-0">Só aparecem aqui patrimônios já cadastrados na aba Empréstimos. Se não achar o PAT, cadastre o empréstimo lá primeiro.</div>
+            </div>
             <div class="col-md-6">
               <label class="form-label" for="im_bkp_pat">PATRIMÔNIO BKP INTECS</label>
               <select class="form-select" id="im_bkp_pat"><option value="">Selecione...</option></select>

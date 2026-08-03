@@ -104,6 +104,24 @@ export async function metricas(id, faixa) {
   return data;
 }
 
+// ---------- Resumo (dashboard/cockpit: estado + CPU/RAM atuais) ----------
+// Mesmo recorte que a aba VPS já mostra por VM (último ponto das séries de
+// métricas), só que compacto — evita duplicar essa leitura em cada front.
+export async function resumo() {
+  const maquinas = await listarMaquinas();
+  const ultimo = (serie) => (serie && serie.data.length ? serie.data[serie.data.length - 1] : null);
+  return Promise.all(maquinas.map(async (vm) => {
+    let cpu = null, ramPercent = null;
+    try {
+      const m = await metricas(vm.id, '24h');
+      const ramUsadoMb = ultimo(m.ram_usage);
+      cpu = ultimo(m.cpu_usage);
+      if (ramUsadoMb != null && vm.memory) ramPercent = Math.round((ramUsadoMb / vm.memory) * 1000) / 10;
+    } catch { /* sem métrica não derruba o resumo, só fica sem número */ }
+    return { id: vm.id, hostname: vm.hostname, state: vm.state, estadoCor: vm.estadoCor, cpu, ramPercent };
+  }));
+}
+
 // ---------- Docker (projetos e containers) ----------
 
 function estadoCorProjeto(state) {
@@ -128,6 +146,20 @@ function formatarPorta(p) {
   return `${p.container_port}/${proto} (interno)`;
 }
 
+// A lista de projetos (getDockerProjects) não traz "stats" (fica null) —
+// só o endpoint por projeto (getDockerProjectContainers) preenche.
+function normalizarStats(s) {
+  if (!s) return null;
+  return {
+    cpuPercent: s.cpu_percentage,
+    memPercent: s.memory_percentage,
+    memUsadaMb: bytesParaMb(s.memory_used),
+    memTotalMb: bytesParaMb(s.memory_total),
+    netEntradaMb: bytesParaMb(s.net_in),
+    netSaidaMb: bytesParaMb(s.net_out)
+  };
+}
+
 function normalizarContainer(c) {
   return {
     id: c.id,
@@ -137,7 +169,8 @@ function normalizarContainer(c) {
     state: c.state,
     estadoCor: estadoCorContainer(c.state),
     health: c.health || null,
-    portas: (c.ports || []).map(formatarPorta)
+    portas: (c.ports || []).map(formatarPorta),
+    stats: normalizarStats(c.stats)
   };
 }
 
@@ -149,12 +182,24 @@ export async function dockerProjetos(id) {
   const cache = _cacheDocker.get(id);
   if (cache && Date.now() - cache.ts < 30_000) return cache.data;
 
-  const projetos = (await client.getDockerProjects(id)).map((p) => ({
-    name: p.name,
-    status: p.status,
-    state: p.state,
-    estadoCor: estadoCorProjeto(p.state),
-    containers: (p.containers || []).map(normalizarContainer)
+  const listaProjetos = await client.getDockerProjects(id);
+
+  // getDockerProjects não traz stats; busca os containers de cada projeto
+  // (com stats) em paralelo pra completar.
+  const projetos = await Promise.all(listaProjetos.map(async (p) => {
+    let containers = p.containers || [];
+    try {
+      containers = await client.getDockerProjectContainers(id, p.name);
+    } catch {
+      // se o endpoint de stats falhar, mantém os containers já obtidos (sem stats).
+    }
+    return {
+      name: p.name,
+      status: p.status,
+      state: p.state,
+      estadoCor: estadoCorProjeto(p.state),
+      containers: containers.map(normalizarContainer)
+    };
   }));
   _cacheDocker.set(id, { ts: Date.now(), data: projetos });
   return projetos;

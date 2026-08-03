@@ -54,6 +54,13 @@ export function getVirtualMachineActions(id, page = 1) {
 }
 
 // Projetos Docker Compose rodando na VPS, com seus containers.
+// Não traz "stats" (fica null) — ver getDockerProjectContainers.
 export function getDockerProjects(id) {
   return hostingerRequest(`/api/vps/v1/virtual-machines/${encodeURIComponent(id)}/docker`);
+}
+
+// Containers de um projeto específico, com "stats" preenchido
+// (cpu_percentage, memory_*, net_in/net_out).
+export function getDockerProjectContainers(id, projectName) {
+  return hostingerRequest(`/api/vps/v1/virtual-machines/${encodeURIComponent(id)}/docker/${encodeURIComponent(projectName)}/containers`);
 }
