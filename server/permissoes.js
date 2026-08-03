@@ -15,6 +15,7 @@ const ABAS = [
   'aba_conexao',
   'aba_internet',
   'aba_senhas',
+  'aba_vps',
   'aba_calendario',
   'aba_gerenciar',
   'aba_usuarios',
@@ -34,6 +35,7 @@ export const ROTULOS = {
   aba_conexao: 'Conexão Remota',
   aba_internet: 'Internet',
   aba_senhas: 'Senhas',
+  aba_vps: 'VPS',
   aba_calendario: 'Calendário',
   aba_gerenciar: 'Opções',
   aba_usuarios: 'Usuários',
@@ -50,15 +52,16 @@ function conjunto(abasLigadas, funcionaisLigadas = []) {
   return p;
 }
 
-// MASTER: todas as abas. TECNICO: todas MENOS Logs e Senhas (auditoria é sensível —
-// altera usuários/permissões; senhas dão acesso físico às portas — ambas se
+// MASTER: todas as abas. TECNICO: todas MENOS Logs, Senhas e VPS (auditoria é
+// sensível — altera usuários/permissões; senhas dão acesso físico às portas;
+// VPS expõe infraestrutura que hospeda o próprio sistema — as três se
 // liberam por usuário, virando "TECNICO+").
 // GESTOR/BASICO: só GTI - Chamados.
 // Ver todas as máquinas no portal: só TECNICO por padrão (MASTER liga por usuário).
 export const PADROES_POR_PAPEL = {
   BASICO: conjunto(['aba_chamados']),
   GESTOR: conjunto(['aba_chamados']),
-  TECNICO: conjunto(ABAS.filter((k) => k !== 'aba_logs' && k !== 'aba_senhas'), ['chamados_ver_todas_maquinas']),
+  TECNICO: conjunto(ABAS.filter((k) => k !== 'aba_logs' && k !== 'aba_senhas' && k !== 'aba_vps'), ['chamados_ver_todas_maquinas']),
   MASTER: conjunto(ABAS)
 };
 

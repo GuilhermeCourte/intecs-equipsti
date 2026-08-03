@@ -125,7 +125,10 @@
     }
     .form-control, .form-select { border-radius: 10px; }
     input.form-control, .form-select { height: calc(1.5em + .75rem + 2px); }
-    a, .text-primary { color: var(--ink) !important; }
+    /* :not(.btn): link vira <a class="btn ..."> em vários lugares (ex.: "Abrir
+       no hPanel") — sem isto, o !important trava o texto escuro por cima do
+       fundo escuro do :hover do botão, sumindo com o texto. */
+    a:not(.btn), .text-primary { color: var(--ink) !important; }
 
     /* ============================================================
        Tela de login — estilo REF_DESIGN (responsivo / split-screen)
@@ -950,6 +953,19 @@
       padding: 7px 10px; font-size: .875rem;
     }
 
+    /* Seletor de "outras métricas" da aba VPS: mesmo compacto acima.
+       Largura fixa (mesma ideia do #imFiltroStatus): sem isto a caixa
+       encolhe/cresce ao trocar entre "Tráfego saída" e "Tráfego entrada". */
+    .choices:has(.vps-metrica) { width: 170px; flex: 0 0 auto; }
+    .choices:has(.vps-metrica) .choices__inner {
+      min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px;
+    }
+    .choices:has(.vps-metrica) .choices__list--single .choices__item { font-size: .875rem; }
+    .choices:has(.vps-metrica) .choices__list--dropdown .choices__item,
+    .choices:has(.vps-metrica) .choices__list[aria-expanded] .choices__item {
+      padding: 7px 10px; font-size: .875rem;
+    }
+
     /* Nome de drive compartilhado é longo: a lista abre mais larga que a caixa
        para o item caber numa linha (a caixa fechada segue com 200px). */
     .choices:has(#lgDrvProprietario) .choices__list--dropdown,
@@ -1525,6 +1541,55 @@
     }
     .dash-lista::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
     .dash-lista::-webkit-scrollbar-track { background: transparent; }
+    /* Specs da aba VPS: Bootstrap só tem row-cols até 6 — com 7 campos
+       (Plano/SO/CPUs/RAM/Disco/IPv4/Uptime) o Uptime quebrava linha sozinho.
+       Grid próprio encaixa quantos couberem por linha, sem limite fixo. */
+    .vps-specs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+      gap: .5rem 1rem;
+    }
+    /* Cabeçalho do projeto Docker: clicável, expande a lista de containers
+       (colapsada por padrão — evita repetir o nome quando só tem 1 container
+       com o mesmo nome do projeto, o caso mais comum). */
+    .vps-docker-toggle {
+      display: flex; align-items: center; gap: .5rem; width: 100%;
+      border: none; background: transparent; padding: .25rem 0;
+      text-align: left; cursor: pointer;
+    }
+    .vps-docker-toggle .vps-docker-chev { margin-left: auto; color: var(--muted); transition: transform .2s ease; }
+    .vps-docker-toggle[aria-expanded="true"] .vps-docker-chev { transform: rotate(180deg); }
+    /* Item de container: lista empilhada (não tabela) — não quebra feio em
+       tela estreita como colunas de tabela quebravam. */
+    .vps-docker-container {
+      padding: .5rem .6rem; margin-top: .25rem;
+      background: var(--bg-soft); border-radius: 8px;
+    }
+    .vps-docker-container + .vps-docker-container { margin-top: .35rem; }
+    /* Skeleton dos gráficos de linha (CPU/RAM/Outras métricas): zigue-zague
+       em vez de barrinhas de gráfico de barra — parece com a área sob a
+       linha (fill:true) que o Chart.js desenha de verdade. */
+    .vps-skel-linechart {
+      display: block; width: 100%; height: 100%; border-radius: 6px;
+      clip-path: polygon(
+        0% 78%, 8% 62%, 16% 70%, 24% 48%, 32% 58%, 40% 36%, 48% 46%,
+        56% 28%, 64% 40%, 72% 20%, 80% 34%, 88% 16%, 96% 26%, 100% 14%,
+        100% 100%, 0% 100%
+      );
+    }
+    /* Ações recentes da aba VPS: mesma barra fina e sempre visível da .dash-lista. */
+    .vps-acoes-lista {
+      max-height: 190px; overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+      overscroll-behavior: contain;
+    }
+    .vps-acoes-lista::-webkit-scrollbar { width: 8px; }
+    .vps-acoes-lista::-webkit-scrollbar-thumb {
+      background: var(--line); border-radius: 4px;
+      border: 2px solid transparent; background-clip: content-box;
+    }
+    .vps-acoes-lista::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
+    .vps-acoes-lista::-webkit-scrollbar-track { background: transparent; }
     .dash-item {
       display: flex; align-items: flex-start; gap: .6rem;
       padding: .55rem 1.1rem; border-bottom: 1px solid var(--line);
@@ -1721,6 +1786,14 @@
        (Visualizar Registro deixa os selects travados) — não é var(--bg). */
     html[data-theme="dark"] .choices.is-disabled .choices__inner {
       background: var(--bg-soft);
+    }
+    /* Ícone do Docker é um SVG branco fixo — inverte no tema claro (fundo
+       branco) e volta ao normal no escuro (fundo escuro). */
+    .vps-icone-docker {
+      filter: invert(1);
+    }
+    html[data-theme="dark"] .vps-icone-docker {
+      filter: none;
     }
     /* Badge .bg-light.text-dark (módulo nos Logs, evento "view" na
        auditoria do Drive): bg-light já vira --bg-soft escuro acima, mas
@@ -1928,6 +2001,7 @@
               <button type="button" class="mm-item" data-tab="tab-conexao"><i class="ph ph-screencast"></i> Conexão Remota</button>
               <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
               <button type="button" class="mm-item" data-tab="tab-senhas"><i class="ph ph-key"></i> Senhas</button>
+              <button type="button" class="mm-item" data-tab="tab-vps"><i class="ph ph-hard-drives"></i> VPS</button>
             </div>
           </div>
 
@@ -2002,6 +2076,12 @@
                 <button class="dropdown-item" id="tab-senhas" data-bs-toggle="tab"
                   data-bs-target="#pane-senhas" type="button" role="tab">
                   <i class="ph ph-key"></i> Senhas
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-vps" data-bs-toggle="tab"
+                  data-bs-target="#pane-vps" type="button" role="tab">
+                  <i class="ph ph-hard-drives"></i> VPS
                 </button>
               </li>
             </ul>
@@ -2756,6 +2836,24 @@
                 </div>
               </div>
 
+            </div>
+          </div>
+
+          <!-- ABA VPS (monitoramento read-only do Hostinger) -->
+          <div class="tab-pane fade" id="pane-vps" role="tabpanel">
+            <h2 class="pane-titulo-mobile"><i class="ph ph-hard-drives"></i> VPS</h2>
+            <p class="text-muted mb-2" style="font-size:.95rem;">Métricas da VPS.</p>
+            <div class="d-flex align-items-center gap-2 justify-content-end mb-2">
+              <span class="text-muted small me-auto" id="vpsAtualizadoEm"></span>
+              <a href="https://hpanel.hostinger.com/vps" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
+                <i class="ph ph-arrow-square-out"></i> Abrir no hPanel
+              </a>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarVps" title="Atualizar">
+                <i class="ph ph-arrow-clockwise fs-5"></i>
+              </button>
+            </div>
+            <div id="vpsCards" class="row g-3">
+              <div class="text-muted">Carregando...</div>
             </div>
           </div>
 
@@ -3812,7 +3910,7 @@
             <input type="hidden" id="im_id">
 
             <!-- 1. Informações do Chamado MSA -->
-            <div class="col-12"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-headset me-1"></i> Chamado MSA</h6></div>
+            <div class="col-12"><h6 class="fw-semibold mb-0 fs-5"><i class="ph ph-headset me-1"></i> Chamado MSA</h6></div>
             <div class="col-md-6">
               <label class="form-label" for="im_data_solicitacao">DATA SOLICITAÇÃO</label>
               <input type="text" class="form-control" id="im_data_solicitacao" readonly autocomplete="off">
@@ -3835,7 +3933,7 @@
             </div>
 
             <!-- 2. Controle INTECS & GLPI -->
-            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-buildings me-1"></i> Controle INTECS</h6></div>
+            <div class="col-12 mt-3"><h6 class="fw-semibold mb-0 fs-5"><i class="ph ph-buildings me-1"></i> Controle INTECS</h6></div>
             <div class="col-md-6">
               <label class="form-label" for="im_glpi">GLPI</label>
               <input type="number" class="form-control" id="im_glpi" autocomplete="off">
@@ -3851,7 +3949,7 @@
             </div>
 
             <!-- 3. Equipamento (auto pelo patrimônio) -->
-            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-desktop me-1"></i> Equipamento</h6></div>
+            <div class="col-12 mt-3"><h6 class="fw-semibold mb-0 fs-5"><i class="ph ph-desktop me-1"></i> Equipamento</h6></div>
             <div class="col-md-6">
               <label class="form-label" for="im_patrimonio_msa">PATRIMÔNIO MSA</label>
               <input type="text" class="form-control" id="im_patrimonio_msa" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -3870,7 +3968,7 @@
             </div>
 
             <!-- 4. Logística -->
-            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-truck me-1"></i> Movimentação</h6></div>
+            <div class="col-12 mt-3"><h6 class="fw-semibold mb-0 fs-5"><i class="ph ph-truck me-1"></i> Movimentação</h6></div>
             <div class="col-md-6">
               <label class="form-label" for="im_data_retirada">DATA RETIRADA EQUIP.</label>
               <input type="text" class="form-control" id="im_data_retirada" readonly autocomplete="off">
@@ -3881,7 +3979,7 @@
             </div>
 
             <!-- 5. Backup INTECS -->
-            <div class="col-12 mt-3"><h6 class="text-muted fw-semibold mb-0"><i class="ph ph-hard-drives me-1"></i> Backup (empréstimo INTECS)</h6></div>
+            <div class="col-12 mt-3"><h6 class="fw-semibold mb-0 fs-5"><i class="ph ph-hard-drives me-1"></i> Backup (empréstimo INTECS)</h6></div>
             <div class="col-md-6">
               <label class="form-label" for="im_bkp_pat">PATRIMÔNIO BKP INTECS</label>
               <select class="form-select" id="im_bkp_pat"><option value="">Selecione...</option></select>

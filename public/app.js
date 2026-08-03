@@ -1248,6 +1248,398 @@ function configurarConexoes() {
 }
 
 // ============================================================
+//  VPS (monitoramento só leitura da Hostinger)
+// ============================================================
+const VPS_ESTADO_BADGE = { ok: 'badge-ativo', erro: 'badge-inativo', transicao: 'badge-emprestado' };
+const VPS_ESTADO_LABEL = {
+  running: 'Online', stopped: 'Desligada', error: 'Erro', destroyed: 'Destruída', suspended: 'Suspensa',
+  starting: 'Iniciando', stopping: 'Parando', creating: 'Criando', recreating: 'Recriando',
+  restoring: 'Restaurando', recovery: 'Recuperação', stopping_recovery: 'Saindo da recuperação',
+  initial: 'Inicial', suspending: 'Suspendendo', unsuspending: 'Reativando', destroying: 'Destruindo'
+};
+const VPS_ACAO_DOT = { success: 'green', error: 'red' }; // demais estados (delayed/sent/created) caem no orange
+
+// CPU e RAM ficam sempre visíveis, lado a lado; as demais métricas dividem
+// um único gráfico com seletor (pedido do usuário).
+const VPS_METRICAS_FIXAS = {
+  cpu_usage: { label: 'CPU', unidade: '%' },
+  ram_usage: { label: 'RAM', unidade: 'MB' }
+};
+const VPS_METRICAS_OUTRAS = {
+  outgoing_traffic: { label: 'Tráfego saída', unidade: 'MB' },
+  incoming_traffic: { label: 'Tráfego entrada', unidade: 'MB' }
+};
+
+let _vpsCharts = {};
+let _vpsMetricasCache = {}; // chave "id:faixa" -> resposta completa de /metricas
+let _vpsCreatedAt = {}; // vmId -> created_at da VPS, base do Uptime até a lista de ações chegar
+
+function vpsMbParaGb(mb) {
+  return mb == null ? '—' : (mb / 1024).toFixed(1) + ' GB';
+}
+
+// O endpoint de métricas da Hostinger não dá o uptime real (conferido contra
+// o hPanel: fica travado em minutos mesmo com a VPS rodando há dias) — então
+// calcula a partir de uma referência de "início", do jeito que o próprio
+// hPanel mostra ("4 dias 19 horas").
+function formatarUptimeDesde(referenciaIso) {
+  if (!referenciaIso) return '—';
+  const totalHoras = Math.floor((Date.now() - new Date(referenciaIso).getTime()) / 3_600_000);
+  if (totalHoras < 0) return '—';
+  const dias = Math.floor(totalHoras / 24);
+  if (dias < 1) return '< 1 dia';
+  return dias + (dias > 1 ? ' dias' : ' dia');
+}
+
+// created_at é fixo desde a criação da VPS — não muda num restart, então
+// sozinho o Uptime ficaria "preso" contando desde a criação depois de
+// reiniciar. Corrige com a ação de start/restart mais recente (quando
+// existir), que é mais nova que created_at. Só pega ação de VPS (não de
+// container Docker, que tem prefixo "docker_" e não afeta o uptime da VPS).
+const VPS_ACAO_BOOT_RE = /^(vm_)?(start|restart|resume|unsuspend)\b/i;
+
+function referenciaUptimeVps(vmId, acoes) {
+  const criadoEm = _vpsCreatedAt[vmId];
+  const maisRecente = acoes
+    .filter((a) => a.state === 'success' && VPS_ACAO_BOOT_RE.test(a.name))
+    .map((a) => a.createdAt)
+    .sort()
+    .pop();
+  return maisRecente && maisRecente > criadoEm ? maisRecente : criadoEm;
+}
+
+function vpsEnderecos(lista) {
+  if (!lista || !lista.length) return '—';
+  return lista.map((ip) => escapeHtml(ip.address)).join(', ');
+}
+
+// Os gráficos da aba VPS são todos de linha (area sob a linha, fill:true) —
+// skeleton de barrinhas (.skel-chart) fica errado aqui, então usa um clip-path
+// em zigue-zague pra parecer com a área sob uma linha. Some em renderVpsChart().
+function vpsSkelChart() {
+  return '<div class="skel vps-skel-linechart position-absolute top-0 start-0 w-100 h-100"></div>';
+}
+
+function renderVpsCardSkeleton() {
+  return `
+    <div class="col-12">
+      <div class="dash-panel mb-0">
+        <div class="dash-panel-head">
+          <span class="skel skel-line" style="width:240px;height:16px"></span>
+          <span class="skel skel-pill"></span>
+        </div>
+        <div class="p-3">
+          <div class="vps-specs-grid small mb-3">
+            ${Array(7).fill('<div><span class="skel skel-line" style="width:70%;height:9px;margin-bottom:.4rem"></span><span class="skel skel-line" style="width:50%"></span></div>').join('')}
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6"><div class="dash-chart-wrap p-0" style="height:260px"><div class="skel vps-skel-linechart"></div></div></div>
+            <div class="col-6"><div class="dash-chart-wrap p-0" style="height:260px"><div class="skel vps-skel-linechart"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderVpsCard(vm) {
+  const badge = VPS_ESTADO_BADGE[vm.estadoCor] || 'badge-emprestado';
+  return `
+    <div class="col-12">
+      <div class="dash-panel mb-0">
+        <div class="dash-panel-head">
+          <div class="dash-panel-title"><img src="icons/hostinger.svg" alt="" width="18" height="18"> VPS Hostinger · ${escapeHtml(vm.hostname)}</div>
+          <span class="badge-status ${badge}">${escapeHtml(VPS_ESTADO_LABEL[vm.state] || vm.state)}</span>
+        </div>
+        <div class="p-3">
+          <div class="d-flex align-items-baseline gap-2 mb-1">
+            <h3 class="h5 mb-0"><i class="ph ph-info"></i> Dados</h3>
+          </div>
+          <div class="vps-specs-grid small mb-3">
+            <div><span class="text-muted">Plano</span><br>${escapeHtml(vm.plan || '—')}</div>
+            <div><span class="text-muted">SO</span><br>${escapeHtml(vm.template?.name || '—')}</div>
+            <div><span class="text-muted">CPUs</span><br>${vm.cpus ?? '—'}</div>
+            <div><span class="text-muted">RAM</span><br><span id="vpsRamSpec-${vm.id}">—</span> / ${vpsMbParaGb(vm.memory)}</div>
+            <div><span class="text-muted">Disco</span><br>${vpsMbParaGb(vm.disk)}</div>
+            <div><span class="text-muted">IPv4</span><br>${vpsEnderecos(vm.ipv4)}</div>
+            <div><span class="text-muted">Uptime</span><br><span id="vpsUptimeSpec-${vm.id}">${formatarUptimeDesde(vm.createdAt)}</span></div>
+          </div>
+
+          <div class="d-flex align-items-baseline gap-2 mt-4 mb-1">
+            <h3 class="h5 mb-0"><i class="ph ph-chart-line"></i> Métricas principais</h3>
+          </div>
+          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <div class="btn-group btn-group-sm vps-faixa" role="group" data-vm="${vm.id}">
+              <button type="button" class="btn btn-outline-secondary active" data-faixa="24h">24h</button>
+              <button type="button" class="btn btn-outline-secondary" data-faixa="7d">7d</button>
+            </div>
+          </div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <div class="d-flex justify-content-between align-items-baseline mb-1">
+                <span class="small text-muted">CPU</span>
+                <span class="fw-semibold" id="vpsCpuAtual-${vm.id}">—</span>
+              </div>
+              <div class="dash-chart-wrap p-0 position-relative" style="height:260px">${vpsSkelChart()}<canvas id="vpsChartCpu-${vm.id}"></canvas></div>
+            </div>
+            <div class="col-6">
+              <div class="d-flex justify-content-between align-items-baseline mb-1">
+                <span class="small text-muted">RAM</span>
+                <span class="fw-semibold" id="vpsRamAtual-${vm.id}">—</span>
+              </div>
+              <div class="dash-chart-wrap p-0 position-relative" style="height:260px">${vpsSkelChart()}<canvas id="vpsChartRam-${vm.id}"></canvas></div>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-baseline gap-2 mt-4 mb-1">
+            <h3 class="h5 mb-0"><i class="ph ph-chart-bar"></i> Outras métricas</h3>
+          </div>
+          <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+            <select class="form-select form-select-sm vps-metrica" style="width:auto" data-vm="${vm.id}">
+              ${Object.entries(VPS_METRICAS_OUTRAS).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="dash-chart-wrap p-0 position-relative">${vpsSkelChart()}<canvas id="vpsChartOutro-${vm.id}"></canvas></div>
+
+          <div class="d-flex align-items-baseline gap-2 mt-3 mb-1">
+            <h3 class="h5 mb-0"><img src="icons/docker.svg" alt="" width="16" height="16" class="vps-icone-docker"> Docker</h3>
+          </div>
+          <div id="vpsDocker-${vm.id}">
+            <div class="vps-docker-container">
+              <div class="d-flex align-items-center gap-2">
+                <span class="skel skel-line" style="width:10px;height:10px;border-radius:50%"></span>
+                <span class="skel skel-line" style="width:100px"></span>
+              </div>
+              <span class="skel skel-line" style="width:55%;display:block;margin-top:.4rem"></span>
+              <span class="skel skel-line" style="width:35%;display:block;margin-top:.3rem"></span>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-baseline gap-2 mt-5 mb-1">
+            <h3 class="h5 mb-0"><i class="ph ph-clock-counter-clockwise"></i> Ações recentes</h3>
+          </div>
+          <div class="table-responsive vps-acoes-lista">
+            <table class="table table-sm table-striped align-middle mb-1">
+              <tbody id="vpsAcoesBody-${vm.id}">${skelTr(['50%', '25%', '25%'], 5)}</tbody>
+            </table>
+          </div>
+          <button type="button" class="btn btn-link btn-sm p-0 d-none" id="vpsAcoesMais-${vm.id}" data-vm="${vm.id}" data-page="1">Carregar mais</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function carregarVps() {
+  const grid = $('vpsCards');
+  grid.innerHTML = renderVpsCardSkeleton();
+  try {
+    const maquinas = await api('GET', '/api/vps');
+    if (!maquinas.length) {
+      grid.innerHTML = '<div class="text-muted">Nenhuma VPS encontrada na conta Hostinger.</div>';
+      return;
+    }
+    grid.innerHTML = maquinas.map(renderVpsCard).join('');
+    // Visual padrão do sistema pros selects (Choices.js) — o card é montado
+    // via innerHTML a cada refresh, então instancia de novo toda vez.
+    if (typeof Choices !== 'undefined') {
+      grid.querySelectorAll('.vps-metrica').forEach((el) => {
+        new Choices(el, { searchEnabled: false, itemSelectText: '', shouldSort: false, allowHTML: false });
+      });
+    }
+    $('vpsAtualizadoEm').textContent = 'Atualizado ' + tempoRelativo(new Date().toISOString().slice(0, 19).replace('T', ' '));
+    for (const vm of maquinas) {
+      _vpsCreatedAt[vm.id] = vm.createdAt;
+      carregarMetricasVps(vm.id, '24h');
+      carregarAcoesVps(vm.id, 1);
+      carregarDockerVps(vm.id);
+    }
+  } catch (err) {
+    grid.innerHTML = '<div class="text-danger">Erro: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+// Busca (com cache por id+faixa) e desenha os 3 gráficos do card: CPU e RAM
+// fixos, e a métrica escolhida no seletor de "outras".
+async function carregarMetricasVps(vmId, faixa) {
+  const chave = vmId + ':' + faixa;
+  try {
+    let dados = _vpsMetricasCache[chave];
+    if (!dados) {
+      dados = await api('GET', '/api/vps/' + encodeURIComponent(vmId) + '/metricas?faixa=' + faixa);
+      _vpsMetricasCache[chave] = dados;
+    }
+    renderVpsChart('vpsChartCpu-' + vmId, VPS_METRICAS_FIXAS.cpu_usage.unidade, dados.cpu_usage);
+    renderVpsChart('vpsChartRam-' + vmId, VPS_METRICAS_FIXAS.ram_usage.unidade, dados.ram_usage);
+    renderMetricaOutraVps(vmId, dados);
+
+    // Consumo atual = última amostra da série (o mais recente que a Hostinger tem).
+    const ultimo = (serie) => serie && serie.data.length ? serie.data[serie.data.length - 1] : null;
+    const cpuAtual = ultimo(dados.cpu_usage);
+    const ramAtual = ultimo(dados.ram_usage);
+    $('vpsCpuAtual-' + vmId).textContent = cpuAtual == null ? '—' : cpuAtual.toFixed(1) + '%';
+    $('vpsRamAtual-' + vmId).textContent = ramAtual == null ? '—' : vpsMbParaGb(ramAtual);
+    const ramSpec = $('vpsRamSpec-' + vmId);
+    if (ramSpec) ramSpec.textContent = ramAtual == null ? '—' : vpsMbParaGb(ramAtual);
+  } catch (err) {
+    console.error('[vps] métricas', vmId, err.message);
+  }
+}
+
+// Redesenha só o gráfico da métrica "outra" selecionada, a partir do cache
+// já carregado (troca de métrica não precisa de nova requisição).
+function renderMetricaOutraVps(vmId, dadosCache) {
+  const select = document.querySelector('.vps-metrica[data-vm="' + vmId + '"]');
+  const metrica = select ? select.value : Object.keys(VPS_METRICAS_OUTRAS)[0];
+  const info = VPS_METRICAS_OUTRAS[metrica];
+  renderVpsChart('vpsChartOutro-' + vmId, info.unidade, dadosCache[metrica]);
+}
+
+function renderVpsChart(canvasId, unidade, serie) {
+  if (_vpsCharts[canvasId]) _vpsCharts[canvasId].destroy();
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  canvas.parentElement.querySelector('.vps-skel-linechart')?.remove();
+  serie = serie || { labels: [], data: [] };
+  const labels = serie.labels.map((l) => new Date(l).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }));
+  _vpsCharts[canvasId] = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: [{ data: serie.data, borderColor: '#4f7cf5', backgroundColor: 'rgba(79,124,245,.12)', fill: true, tension: 0.3, pointRadius: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, datalabels: { display: false } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: unidade } } }
+    }
+  });
+}
+
+async function carregarAcoesVps(vmId, page) {
+  const corpo = $('vpsAcoesBody-' + vmId);
+  const btnMais = $('vpsAcoesMais-' + vmId);
+  try {
+    const resp = await api('GET', '/api/vps/' + encodeURIComponent(vmId) + '/acoes?page=' + page);
+    if (page === 1) corpo.innerHTML = '';
+    if (!resp.data.length && page === 1) {
+      corpo.innerHTML = '<tr><td class="text-muted">Sem ações registradas.</td></tr>';
+    }
+    corpo.insertAdjacentHTML('beforeend', resp.data.map((a) => {
+      const cor = VPS_ACAO_DOT[a.state] || 'orange';
+      return '<tr><td><span class="dash-dot dash-dot--' + cor + '"></span> ' + escapeHtml(a.name) +
+        '</td><td>' + escapeHtml(a.stateLabel) + '</td><td class="text-muted">' + escapeHtml(fmtDataHora(a.createdAt)) + '</td></tr>';
+    }).join(''));
+    const meta = resp.meta;
+    const temMais = meta && meta.current_page * meta.per_page < meta.total;
+    btnMais.classList.toggle('d-none', !temMais);
+    btnMais.dataset.page = page;
+
+    // Página 1 tem as ações mais recentes — é onde pode estar um start/restart
+    // que corrige o Uptime (ver referenciaUptimeVps()).
+    if (page === 1) {
+      const uptimeEl = $('vpsUptimeSpec-' + vmId);
+      if (uptimeEl) uptimeEl.textContent = formatarUptimeDesde(referenciaUptimeVps(vmId, resp.data));
+    }
+  } catch (err) {
+    if (page === 1) corpo.innerHTML = '<tr><td class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
+  }
+}
+
+const VPS_DOT_POR_COR = { ok: 'green', erro: 'red', transicao: 'orange' };
+
+// Duração vem em inglês (docker ps): traduz as unidades de tempo mais comuns.
+const VPS_TEMPO_PT = {
+  second: 'segundo', seconds: 'segundos', minute: 'minuto', minutes: 'minutos',
+  hour: 'hora', hours: 'horas', day: 'dia', days: 'dias',
+  week: 'semana', weeks: 'semanas', month: 'mês', months: 'meses',
+  year: 'ano', years: 'anos'
+};
+
+// Status bruto do container (ex.: "Up 4 hours (healthy)", "Exited (0) 3 hours
+// ago") vira algo mais curto em PT — a saúde já aparece separada (ver `saude`
+// no chamador), então o "(healthy)" embutido no texto é redundante e sai.
+function formatarStatusContainerVps(status) {
+  if (!status) return '—';
+  let s = status.replace(/\s*\((?:un)?healthy\)|\s*\(health:\s*starting\)/i, '').trim();
+  if (/^up\s/i.test(s)) {
+    s = 'no ar há ' + s.replace(/^up\s+/i, '').replace(/^about\s+/i, 'cerca de ');
+  } else if (/^exited/i.test(s)) {
+    s = 'parado há ' + s.replace(/^exited\s*\([^)]*\)\s*/i, '').replace(/\s*ago$/i, '').replace(/^about\s+/i, 'cerca de ');
+  } else if (/^created$/i.test(s)) {
+    s = 'criado';
+  } else if (/^restarting/i.test(s)) {
+    s = 'reiniciando';
+  }
+  return s.replace(/\b(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\b/gi,
+    (m) => VPS_TEMPO_PT[m.toLowerCase()] || m);
+}
+
+// Container com o mesmo nome do projeto (caso comum: 1 serviço só) repete a
+// informação que o cabeçalho já mostra — por isso a lista de containers vem
+// colapsada, só abre se o usuário quiser ver imagem/porta/etc.
+function renderDockerProjeto(p, vmId, idx) {
+  const dot = VPS_DOT_POR_COR[p.estadoCor] || 'orange';
+  const collapseId = 'vpsDockerCont-' + vmId + '-' + idx;
+  const itens = p.containers.length
+    ? p.containers.map((c) => {
+        const cdot = VPS_DOT_POR_COR[c.estadoCor] || 'orange';
+        const saude = c.health ? ' · ' + escapeHtml(c.health) : '';
+        const portas = c.portas.length ? escapeHtml(c.portas.join(', ')) : '—';
+        return `
+          <div class="vps-docker-container">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="dash-dot dash-dot--${cdot}"></span>
+              <span class="fw-semibold">${escapeHtml(c.name)}</span>
+            </div>
+            <div class="text-muted small">${escapeHtml(formatarStatusContainerVps(c.status))}${saude}</div>
+            <div class="text-muted small">${portas}</div>
+          </div>`;
+      }).join('')
+    : '<div class="text-muted small">Sem containers.</div>';
+  return `
+    <div class="mb-2">
+      <button type="button" class="vps-docker-toggle" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false">
+        <span class="dash-dot dash-dot--${dot}"></span>
+        <span class="fw-semibold">${escapeHtml(p.name)}</span>
+        <i class="ph ph-caret-down vps-docker-chev"></i>
+      </button>
+      <div class="collapse" id="${collapseId}">${itens}</div>
+    </div>`;
+}
+
+async function carregarDockerVps(vmId) {
+  const cont = $('vpsDocker-' + vmId);
+  try {
+    const projetos = await api('GET', '/api/vps/' + encodeURIComponent(vmId) + '/docker');
+    cont.innerHTML = projetos.length
+      ? projetos.map((p, i) => renderDockerProjeto(p, vmId, i)).join('')
+      : '<div class="text-muted small">Nenhum projeto Docker encontrado.</div>';
+  } catch (err) {
+    cont.innerHTML = '<div class="text-danger small">Erro: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function configurarVps() {
+  $('tab-vps').addEventListener('shown.bs.tab', carregarVps);
+  $('btnAtualizarVps').addEventListener('click', carregarVps);
+  $('vpsCards').addEventListener('change', (e) => {
+    if (!e.target.classList.contains('vps-metrica')) return;
+    const vmId = e.target.dataset.vm;
+    const faixa = document.querySelector('.vps-faixa[data-vm="' + vmId + '"] .active').dataset.faixa;
+    const dados = _vpsMetricasCache[vmId + ':' + faixa];
+    if (dados) renderMetricaOutraVps(vmId, dados);
+  });
+  $('vpsCards').addEventListener('click', (e) => {
+    const btnFaixa = e.target.closest('.vps-faixa button');
+    if (btnFaixa) {
+      const grupo = btnFaixa.closest('.vps-faixa');
+      grupo.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btnFaixa));
+      carregarMetricasVps(grupo.dataset.vm, btnFaixa.dataset.faixa);
+      return;
+    }
+    const btnMais = e.target.closest('[id^="vpsAcoesMais-"]');
+    if (btnMais) carregarAcoesVps(btnMais.dataset.vm, Number(btnMais.dataset.page) + 1);
+  });
+}
+
+// ============================================================
 //  Calendário (vencimentos de licenças, contratos e afins)
 // ============================================================
 let modalCalendario = null;
@@ -5709,6 +6101,7 @@ const ABA_PERMISSAO = {
   'tab-conexao': 'aba_conexao',
   'tab-internet': 'aba_internet',
   'tab-senhas': 'aba_senhas',
+  'tab-vps': 'aba_vps',
   'tab-calendario': 'aba_calendario',
   'tab-gerenciar': 'aba_gerenciar',
   'tab-usuarios': 'aba_usuarios',
@@ -5720,7 +6113,7 @@ const ABA_PERMISSAO = {
 // o grupo inteiro só some quando nenhuma aba dele está liberada.
 const GRUPOS_ABAS = {
   equipamentos: { abas: ['tab-registros', 'tab-emprestimos'], desktopId: 'grupo-equipamentos', mobileId: 'mmGrupoEquipamentos' },
-  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet', 'tab-senhas'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
+  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet', 'tab-senhas', 'tab-vps'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
   opcoes: { abas: ['tab-gerenciar', 'tab-usuarios'], desktopId: 'grupo-opcoes', mobileId: 'mmGrupoOpcoes' }
 };
 
@@ -7466,6 +7859,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarVerificarMaquina();
   configurarConexaoRemota();
   configurarConexoes();
+  configurarVps();
   configurarMenuMobile();
   configurarDropdownsAbas();
   configurarCalendario();
