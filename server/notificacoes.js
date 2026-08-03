@@ -234,6 +234,54 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
   }
 }
 
+// Bloco visual de um item dentro do e-mail em lote (título + mensagem).
+function renderBlocosHtml(blocos) {
+  return blocos.map((b, i) => `
+    <div style="padding:12px 0;${i < blocos.length - 1 ? 'border-bottom:1px solid #f0f0f0;' : ''}">
+      <div style="font-size:15px;font-weight:700;color:#2b2b2b;margin-bottom:4px;">${esc(b.titulo)}</div>
+      <div style="font-size:14px;line-height:1.5;color:#3a3a3a;white-space:pre-line;">${esc(b.mensagem)}</div>
+    </div>`).join('');
+}
+
+function renderBlocosTxt(blocos) {
+  return blocos.map((b) => `${b.titulo}\n${b.mensagem}`).join('\n\n');
+}
+
+/**
+ * Um único e-mail cobrindo vários avisos (ex.: todos os vencimentos do
+ * calendário do dia). Existe separado de notificar() porque aqui não há
+ * sininho — quem chama já cuidou disso por item — e porque o envio É
+ * aguardado: quem usa isto roda fora do caminho de uma resposta HTTP (cron),
+ * então vale esperar para o chamador saber se marca o item como avisado.
+ *
+ * Reduz N handshakes SMTP (um por evento, cada um um ponto de falha
+ * independente) a só 1 por execução.
+ *
+ * @param {object} o
+ * @param {string} o.titulo   assunto do e-mail
+ * @param {string} [o.tag]    rótulo do template (ex.: 'Calendário')
+ * @param {Array<{titulo:string, mensagem:string}>} o.blocos  um item por aviso
+ * @param {string[]} [o.papeis]  quem recebe (ex.: ['MASTER'])
+ * @returns {Promise<boolean>} true se enviado com sucesso
+ */
+export async function notificarEmailLote({ titulo, tag, blocos, papeis }) {
+  try {
+    if (!Array.isArray(blocos) || !blocos.length) return false;
+    const dest = await destinatariosEmail({ atorId: 0, papeis });
+    if (!dest.length) return false;
+    await enviarEmail({
+      bcc: dest,
+      subject: `[Gestão TI] ${titulo}`,
+      text: renderBlocosTxt(blocos),
+      html: montarEmailHtml({ tag, titulo, conteudoHtml: renderBlocosHtml(blocos), rodapeHtml: '' })
+    });
+    return true;
+  } catch (e) {
+    console.error('[email] lote falhou:', e.responseCode || '', e.response || e.message);
+    return false;
+  }
+}
+
 /**
  * E-mail para quem ABRIU o chamado, com a identidade do portal /chamados.
  *

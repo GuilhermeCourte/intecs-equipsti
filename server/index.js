@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
-import { notificar, notificarTeste, notificarSolicitante } from './notificacoes.js';
+import { notificar, notificarTeste, notificarSolicitante, notificarEmailLote } from './notificacoes.js';
 import { inscrever } from './realtime.js';
 import { registrarLog, listarLogs, MODULOS_LOG, NIVEIS_SEGURANCA } from './logs.js';
 import { emailParaEquipe, rotular } from './emailChamado.js';
@@ -1472,9 +1472,20 @@ function proximaOcorrencia(dataStr, recorrencia, hojeMs) {
   return Date.UTC(y, mes0, d); // NENHUMA: data fixa (pode ser passada → filtrada pela janela)
 }
 
-// Percorre os eventos com aviso configurado e envia e-mail (+ sininho) para os
-// MASTER quando "hoje" cai na janela [ocorrência - N dias, ocorrência] e essa
-// ocorrência ainda não foi avisada. Idempotente via ultimo_aviso_data.
+// Falha de SMTP costuma ser transiente (ex.: "451 4.3.0 queue file write
+// error", o próprio servidor pedindo pra tentar depois) — esperar até amanhã
+// pra tentar de novo é tempo demais pra um problema que often se resolve em
+// minutos. 3 tentativas com 5 min de intervalo cobre isso sem virar polling
+// agressivo.
+const RETRY_EMAIL_LOTE_TENTATIVAS = 3;
+const RETRY_EMAIL_LOTE_ESPERA_MS = 5 * 60 * 1000;
+
+// Percorre os eventos com aviso configurado e dispara sininho (por evento) +
+// um único e-mail com todos os avisos do dia, para os MASTER, quando "hoje"
+// cai na janela [ocorrência - N dias, ocorrência] e essa ocorrência ainda não
+// foi avisada. Idempotente via ultimo_aviso_data — só marcado depois que o
+// e-mail em lote é confirmado, então uma falha de SMTP (mesmo esgotando as
+// tentativas) faz todo o lote tentar de novo no dia seguinte, em vez de sumir.
 async function rodarLembretesCalendario() {
   const hojeMs = ymdParaUTC(hojeEmSaoPaulo());
   const evs = (await query(`SELECT id, titulo, tipo,
@@ -1483,7 +1494,7 @@ async function rodarLembretesCalendario() {
       CONVERT(varchar(10), ultimo_aviso_data, 120) AS ultimoAvisoData
     FROM dbo.EQUIPSTI_calendario_eventos
     WHERE avisar_dias_antes IS NOT NULL AND avisar_dias_antes > 0`)).recordset;
-  let enviados = 0;
+  const pendentes = [];
   for (const ev of evs) {
     try {
       const occMs = proximaOcorrencia(ev.data, ev.recorrencia, hojeMs);
@@ -1496,22 +1507,36 @@ async function rodarLembretesCalendario() {
       const partes = [ev.tipo, ymdParaBR(occStr)];
       if (ev.valor != null) partes.push('R$ ' + Number(ev.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
       const mensagem = partes.join(' · ') + (ev.observacao ? `\n${ev.observacao}` : '');
+      const titulo = `Vence ${quando}: ${ev.titulo}`;
       await notificar({
-        tipo: 'CALENDARIO', acao: 'AVISO',
-        titulo: `Vence ${quando}: ${ev.titulo}`,
-        mensagem,
+        tipo: 'CALENDARIO', acao: 'AVISO', titulo, mensagem,
         link: 'tab-calendario', refId: ev.id,
         ator: { id: 0, email: 'sistema' },
-        email: true, papeis: ['MASTER'], emailPapeis: ['MASTER']
+        email: false, papeis: ['MASTER']
       });
-      await query('UPDATE dbo.EQUIPSTI_calendario_eventos SET ultimo_aviso_data = @occ WHERE id = @id',
-        { occ: { type: sql.Date, value: occStr }, id: ev.id });
-      enviados++;
+      pendentes.push({ id: ev.id, occStr, titulo, mensagem });
     } catch (e) {
       console.error('Falha ao avisar evento do calendário', ev.id, e.message);
     }
   }
-  return enviados;
+  if (!pendentes.length) return 0;
+  const tituloLote = pendentes.length === 1 ? pendentes[0].titulo : `${pendentes.length} avisos do calendário`;
+  const blocos = pendentes.map((p) => ({ titulo: p.titulo, mensagem: p.mensagem }));
+  for (let tentativa = 1; tentativa <= RETRY_EMAIL_LOTE_TENTATIVAS; tentativa++) {
+    const enviado = await notificarEmailLote({ titulo: tituloLote, tag: 'Calendário', papeis: ['MASTER'], blocos });
+    if (enviado) {
+      for (const p of pendentes) {
+        await query('UPDATE dbo.EQUIPSTI_calendario_eventos SET ultimo_aviso_data = @occ WHERE id = @id',
+          { occ: { type: sql.Date, value: p.occStr }, id: p.id });
+      }
+      return pendentes.length;
+    }
+    const ultima = tentativa === RETRY_EMAIL_LOTE_TENTATIVAS;
+    console.error(`Calendário: e-mail em lote falhou (tentativa ${tentativa}/${RETRY_EMAIL_LOTE_TENTATIVAS})` +
+      (ultima ? ' — desistindo, ultimo_aviso_data não marcado, tenta de novo amanhã.' : `, nova tentativa em ${RETRY_EMAIL_LOTE_ESPERA_MS / 60000} min.`));
+    if (!ultima) await new Promise((r) => setTimeout(r, RETRY_EMAIL_LOTE_ESPERA_MS));
+  }
+  return 0;
 }
 
 // Nota: existia aqui um GET /api/calendario/lembretes/run, gatilho para o
@@ -2167,7 +2192,6 @@ async function eurosaFetchChamados(teto = EUROSA_TETO_PAGINA) {
     body: body.toString()
   });
   const text = await res.text();
-  console.log('[chamados raw]', text.slice(0, 300));
   let data;
   try { data = JSON.parse(text); } catch { data = text; }
   return { status: res.status, data };
@@ -2271,7 +2295,6 @@ async function chamadosMsa({ forcar = false } = {}) {
 
 app.get('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const { lista, atualizadoEm, doCache } = await chamadosMsa({ forcar: req.query.forcar === '1' });
-  console.log('[chamados] total:', lista.length, doCache ? '(cache)' : '(eurosa)');
   res.json({ root: lista, total: lista.length, atualizadoEm });
 }));
 
