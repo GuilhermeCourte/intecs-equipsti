@@ -20,6 +20,7 @@ import { emailParaEquipe, rotular } from './emailChamado.js';
 import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as uptimeRobot from './uptimerobot/service.js';
+import * as hostinger from './hostinger/service.js';
 import * as googleDrive from './googleworkspace/service.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
 import { calcularPrazosSla } from './chamadosIntecsSla.js';
@@ -1309,6 +1310,41 @@ app.put('/api/conexoes/vinculo', exigirAuth, exigirPermissao('aba_internet'), wr
     });
   }
   res.json({ ok: true });
+}));
+
+// ===================== VPS (Hostinger, só leitura) =====================
+app.get('/api/vps', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  try {
+    res.json(await hostinger.listarMaquinas());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}));
+
+app.get('/api/vps/:id/metricas', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  const faixa = req.query.faixa === '7d' ? '7d' : '24h';
+  try {
+    res.json(await hostinger.metricas(req.params.id, faixa));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}));
+
+app.get('/api/vps/:id/acoes', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  const page = Number(req.query.page) || 1;
+  try {
+    res.json(await hostinger.acoes(req.params.id, page));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}));
+
+app.get('/api/vps/:id/docker', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  try {
+    res.json(await hostinger.dockerProjetos(req.params.id));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 }));
 
 // ===================== Calendário (vencimentos) =====================
