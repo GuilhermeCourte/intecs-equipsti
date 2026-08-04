@@ -6967,6 +6967,7 @@ function irParaAba(abaId, subId, extras = {}) {
 // carregar: o abrir() do destino procura o registro na lista que a aba mantém
 // em memória — sem carregá-la antes, o modal não acha nada e o clique morre.
 const DESTINOS = {
+  dashboard:   { aba: 'tab-dashboard' },
   vps:         { aba: 'tab-vps' },
   insumos:     { aba: 'tab-gerenciar', lista: 'INSUMOS' },
   emprestimos: { aba: 'tab-emprestimos' },
