@@ -1367,7 +1367,7 @@ function renderVpsCard(vm) {
             <div><span class="text-muted">SO</span><br>${escapeHtml(vm.template?.name || '—')}</div>
             <div><span class="text-muted">CPUs</span><br>${vm.cpus ?? '—'}</div>
             <div><span class="text-muted">RAM</span><br><span id="vpsRamSpec-${vm.id}">—</span> / ${vpsMbParaGb(vm.memory)}</div>
-            <div><span class="text-muted">Disco</span><br>${vpsMbParaGb(vm.disk)}</div>
+            <div><span class="text-muted">Disco</span><br><span id="vpsDiskSpec-${vm.id}">—</span> / ${vpsMbParaGb(vm.disk)}</div>
             <div><span class="text-muted">IPv4</span><br>${vpsEnderecos(vm.ipv4)}</div>
             <div><span class="text-muted">Uptime</span><br><span id="vpsUptimeSpec-${vm.id}">${formatarUptimeDesde(vm.createdAt)}</span></div>
           </div>
@@ -1484,10 +1484,13 @@ async function carregarMetricasVps(vmId, faixa) {
     const ultimo = (serie) => serie && serie.data.length ? serie.data[serie.data.length - 1] : null;
     const cpuAtual = ultimo(dados.cpu_usage);
     const ramAtual = ultimo(dados.ram_usage);
+    const diskAtual = ultimo(dados.disk_space);
     $('vpsCpuAtual-' + vmId).textContent = cpuAtual == null ? '—' : cpuAtual.toFixed(1) + '%';
     $('vpsRamAtual-' + vmId).textContent = ramAtual == null ? '—' : vpsMbParaGb(ramAtual);
     const ramSpec = $('vpsRamSpec-' + vmId);
     if (ramSpec) ramSpec.textContent = ramAtual == null ? '—' : vpsMbParaGb(ramAtual);
+    const diskSpec = $('vpsDiskSpec-' + vmId);
+    if (diskSpec) diskSpec.textContent = diskAtual == null ? '—' : vpsMbParaGb(diskAtual);
   } catch (err) {
     console.error('[vps] métricas', vmId, err.message);
   }
@@ -5941,10 +5944,14 @@ function ciCapturarAgentIdDaUrl() {
 // Deep-links dos e-mails da equipe: ?chamado=ID abre o modal do chamado;
 // ?conectar=ID tenta ir direto pro Take Control da máquina vinculada;
 // ?conexoes leva direto pra sub-aba Conexão (status ao vivo) da aba Internet.
+// ?ir=DESTINO[&id=ID] é o genérico do cockpit (ver DESTINOS): outra página só
+// consegue apontar para um registro daqui por URL.
 // Guardados em memória (intenção única desta aba) e tirados da URL na hora.
 let _deepLinkChamado = null;
 let _deepLinkConectar = null;
 let _deepLinkConexoes = false;
+let _deepLinkIr = null;
+let _deepLinkIrId = null;
 let _forcarViewChamadosIntecs = false; // deep-link pede a lista; o shown.bs.tab consome
 
 function ciCapturarDeepLinkChamado() {
@@ -5952,18 +5959,29 @@ function ciCapturarDeepLinkChamado() {
   const chamado = trim(params.get('chamado'));
   const conectar = trim(params.get('conectar'));
   const conexoes = params.has('conexoes');
-  if (!chamado && !conectar && !conexoes) return;
+  const ir = trim(params.get('ir'));
+  if (!chamado && !conectar && !conexoes && !ir) return;
   _deepLinkChamado = chamado || null;
   _deepLinkConectar = conectar || null;
   _deepLinkConexoes = conexoes;
+  _deepLinkIr = ir || null;
+  _deepLinkIrId = trim(params.get('id')) || null;
   params.delete('chamado');
   params.delete('conectar');
   params.delete('conexoes');
+  params.delete('ir');
+  params.delete('id');
   const q = params.toString();
   history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
 }
 
 async function processarDeepLinkChamado() {
+  if (_deepLinkIr) {
+    const tipo = _deepLinkIr, id = _deepLinkIrId;
+    _deepLinkIr = _deepLinkIrId = null;
+    await irParaDestino(tipo, id);
+  }
+
   if (_deepLinkConexoes) {
     _deepLinkConexoes = false;
     if (!_ciPerfil) await carregarMeuPerfilCI().catch(() => {});
@@ -6835,11 +6853,13 @@ function itemEventoDash(x, vencido) {
   const rec = x.evt.recorrencia;
   const sub = [x.evt.tipo, rec === 'MENSAL' ? 'mensal' : (rec === 'ANUAL' ? 'anual' : null)]
     .filter(Boolean).join(' · ');
+  // O atalho fica no NOME, não na linha inteira: data, recorrência e valor são
+  // leitura, e clicar neles não pode disparar navegação sem querer.
   return `<div class="dash-item">
     <span class="dash-item-quando">${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}</span>
     <span class="dash-dot cal-evento--${rec}" style="margin-top:.28rem"></span>
     <span class="dash-item-corpo">
-      <div class="dash-item-tit">${escapeHtml(x.evt.titulo)}${vencido ? ' <span class="badge bg-danger" style="font-size:.55rem;vertical-align:middle">VENCIDO</span>' : ''}</div>
+      <div class="dash-item-tit"><span data-ir="tab-calendario" data-ir-abrir="evento" data-ir-id="${x.evt.id}">${escapeHtml(x.evt.titulo)}</span>${vencido ? ' <span class="badge bg-danger" style="font-size:.55rem;vertical-align:middle">VENCIDO</span>' : ''}</div>
       ${sub ? `<div class="dash-item-sub">${escapeHtml(sub)}</div>` : ''}
     </span>
     ${x.evt.valor ? `<span class="dash-item-val">${fmtMoeda(x.evt.valor)}</span>` : ''}
@@ -6906,6 +6926,10 @@ function desenharEventosDoMes() {
   $('dashEventosLista').innerHTML = html.length
     ? html.join('')
     : `<div class="dash-vazio">Nenhum evento em ${MESES_PT[mes].toLowerCase()}.</div>`;
+  limitarLinhasDash($('dashEventosLista'));
+  // Navegar de mês recria as linhas fora do ciclo do carregarDashboard, que é
+  // quem marca o que é clicável — sem isto, o mês seguinte fica inerte.
+  aplicarAtalhosDashboard();
 }
 
 function configurarNavEventos() {
@@ -6935,6 +6959,32 @@ function irParaAba(abaId, subId, extras = {}) {
 
   if (extras.view === 'lista' && subJaAtiva) mostrarViewChamadosIntecs();
   if (extras.lista) selecionarListaOpcoes(extras.lista);
+}
+
+// Destino de um clique que aponta para um REGISTRO, e não só para a aba: o
+// dashboard chega por data-ir-abrir e o cockpit por ?ir= (é outra página, só
+// consegue falar por URL).
+// carregar: o abrir() do destino procura o registro na lista que a aba mantém
+// em memória — sem carregá-la antes, o modal não acha nada e o clique morre.
+const DESTINOS = {
+  vps:         { aba: 'tab-vps' },
+  insumos:     { aba: 'tab-gerenciar', lista: 'INSUMOS' },
+  emprestimos: { aba: 'tab-emprestimos' },
+  // Sem id: o nome do card "Chamados" no cockpit leva à lista, não a um
+  // registro. O par dele com id é o ?chamado=ID, que o deep-link já trata.
+  chamados:    { aba: 'tab-chamados', sub: 'sub-tab-intecs', view: 'lista' },
+  msa:         { aba: 'tab-chamados', sub: 'sub-tab-intecsmsa',
+                 carregar: carregarIntecsMsa, abrir: abrirEdicaoIntecsMsa },
+  evento:      { aba: 'tab-calendario', carregar: carregarCalendario, abrir: abrirCalendario },
+  logs:        { aba: 'tab-logs', abrir: abrirLogsModulo }   // id = o módulo do log
+};
+
+async function irParaDestino(tipo, id) {
+  const d = DESTINOS[tipo];
+  if (!d || !permiteAba(d.aba)) return;
+  if (id && d.carregar) await d.carregar().catch(() => {});
+  irParaAba(d.aba, d.sub, { lista: d.lista, view: d.view });
+  if (id && d.abrir) d.abrir(id);
 }
 
 // A aba Opções abre sempre em UNIDADE; vindo do tile de insumos ela já tem que
@@ -6971,10 +7021,12 @@ function configurarAtalhosDashboard() {
     // data-ir; clicar neles não pode navegar para outra aba.
     if (ev.target.closest('button, a, input, label')) return;
     const alvo = ev.target.closest('[data-ir]');
-    if (alvo && alvo.classList.contains('dash-clicavel')) {
-      irParaAba(alvo.dataset.ir, alvo.dataset.irSub,
-        { lista: alvo.dataset.irLista, view: alvo.dataset.irView });
-    }
+    if (!alvo || !alvo.classList.contains('dash-clicavel')) return;
+    // Linha com registro próprio (evento, aviso) vem antes do painel no
+    // closest — ela abre o registro; o painel em volta continua indo à aba.
+    if (alvo.dataset.irAbrir) irParaDestino(alvo.dataset.irAbrir, alvo.dataset.irId);
+    else irParaAba(alvo.dataset.ir, alvo.dataset.irSub,
+      { lista: alvo.dataset.irLista, view: alvo.dataset.irView });
   };
   conteudo.addEventListener('click', acionar);
   conteudo.addEventListener('keydown', (ev) => {
@@ -6994,6 +7046,21 @@ const AVISO_ROTULO = {
   SCRIPT_EXECUTADO: 'Script executado'
 };
 
+// Painel mostra 4 linhas e o resto rola por dentro, como no cockpit. Mede a
+// linha de verdade (ela cresce com o subtítulo, e os divisores dos eventos
+// entram na conta sozinhos) em vez de chutar uma altura fixa que cortaria a
+// quarta pela metade. Painel escondido mede 0 — nesse caso não faz nada e quem
+// chama de novo depois de aparecer é o carregarDashboard.
+function limitarLinhasDash(lista, n = 4) {
+  if (!lista) return;
+  lista.style.maxHeight = '';
+  const filhos = [...lista.children];
+  const itens = filhos.filter((el) => el.classList.contains('dash-item'));
+  if (itens.length <= n || !lista.offsetHeight) return;
+  const ultima = itens[n - 1];
+  lista.style.maxHeight = `${Math.ceil(ultima.offsetTop + ultima.offsetHeight - filhos[0].offsetTop)}px`;
+}
+
 function rotuloAviso(l) {
   // ATUALIZADO só chega aqui vindo do par (USUARIOS, campo PAPEL|PERMISSÕES).
   if (l.acao === 'ATUALIZADO') return l.campo === 'PAPEL' ? 'Papel alterado' : 'Permissões alteradas';
@@ -7006,19 +7073,23 @@ function renderAvisosAcesso(logs) {
   $('dashAvisosLista').innerHTML = logs.length
     ? logs.map((l) => {
         // dataHora vem em UTC (ISO com Z, do driver do SQL Server).
-        const hora = new Date(l.dataHora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const quando = new Date(l.dataHora);
+        const hora = quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const dia = `${String(quando.getDate()).padStart(2, '0')}/${String(quando.getMonth() + 1).padStart(2, '0')}`;
         const alerta = l.acao === 'LOGIN_BLOQUEADO';
         const sub = [l.usuario, l.valorNovo || l.campo].filter(Boolean).join(' · ');
+        // Mesmo padrão dos eventos: só o nome do aviso leva aos logs.
         return `<div class="dash-item${alerta ? ' dash-item--alerta' : ''}">
-          <span class="dash-item-quando">${hora}</span>
+          <span class="dash-item-quando">${hora}<small>${dia}</small></span>
           <span class="dash-item-ico"><i class="ph ${alerta ? 'ph-warning' : 'ph-dot-outline'}"></i></span>
           <span class="dash-item-corpo">
-            <div class="dash-item-tit">${escapeHtml(rotuloAviso(l))}${l.entidadeRotulo ? ' · ' + escapeHtml(l.entidadeRotulo) : ''}</div>
+            <div class="dash-item-tit"><span data-ir="tab-logs" data-ir-abrir="logs" data-ir-id="${escapeHtml(l.modulo)}">${escapeHtml(rotuloAviso(l))}${l.entidadeRotulo ? ' · ' + escapeHtml(l.entidadeRotulo) : ''}</span></div>
             ${sub ? `<div class="dash-item-sub">${escapeHtml(sub)}</div>` : ''}
           </span>
         </div>`;
       }).join('')
     : '<div class="dash-vazio">Nenhum evento de segurança nos últimos 7 dias.</div>';
+  limitarLinhasDash($('dashAvisosLista'));
   dashBloco('dashPanelAvisos', true);
 }
 
@@ -7039,7 +7110,7 @@ async function carregarDashboard({ forcar = false } = {}) {
       api('GET', '/api/chamados-intecs/dashboard').catch(() => null),
       api('GET', '/api/conexoes').catch(() => null),
       api('GET', '/api/calendario/eventos').catch(() => null),
-      api('GET', `/api/logs?seguranca=alerta&limit=6&de=${encodeURIComponent(sete)}`).catch(() => null),
+      api('GET', `/api/logs?seguranca=todos&limit=8&de=${encodeURIComponent(sete)}`).catch(() => null),
       api('GET', '/api/vps/resumo').catch(() => null),
     ]);
     _dashData = d;
@@ -7067,6 +7138,10 @@ async function carregarDashboard({ forcar = false } = {}) {
 
     $('dashboardLoading').classList.add('hidden');
     $('dashboardContent').classList.remove('hidden');
+    // Só agora as listas têm altura de verdade: os renders acima rodaram com o
+    // conteúdo escondido, onde toda medida dá zero.
+    limitarLinhasDash($('dashAvisosLista'));
+    limitarLinhasDash($('dashEventosLista'));
   } catch (err) {
     $('dashboardLoading').classList.add('hidden');
     showAlert('alertDashboard', 'danger', 'Erro ao carregar dashboard: ' + err.message);
@@ -7384,7 +7459,7 @@ function trocarDescInternet(idAtivo) {
 // ============================================================
 let modalIntecsMsa = null;
 let _intecsMsaTodos = [];
-let _imCarregando = false;
+let _imCarregando = null;   // promessa da carga em andamento (ver carregarIntecsMsa)
 const fpIM = {};
 
 const INTECSMSA_COLS = [
@@ -7496,9 +7571,15 @@ function renderIntecsMsa() {
   ctxAtualizarTh(intecsMsaFilterCtx);
 }
 
-async function carregarIntecsMsa() {
-  if (_imCarregando) return;
-  _imCarregando = true;
+// Quem chega no meio de uma carga espera a MESMA carga em vez de sair de mãos
+// vazias: o deep-link ?ir=msa precisa da lista em memória para achar o
+// registro, e o shown.bs.tab da aba restaurada costuma já estar buscando.
+function carregarIntecsMsa() {
+  if (!_imCarregando) _imCarregando = buscarIntecsMsa().finally(() => { _imCarregando = null; });
+  return _imCarregando;
+}
+
+async function buscarIntecsMsa() {
   $('imThead').innerHTML = thFiltravel(INTECSMSA_COLS);
   try {
     // 1) Cache primeiro: a sub-aba abre na hora com a última sincronização...
@@ -7526,8 +7607,6 @@ async function carregarIntecsMsa() {
       $('imTbody').innerHTML = '';
       $('imStatus').textContent = 'Erro: ' + e.message;
     }
-  } finally {
-    _imCarregando = false;
   }
 }
 
@@ -7933,7 +8012,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   // Redimensionar a janela muda a largura das abas (e o padding delas perto
   // de 1400px) — reposiciona o slider para não ficar deslocado da aba ativa.
-  window.addEventListener('resize', () => requestAnimationFrame(() => posicionarSlider(false)));
+  window.addEventListener('resize', () => requestAnimationFrame(() => {
+    posicionarSlider(false);
+    // Largura nova muda a quebra de linha dos títulos, e com ela a altura das
+    // linhas: sem remedir, o corte das 4 linhas fica no lugar errado.
+    limitarLinhasDash($('dashAvisosLista'));
+    limitarLinhasDash($('dashEventosLista'));
+  }));
 
   // Arrow em vez de referência direta: o handler receberia o Event como
   // primeiro argumento e ele cairia no parâmetro de opções.

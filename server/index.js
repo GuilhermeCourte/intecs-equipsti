@@ -3207,6 +3207,19 @@ app.get('/api/chamados-intecs/dashboard', exigirAuth, carregarPerfilChamados, wr
   res.json(await chamadosIntecsRepo.getDashboard());
 }));
 
+// Só título + status dos mais urgentes — o cockpit lista linhas, não a
+// tabela inteira (isso já existe em /api/chamados-intecs).
+app.get('/api/chamados-intecs/recentes', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
+  const { role, unidade, setor } = req.perfilCI;
+  if (role === 'BASICO') return res.status(403).json({ error: 'Sem acesso.' });
+  if (role === 'GESTOR') {
+    const equipes = (unidade && setor) ? [{ unidade, setor }] : [];
+    const usuarioIds = await chamadosIntecsRepo.getUsuarioIdsDaEquipe(equipes);
+    return res.json(await chamadosIntecsRepo.getRecentesAbertos(usuarioIds));
+  }
+  res.json(await chamadosIntecsRepo.getRecentesAbertos());
+}));
+
 app.get('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, wrap(async (req, res) => {
   const chamado = await chamadosIntecsRepo.getChamadoIntecs(req.params.id);
   if (!chamado) return res.status(404).json({ error: 'Chamado não encontrado.' });

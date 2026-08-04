@@ -365,6 +365,48 @@ export async function getDashboard(usuarioIdsFiltro = null) {
   };
 }
 
+// Chamados abertos/em andamento mais urgentes (SLA mais próximo primeiro) —
+// pro cockpit listar linhas em vez de só o número. Traz unidade, ponto,
+// PAT e equipamento pra linha ficar igual à do MSA; PAT e equipamento saem da
+// máquina vinculada (device_id), então vêm vazios em chamado sem máquina.
+// O nome do equipamento sai de EQUIPSTI_registros.equipamento quando o PAT
+// existe lá; nome_amigavel da máquina é só o fallback.
+// Mesmo escopo de usuarioIdsFiltro do getDashboard.
+export async function getRecentesAbertos(usuarioIdsFiltro = null, limite = 6) {
+  let whereClause = '';
+  const params = {};
+  if (Array.isArray(usuarioIdsFiltro)) {
+    if (!usuarioIdsFiltro.length) {
+      whereClause = 'WHERE 1 = 0';
+    } else {
+      const nomes = usuarioIdsFiltro.map((id, i) => `@uid${i}`);
+      usuarioIdsFiltro.forEach((id, i) => { params[`uid${i}`] = N(id); });
+      whereClause = `WHERE c.usuario_id IN (${nomes.join(',')})`;
+    }
+  }
+
+  const nomesAbertos = [...await getNomesStatusPorTipo(['ABERTO']), ...await getNomesStatusPorTipo(['ANDAMENTO'])];
+  const pStatus = {};
+  const condAbertos = condicaoStatusIn('c.status', nomesAbertos, 'ab', pStatus);
+
+  const result = await query(`
+    SELECT TOP (@limite)
+      c.id, c.titulo, c.status, c.unidade,
+      ISNULL(NULLIF(c.localizacao, ''), c.departamento) AS ponto,
+      d.patrimonio,
+      ISNULL(r.equipamento, d.nome_amigavel) AS equipamento
+    FROM dbo.EQUIPSTI_chamados_intecs c
+    LEFT JOIN dbo.EQUIPSTI_devices d ON d.id = c.device_id
+    OUTER APPLY (
+      SELECT TOP 1 equipamento FROM dbo.EQUIPSTI_registros
+      WHERE pat = d.patrimonio ORDER BY criado_em DESC
+    ) r
+    ${whereClause ? whereClause + ' AND' : 'WHERE'} ${condAbertos}
+    ORDER BY CASE WHEN c.sla_conclusao_prazo IS NULL THEN 1 ELSE 0 END, c.sla_conclusao_prazo ASC
+  `, { ...params, ...pStatus, limite: N(limite) });
+  return result.recordset;
+}
+
 // IDs de usuário que pertencem a alguma das combinações unidade+setor
 // informadas (equipes supervisionadas por um Gestor) — usado pra escopar
 // lista e dashboard.
