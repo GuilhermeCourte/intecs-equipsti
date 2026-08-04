@@ -1601,9 +1601,13 @@
     }
     .dash-item:last-child { border-bottom: none; }
     .dash-item-quando {
+      display: flex; flex-direction: column; gap: 1px;
       font-size: .72rem; font-weight: 700; color: var(--muted);
       min-width: 52px; flex-shrink: 0; padding-top: .1rem;
     }
+    /* Data embaixo da hora nos avisos, como no cockpit: sem ela, um log de
+       três dias atrás parece ter acontecido hoje. */
+    .dash-item-quando small { font-weight: 500; font-size: .84em; opacity: .75; }
     .dash-item-ico { flex-shrink: 0; font-size: .95rem; line-height: 1.2; }
     .dash-item--alerta .dash-item-ico { color: var(--dash-red); }
     .dash-item-corpo { flex: 1; min-width: 0; }
@@ -1624,9 +1628,16 @@
     .dash-status.dash-clicavel:hover,
     .dash-panel.dash-clicavel:hover { box-shadow: 0 2px 10px rgba(0,0,0,.07); }
     .dash-clicavel:focus-visible { outline: 2px solid var(--dash-blue); outline-offset: -2px; }
-    /* O painel de eventos é clicável, mas as setas de mês dentro dele não
-       navegam — o listener ignora clique em button/a/input. */
-    .dash-panel.dash-clicavel .dash-mes-btn { cursor: pointer; }
+    .dash-panel .dash-mes-btn { cursor: pointer; }
+    /* Nos avisos e nos eventos quem navega é só o NOME, não a linha nem o card:
+       o alvo é o texto, então o realce é nele. Precisa ser inline, senão a caixa
+       do título pegaria a largura toda e o clique no vazio voltaria a valer. */
+    .dash-item-tit .dash-clicavel { display: inline; }
+    .dash-item-tit .dash-clicavel:hover { color: var(--dash-blue); text-decoration: underline; }
+    /* O nome do card leva à ABA; o nome da linha leva ao REGISTRO. inline-flex
+       para o alvo terminar no fim do texto, e não na largura toda do cabeçalho. */
+    .dash-panel-title .dash-clicavel { display: inline-flex; align-items: center; gap: .4rem; }
+    .dash-panel-title .dash-clicavel:hover { color: var(--dash-blue); }
 
     /* Navegação de mês dos eventos */
     .dash-mes-nav { display: flex; align-items: center; gap: .15rem; flex-shrink: 0; }
@@ -2288,16 +2299,22 @@
 
               <!-- Avisos de acesso (aba_logs) + Eventos do mês (aba_calendario) -->
               <div class="dash-grid-2 hidden" id="dashGridEventosAvisos">
-                <div class="dash-panel hidden" id="dashPanelAvisos" data-ir="tab-logs">
+                <!-- Sem data-ir no painel: quem navega é o nome de cada aviso,
+                     não o card inteiro. Clicar no vazio, na hora ou no ícone
+                     não pode trocar de aba. -->
+                <div class="dash-panel hidden" id="dashPanelAvisos">
                   <div class="dash-panel-head">
-                    <div class="dash-panel-title"><i class="ph ph-shield-warning"></i> Avisos de acesso</div>
+                    <div class="dash-panel-title"><span data-ir="tab-logs"><i class="ph ph-shield-warning"></i> Avisos de segurança</span></div>
                     <div class="dash-panel-sub">últimos 7 dias</div>
                   </div>
                   <div class="dash-lista" id="dashAvisosLista"></div>
                 </div>
-                <div class="dash-panel hidden" id="dashPanelEventos" data-ir="tab-calendario">
+                <!-- Idem: só o nome do evento abre o calendário. Antes, clicar
+                     em qualquer parte do card já navegava — inclusive ao mirar
+                     as setas de mês. -->
+                <div class="dash-panel hidden" id="dashPanelEventos">
                   <div class="dash-panel-head">
-                    <div class="dash-panel-title"><i class="ph ph-calendar-dots"></i> Eventos do mês</div>
+                    <div class="dash-panel-title"><span data-ir="tab-calendario"><i class="ph ph-calendar-dots"></i> Eventos do mês</span></div>
                     <div class="dash-mes-nav">
                       <button type="button" class="dash-mes-btn" id="dashMesAnt" aria-label="Mês anterior"><i class="ph ph-caret-left"></i></button>
                       <span class="dash-panel-sub" id="dashEventosSub"></span>

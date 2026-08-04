@@ -77,13 +77,20 @@
       height: 100vh;
       height: 100dvh;
       display: grid;
-      /* A linha de cima é de números (cabe em pouca altura); as listas de baixo
-         é que ganham com espaço — cada 40px viram mais um aviso ou evento. */
-      grid-template-rows: auto minmax(0, .78fr) minmax(0, 1.22fr);
-      gap: 14px;
-      padding: 14px 18px 16px;
+      /* Unidades e chamados agora são linhas inteiras, uma embaixo da outra.
+         Toda linha fica do tamanho do conteúdo e a sobra de altura vai pro fim
+         da tela (align-content: start) — nada de vão entre um card e outro.
+         Chamados é minmax(0, auto): não cresce além do conteúdo, mas pode
+         encolher numa tela baixa em vez de empurrar o resto pra fora (aí as
+         listas dele rolam por dentro, ver #blocoChamados). */
+      grid-template-rows: auto auto minmax(0, auto) auto;
+      align-content: start;
+      gap: 10px;
+      padding: 12px 18px 14px;
     }
-    .cp-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+    /* stretch (padrão): avisos e eventos sempre do mesmo tamanho — o mais alto
+       dos dois define a altura da linha, e o outro estica pra acompanhar. */
+    .cp-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 0; }
     .cp-bloco {
       background: var(--surface);
       border: 1px solid var(--line);
@@ -92,6 +99,14 @@
       display: flex; flex-direction: column;
       min-height: 0; min-width: 0;
     }
+    #blocoUnidades .cp-corpo { flex: none; overflow: visible; }
+    /* Numa tela baixa o max-height segura o card dentro da linha (que pode
+       encolher) e as listas rolam por dentro em vez de vazar. */
+    #blocoChamados { max-height: 100%; }
+    /* Corpo dos chamados é a parte elástica do card: nada pode vazar pra fora. */
+    #blocoChamados .cp-corpo { display: flex; flex-direction: column; min-height: 0; }
+    #blocoUnidades { padding: 8px 20px; }
+    #blocoUnidades .cp-bloco-tit { margin-bottom: 2px; min-height: 0; }
     .oculto { display: none !important; }   /* vale para o rodapé também */
     /* Quando um bloco some por falta de permissão, o irmão ocupa a linha. */
     .cp-linha:has(> .cp-bloco.oculto) { grid-template-columns: 1fr; }
@@ -102,6 +117,9 @@
       color: var(--muted); text-transform: uppercase;
       margin-bottom: 12px; flex-shrink: 0;
     }
+    /* O nome do card virou o alvo do atalho: inline-flex para o clique terminar
+       no fim do texto, mantendo o mesmo gap que o flex do cabeçalho dava. */
+    .cp-bloco-tit [data-app] { display: inline-flex; align-items: center; gap: .5rem; }
     .cp-bloco-tit .cp-carimbo {
       margin-left: auto; letter-spacing: 0; text-transform: none;
       font-weight: 500; font-size: .72rem;
@@ -138,6 +156,15 @@
     .cp-mini-item i { font-size: .95rem; align-self: center; }
     .cp-mini-item b { font-size: 1.15rem; font-weight: 800; color: var(--ink-2); letter-spacing: -.5px; }
     .cp-mini-item.alerta b { color: var(--vermelho); }
+    /* O item da VPS abre a aba dela: vira botão, mas mantém a cara dos vizinhos. */
+    .cp-mini-botao {
+      background: none; border: 0; padding: 0; font-family: inherit; cursor: pointer;
+      /* color: inherit é obrigatório — <button> não herda cor sozinho (o
+         navegador força buttontext) e o ícone sumia no tema escuro. */
+      color: inherit; border-radius: 6px; transition: color .15s;
+    }
+    .cp-mini-botao:hover { color: var(--ink-2); }
+    .cp-mini-botao:hover b { color: var(--ink); }
     .cp-relogio {
       display: flex; align-items: center; gap: .8rem;
       padding-left: 1.3rem; border-left: 1px solid var(--line);
@@ -151,71 +178,72 @@
       font-size: 1rem; cursor: pointer; transition: color .15s, border-color .15s;
     }
     .cp-btn:hover { color: var(--ink); border-color: var(--muted); }
-    /* Pulso: prova que a tela está viva. Sem ele, um painel congelado é
-       indistinguível de um painel com números estáveis. */
-    .cp-pulso {
-      width: 9px; height: 9px; border-radius: 50%; background: var(--verde);
-      animation: pulsar 2.4s ease-in-out infinite;
-    }
-    .cp-pulso.morto { background: var(--vermelho); animation: none; }
-    @keyframes pulsar { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+    /* Som travado pelo navegador (autoplay policy): o painel precisa DIZER que
+       está mudo, senão o alerta sonoro simplesmente não toca e ninguém sabe
+       por quê. Um clique em qualquer lugar resolve. */
+    .cp-btn.travado { color: var(--vermelho); border-color: var(--vermelho); }
 
     /* ---------- Unidades ---------- */
-    .cp-unid-num {
-      font-size: clamp(2.6rem, 6.2vh, 4.4rem); font-weight: 800;
-      line-height: 1; letter-spacing: -3px; display: flex; align-items: baseline; gap: .7rem;
-    }
-    .cp-unid-num small { font-size: .28em; font-weight: 700; letter-spacing: 2px; color: var(--muted); }
-    .cp-unid-num.ok  { color: var(--verde); }
-    .cp-unid-num.mal { color: var(--vermelho); }
     /* O bloco inteiro acende quando alguma unidade cai: é o que se lê de longe. */
     #blocoUnidades.alerta {
       border-color: rgba(240,71,93,.5);
       background: linear-gradient(180deg, var(--alerta-bg), transparent 60%), var(--surface);
     }
-    .cp-fora { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
-    .cp-fora-item {
-      display: flex; align-items: center; gap: .6rem;
-      font-size: clamp(.9rem, 2vh, 1.15rem); font-weight: 600;
-    }
-    .cp-fora-item i { color: var(--vermelho); font-size: 1.1em; }
-    .cp-fora-item.instavel i { color: var(--laranja); }
-    .cp-fora-quando { margin-left: auto; font-size: .8em; font-weight: 500; color: var(--muted); }
     .cp-online {
-      margin-top: auto; padding-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 12px;
-      font-size: .78rem; font-weight: 600; color: var(--ink-2);
+      margin-top: auto; padding-top: 0; display: flex; align-items: center; flex-wrap: nowrap;
+      font-size: 1rem; font-weight: 600; color: var(--ink-2);
     }
-    .cp-online span { display: inline-flex; align-items: center; gap: .35rem; }
-    .cp-ponto { width: 7px; height: 7px; border-radius: 50%; background: var(--verde); flex-shrink: 0; }
+    .cp-online-lista {
+      flex: 1; min-width: 0; display: flex; flex-wrap: nowrap; justify-content: space-between; gap: 4px 10px;
+      overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+    }
+    .cp-online-lista::-webkit-scrollbar { height: 6px; }
+    .cp-online-lista::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+    .cp-online-lista::-webkit-scrollbar-track { background: transparent; }
+    .cp-online-lista span { display: inline-flex; align-items: center; gap: .35rem; flex-shrink: 0; white-space: nowrap; }
+    /* Unidade caiu ou está instável: pílula na cor do problema em volta do nome e a bola também. */
+    .cp-online-lista span.down, .cp-online-lista span.instavel {
+      padding: .2rem .6rem; border-radius: 999px; border: 1px solid;
+    }
+    .cp-online-lista span.down { background: var(--alerta-bg); border-color: var(--vermelho); color: var(--vermelho); }
+    .cp-online-lista span.instavel { background: rgba(224,112,22,.1); border-color: var(--laranja); color: var(--laranja); }
+    .cp-online-lista span.down .cp-ponto, .cp-online-lista span.instavel .cp-ponto { background: currentColor; }
+    .cp-ponto { width: 9px; height: 9px; border-radius: 50%; background: var(--verde); flex-shrink: 0; }
 
     /* ---------- Chamados ---------- */
-    .cp-chamados { display: flex; gap: 2.2rem; }
-    .cp-num-bloco { display: flex; flex-direction: column; }
-    .cp-num {
-      font-size: clamp(2.6rem, 6.2vh, 4.4rem); font-weight: 800;
-      line-height: 1; letter-spacing: -3px; font-variant-numeric: tabular-nums;
+    /* Linhas dos chamados (título + status), INTECS e MSA lado a lado.
+       min-height: 0 até a lista pra que ela encolha e role quando a tela é
+       baixa, em vez de empurrar o conteúdo pra fora do card. */
+    .cp-chamados-listas {
+      flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
     }
-    .cp-num-rot { font-size: .72rem; font-weight: 700; letter-spacing: 1.6px; color: var(--muted); margin-top: 4px; }
-    .cp-chamados-det { margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; }
-    .cp-tag {
-      font-size: clamp(.78rem, 1.7vh, .95rem); font-weight: 700;
-      padding: .3rem .75rem; border-radius: 999px;
-      background: var(--chip); color: var(--ink-2);
+    .cp-chamados-coluna { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .cp-chamados-rot {
+      font-size: .72rem; font-weight: 700; letter-spacing: 1.6px;
+      color: var(--muted); margin-bottom: 6px; flex-shrink: 0;
     }
-    .cp-tag.mal    { background: rgba(240,71,93,.16); color: var(--vermelho); }
-    .cp-tag.atencao{ background: rgba(255,140,66,.16); color: var(--laranja); }
+    #blocoChamados .cp-lista { flex: 1; min-height: 0; }
 
     /* ---------- Listas (avisos + eventos) ---------- */
-    /* Rola: num mês cheio de vencimentos o resto tem que ser alcançável por
-       quem chega perto da tela. Barra fina para não poluir de longe. */
+    /* Caixa do tamanho de 4 linhas (limitarAltura() no JS mede e aplica
+       max-height); o resto rola por dentro. Barra fina para não poluir de longe. */
+    #blocoAvisos .cp-corpo, #blocoEventos .cp-corpo { flex: none; overflow: visible; }
     .cp-lista {
       height: 100%; overflow-y: auto; overflow-x: hidden;
       display: flex; flex-direction: column; gap: 2px;
       scrollbar-width: thin; scrollbar-color: var(--line) transparent;
     }
+    #blocoAvisos .cp-lista, #blocoEventos .cp-lista { height: auto; }
     .cp-lista::-webkit-scrollbar { width: 6px; }
     .cp-lista::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
     .cp-lista::-webkit-scrollbar-track { background: transparent; }
+    /* Atalho para o app: de longe o painel tem que continuar idêntico, então o
+       realce só existe com o ponteiro em cima — na parede não há ponteiro. */
+    [data-app] { cursor: pointer; }
+    @media (hover: hover) {
+      [data-app]:hover { color: var(--azul); }
+      .cp-li[data-app]:hover .cp-li-ico, .cp-li[data-app]:hover .cp-li-sub { color: inherit; }
+    }
     .cp-li, .cp-divisor { flex-shrink: 0; }
     .cp-li {
       display: flex; align-items: flex-start; gap: .65rem;
@@ -223,7 +251,11 @@
       font-size: clamp(.82rem, 1.75vh, 1rem);
     }
     .cp-li:last-child { border-bottom: none; }
-    .cp-li-quando { font-weight: 700; color: var(--muted); min-width: 54px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .cp-li-quando {
+      display: flex; flex-direction: column; gap: 1px;
+      font-weight: 700; color: var(--muted); min-width: 54px; flex-shrink: 0; font-variant-numeric: tabular-nums;
+    }
+    .cp-li-quando small { font-weight: 500; font-size: .74em; opacity: .75; }
     .cp-li-ico { flex-shrink: 0; line-height: 1.3; color: var(--muted); }
     .cp-li.alerta .cp-li-ico { color: var(--vermelho); }
     .cp-li-corpo { flex: 1; min-width: 0; }
@@ -275,11 +307,106 @@
     .cp-login-card button:disabled { opacity: .6; cursor: default; }
     .cp-login-erro { color: var(--vermelho); font-size: .8rem; margin-top: .7rem; min-height: 1rem; }
 
-    @media (prefers-reduced-motion: reduce) { .cp-pulso { animation: none; } }
+    /* ---------- Aba VPS ---------- */
+    /* O painel e a aba VPS dividem o MESMO cabeçalho: só o miolo troca. */
+    #cpPainel { display: contents; }
+    /* Na aba VPS a grade vira cabeçalho + unidades + um miolo que pega o resto. */
+    .cp.vps-aberta { grid-template-rows: auto auto minmax(0, 1fr); }
+    /* Insumos e emprestados são do painel; na aba VPS só atrapalham. Some sem
+       mexer na posição do botão da VPS, que é ancorado pela direita. */
+    .cp.vps-aberta .cp-so-painel { display: none; }
+    .cp-vps-toolbar { gap: .4rem; }
+    /* Única tela do painel que rola: é consulta de perto, não leitura de longe. */
+    .cp-vps-corpo { min-height: 0; overflow-y: auto; padding-right: 4px; }
+    .cp-vps-corpo { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+    .cp-vps-corpo::-webkit-scrollbar { width: 8px; }
+    .cp-vps-corpo::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+    .cp-vps-card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 16px 20px; margin-bottom: 12px;
+    }
+    .cp-vps-card-topo {
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+      padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line);
+      font-size: .9rem; font-weight: 700;   /* = .dash-panel-title do admin */
+    }
+    /* O SVG da Hostinger já vem roxo e funciona nos dois temas — sem filtro
+       (inverter deixava ele amarelo). O do Docker é branco fixo: inverte no
+       tema claro e volta ao normal no escuro, igual à aba VPS do admin. */
+    .cp-vps-icone-docker { filter: invert(1); }
+    html[data-theme="dark"] .cp-vps-icone-docker { filter: none; }
+    /* Mesmo selo do .badge-status/.badge-ativo da aba VPS do admin: cores
+       fixas (o fundo claro do selo não segue o tema lá, nem aqui). */
+    .cp-vps-selo {
+      margin-left: auto; display: inline-block;
+      font-size: .72rem; font-weight: 700; letter-spacing: .5px;
+      padding: .35em .7em; border-radius: 6px;
+    }
+    .cp-vps-selo.ok       { color: #1a7f4b; background: #e6f4ec; }
+    .cp-vps-selo.erro     { color: #c0392b; background: #fdecea; }
+    .cp-vps-selo.transicao{ color: #d68910; background: #fdf3e3; }
+    /* Títulos de seção iguais aos <h3 class="h5"> da aba VPS do admin:
+       corpo normal, não caixa-alta miúda como o resto do cockpit. */
+    .cp-vps-sec {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: 1.25rem; font-weight: 600; line-height: 1.2;
+      color: var(--ink); margin: .7rem 0 .2rem;
+    }
+    .cp-vps-sec:first-of-type { margin-top: 0; }
+    .cp-vps-sec img { width: 16px; height: 16px; }
+    /* Controles da seção (faixa 24h/7d e select) ficam na linha de baixo, como no admin. */
+    .cp-vps-ctrl { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+    /* Mesma grade e corpo do .vps-specs-grid do admin. */
+    .cp-vps-specs {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+      gap: .35rem 1rem; font-size: .875rem;
+    }
+    .cp-vps-specs span { display: block; color: var(--muted); }
+    .cp-vps-specs i { font-style: normal; }   /* <i> aqui é só âncora do valor */
+    .cp-vps-graficos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .cp-vps-gtit {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: .8rem; color: var(--muted); margin-bottom: 4px;
+    }
+    .cp-vps-gtit b { font-size: .95rem; color: var(--ink-2); }
+    /* Baixo de propósito: o Docker tem que caber embaixo sem rolar a tela. */
+    .cp-vps-canvas { position: relative; height: 180px; }
+    /* Mesmo chaveador da aba VPS do app (btn-group do Bootstrap com
+       btn-outline-secondary): botões colados dividindo a borda, canto só nas
+       pontas e o ativo em cinza cheio. Os valores são os que saem do app —
+       aqui não há Bootstrap para herdar. */
+    .cp-vps-faixa { display: flex; }
+    .cp-vps-faixa button {
+      background: transparent; border: 1px solid #cfcfcf; color: var(--ink);
+      font-family: inherit; font-size: .875rem; font-weight: 600;
+      padding: .25rem .5rem; cursor: pointer;
+    }
+    .cp-vps-faixa button + button { margin-left: -1px; }   /* uma borda só entre os dois */
+    .cp-vps-faixa button:first-child { border-radius: 10px 0 0 10px; }
+    .cp-vps-faixa button:last-child { border-radius: 0 10px 10px 0; }
+    /* z-index: o ativo tem borda mais escura e precisa ficar por cima da do vizinho. */
+    .cp-vps-faixa button.ativo {
+      background: #6c757d; border-color: #6c757d; color: #fff; position: relative; z-index: 1;
+    }
+    .cp-vps-sub { color: var(--muted); font-size: .82rem; width: 100%; }
+    .cp-vps-docker-btn {
+      display: flex; align-items: center; gap: .55rem; width: 100%;
+      background: none; border: 0; padding: .45rem 0; color: inherit;
+      font-family: inherit; font-size: .92rem; font-weight: 600; cursor: pointer;
+    }
+    .cp-vps-docker-btn .cp-vps-chev { margin-left: auto; color: var(--muted); transition: transform .2s; }
+    .cp-vps-docker-btn[aria-expanded="true"] .cp-vps-chev { transform: rotate(180deg); }
+    .cp-vps-docker-itens { padding: 0 0 .5rem 1.3rem; }
+    .cp-vps-docker-itens[hidden] { display: none; }
+    .cp-vps-cont { padding: .35rem 0; border-top: 1px solid var(--line); }
+    .cp-vps-erro { color: var(--vermelho); font-size: .9rem; }
+    .cp-vps-vazio { color: var(--muted); font-size: .9rem; }
+
     /* Telas pequenas não são o caso de uso, mas evita a grade colapsar feio. */
     @media (max-width: 900px) {
       .cp-linha { grid-template-columns: 1fr; }
       .cp { grid-template-rows: auto auto auto auto; height: auto; }
+      .cp-vps-graficos { grid-template-columns: 1fr; }
       body { overflow: auto; }
     }
   </style>
@@ -303,47 +430,70 @@
     <header class="cp-topo">
       <div class="cp-marca">
         <img src="favicon_intecs.png" alt="">
-        GESTÃO TI <span style="color:var(--muted)">·</span> COCKPIT
+        GESTÃO TI
       </div>
       <div class="cp-mini" id="cpMini">
-        <span class="cp-mini-item"><i class="ph ph-package"></i><b id="cpInsumos">—</b> insumos</span>
-        <span class="cp-mini-item"><i class="ph ph-hand-arrow-up"></i><b id="cpEmprestados">—</b> emprestados</span>
-        <span class="cp-mini-item" id="cpVpsItem"><i class="ph ph-hard-drives"></i><b id="cpVpsEstado">—</b></span>
+        <span class="cp-mini-item cp-so-painel" data-app="ir=insumos" title="Abrir no app"><i class="ph ph-package"></i><b id="cpInsumos">—</b> insumos</span>
+        <span class="cp-mini-item cp-so-painel" data-app="ir=emprestimos" title="Abrir no app"><i class="ph ph-hand-arrow-up"></i><b id="cpEmprestados">—</b> emprestados</span>
+        <!-- A barra vem ANTES do botão: o botão precisa continuar sendo o
+             último item pra que a borda direita dele não se mexa ao abrir. -->
+        <!-- Ícone e carimbo são um botão só: clicar no "atualizado às" também
+             atualiza, que é o alvo maior e mais óbvio dos dois. -->
+        <button type="button" class="cp-mini-item cp-mini-botao cp-vps-toolbar oculto" id="cpVpsBtnAtualizar" title="Atualizar">
+          <i class="ph ph-arrow-clockwise"></i>
+          <span class="cp-carimbo" id="cpVpsAtualizadoEm"></span>
+        </button>
+        <!-- Mesmo botão abre a aba VPS e volta dela: só o ícone vira seta, no
+             lugar exato onde estava o da VPS. O texto (CPU/RAM) continua vivo,
+             o que também mantém a largura — e a seta — parada no lugar. -->
+        <button type="button" class="cp-mini-item cp-mini-botao" id="cpVpsItem" title="Ver detalhes da VPS"><i class="ph ph-hard-drives" id="cpVpsIcone"></i><b id="cpVpsEstado">—</b></button>
       </div>
       <div class="cp-relogio">
         <span class="cp-data" id="cpData">—</span>
         <span class="cp-hora" id="cpHora">--:--</span>
-        <span class="cp-pulso" id="cpPulso" title="painel ativo"></span>
+        <button class="cp-btn" id="cpBtnAviso" type="button" aria-label="Alternar avisos do Windows">
+          <i class="ph ph-bell" id="cpIconeAviso"></i>
+        </button>
+        <button class="cp-btn" id="cpBtnSom" type="button" aria-label="Alternar som">
+          <i class="ph ph-speaker-high" id="cpIconeSom"></i>
+        </button>
         <button class="cp-btn" id="cpBtnTema" type="button" aria-label="Alternar tema">
           <i class="ph ph-sun" id="cpIconeTema"></i>
+        </button>
+        <button class="cp-btn" id="cpBtnTela" type="button" aria-label="Tela cheia" title="Tela cheia (F)">
+          <i class="ph ph-corners-out" id="cpIconeTela"></i>
         </button>
       </div>
     </header>
 
-    <!-- Linha 1: unidades + chamados -->
-    <div class="cp-linha">
-      <section class="cp-bloco" id="blocoUnidades">
-        <div class="cp-bloco-tit">
-          <i class="ph ph-broadcast"></i> Conexão das unidades
-          <span class="cp-carimbo" id="cpUnidCarimbo"></span>
-        </div>
-        <div class="cp-corpo" id="cpUnidades" style="display:flex;flex-direction:column"></div>
-      </section>
+    <!-- Linha 1: unidades, tela toda. Fica FORA do #cpPainel de propósito —
+         a conexão das lojas continua à vista também na aba VPS. -->
+    <section class="cp-bloco" id="blocoUnidades">
+      <div class="cp-bloco-tit">
+        <span class="cp-carimbo" id="cpUnidCarimbo"></span>
+      </div>
+      <div class="cp-corpo" id="cpUnidades" style="display:flex;flex-direction:column"></div>
+    </section>
 
-      <section class="cp-bloco" id="blocoChamados">
-        <div class="cp-bloco-tit">
-          <i class="ph ph-lifebuoy"></i> Chamados
-          <span class="cp-carimbo" id="cpChamCarimbo"></span>
-        </div>
-        <div class="cp-corpo" id="cpChamados" style="display:flex;flex-direction:column"></div>
-      </section>
-    </div>
+    <!-- display:contents — as linhas continuam sendo itens da grade .cp; o
+         wrapper só existe pra esconder as de baixo de uma vez na aba VPS. -->
+    <div id="cpPainel">
 
-    <!-- Linha 2: avisos + eventos -->
+    <!-- Linha 2: chamados, tela toda -->
+    <section class="cp-bloco" id="blocoChamados">
+      <div class="cp-bloco-tit">
+        <span data-app="ir=msa" title="Abrir no app"><i class="ph ph-headset"></i> Chamados</span>
+        <span class="cp-carimbo" id="cpChamCarimbo"></span>
+      </div>
+      <div class="cp-corpo" id="cpChamados" style="display:flex;flex-direction:column"></div>
+    </section>
+
+    <!-- Linha 3: avisos + eventos -->
     <div class="cp-linha">
       <section class="cp-bloco" id="blocoAvisos">
         <div class="cp-bloco-tit">
-          <i class="ph ph-shield-warning"></i> Avisos de segurança
+          <!-- O nome do card leva à aba; o nome de cada aviso leva ao registro. -->
+          <span data-app="ir=logs" title="Abrir no app"><i class="ph ph-shield-warning"></i> Avisos de segurança</span>
           <span class="cp-carimbo" id="cpAvisosCarimbo">últimos 7 dias</span>
         </div>
         <div class="cp-corpo"><div class="cp-lista" id="cpAvisos"></div></div>
@@ -351,7 +501,7 @@
 
       <section class="cp-bloco" id="blocoEventos">
         <div class="cp-bloco-tit">
-          <i class="ph ph-calendar-dots"></i> Eventos do mês
+          <span data-app="ir=evento" title="Abrir no app"><i class="ph ph-calendar-dots"></i> Eventos do mês</span>
           <span class="cp-mes-nav">
             <button type="button" class="cp-mes-btn" id="cpMesAnt" aria-label="Mês anterior"><i class="ph ph-caret-left"></i></button>
             <span class="cp-carimbo" id="cpEventosCarimbo"></span>
@@ -362,8 +512,14 @@
       </section>
     </div>
 
+    </div><!-- /cpPainel -->
+
+    <!-- Aba VPS: entra no lugar do painel, sob o mesmo cabeçalho. -->
+    <div class="cp-vps-corpo oculto" id="cpVpsCards"></div>
+
   </div>
 
-  <script src="cockpit.js?v=1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script src="cockpit.js?v=6"></script>
 </body>
 </html>
