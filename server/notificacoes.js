@@ -96,8 +96,10 @@ function renderMudancasTxt(mudancas) {
 }
 
 // Aceita apenas endereços sintaticamente válidos — um registro malformado no
-// cadastro faria o servidor recusar a mensagem inteira.
-const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
+// cadastro faria o servidor recusar a mensagem inteira. Exportado para quem
+// valida endereços digitados à mão (e-mails extras do calendário) usar a mesma
+// régua do envio, em vez de manter uma segunda regex que pode divergir.
+export const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
 
 // Fragmento SQL que restringe destinatários por papel e/ou por id, acumulando
 // os parâmetros em 'params'. Prefixo evita colisão quando o mesmo params serve
@@ -144,10 +146,10 @@ async function destinatariosEmail({ atorId, papeis, usuarioIds }) {
 
 // Lista de ids que recebem o PUSH: mesma regra do sininho (não a do e-mail) —
 // o push existe pra estender o alcance do sininho a quando a tela está
-// fechada, então segue o escopo dele ('papeis').
-async function destinatariosPush({ atorId, papeis }) {
+// fechada, então segue o escopo dele ('papeis'/'sininhoUsuarioIds').
+async function destinatariosPush({ atorId, papeis, usuarioIds }) {
   const params = { atorId };
-  const filtro = filtroDestinatarios({ papeis }, params);
+  const filtro = filtroDestinatarios({ papeis, usuarioIds }, params);
   const r = await query(
     `SELECT id FROM dbo.EQUIPSTI_usuarios WHERE ativo = 1 AND id <> @atorId ${filtro}`,
     params
@@ -169,12 +171,14 @@ async function destinatariosPush({ atorId, papeis }) {
  * @param {string[]} [o.emailPapeis]      restringe o e-mail a estes papéis (ex.: ['TECNICO','MASTER'])
  * @param {number[]} [o.emailUsuarioIds]  usuários que recebem o e-mail mesmo fora dos papéis (ex.: dono do chamado)
  * @param {string[]} [o.papeis]   restringe o SININHO a estes papéis (só quem tem a tela)
+ * @param {number[]} [o.sininhoUsuarioIds]  usuários que recebem o SININHO mesmo fora
+ *   dos papéis (ex.: o dono de um evento particular do calendário)
  * @param {{html:string, texto:string}} [o.corpo]  e-mail já montado (ex.: a ficha
  *   do chamado). Quando vem, substitui o template genérico inteiro.
  * @param {boolean} [o.push]    também enviar push (Web Push)? Segue o mesmo
- *   escopo do sininho ('papeis'). Default true.
+ *   escopo do sininho ('papeis'/'sininhoUsuarioIds'). Default true.
  */
-export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ator, email = false, mudancas, emailPapeis, emailUsuarioIds, papeis, corpo, push = true }) {
+export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ator, email = false, mudancas, emailPapeis, emailUsuarioIds, papeis, sininhoUsuarioIds, corpo, push = true }) {
   try {
     const atorId = Number(ator?.id) || 0;
 
@@ -187,7 +191,7 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
       link: S(link), refId: refId == null ? null : Number(refId),
       ator: S(ator?.email), atorId
     };
-    const filtroSino = filtroDestinatarios({ papeis }, paramsSino, 'sino_');
+    const filtroSino = filtroDestinatarios({ papeis, usuarioIds: sininhoUsuarioIds }, paramsSino, 'sino_');
     await query(
       `INSERT INTO dbo.EQUIPSTI_notificacoes
          (usuario_id, tipo, acao, titulo, mensagem, link, ref_id, ator_email)
@@ -212,12 +216,13 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
     //    "avisa de tudo" do sininho. Não aguardado, mesma razão do e-mail:
     //    é I/O externo e não deve atrasar a resposta ao usuário.
     if (push) {
-      destinatariosPush({ atorId, papeis })
+      destinatariosPush({ atorId, papeis, usuarioIds: sininhoUsuarioIds })
         .then((ids) => enviarPush(ids, { titulo, corpo: mensagem || titulo }))
         .catch((e) => console.warn('[push] falhou:', e.message));
     }
 
-    // 3) E-mail (apenas quando email=true): BCC a todos os destinatários.
+    // 3) E-mail (apenas quando email=true): uma mensagem endereçada a todos os
+    //    destinatários (ver enviarEmail — o BCC de antes caía no spam).
     //    O envio NÃO é aguardado: quem chama responde ao usuário na hora e o
     //    diálogo SMTP corre em segundo plano. Ele já foi aguardado um dia, por
     //    causa do serverless — na Vercel a invocação congelava assim que a
@@ -231,7 +236,7 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
         const corpoTexto = mensagem || titulo;      // fallback genérico
         const quem = ator?.email || 'sistema';
         enviarEmail({
-          bcc: dest,
+          to: dest,
           subject: `[Gestão TI] ${titulo}`,
           text: corpoPronto
             ? corpoPronto.texto
@@ -288,15 +293,34 @@ function renderBlocosTxt(blocos) {
  * @param {string} [o.tag]    rótulo do template (ex.: 'Calendário')
  * @param {Array<{titulo:string, mensagem:string}>} o.blocos  um item por aviso
  * @param {string[]} [o.papeis]  quem recebe (ex.: ['MASTER'])
- * @returns {Promise<boolean>} true se enviado com sucesso
+ * @param {number[]} [o.usuarioIds]  usuários específicos, somados aos papéis
+ * @param {string[]} [o.emailsExtras]  endereços avulsos, de gente sem conta no
+ *   sistema (ex.: fornecedor num evento do calendário)
+ * @returns {Promise<boolean>} true se enviado — ou se não havia ninguém para
+ *   receber, o que não é falha e não deve ser retentado
  */
-export async function notificarEmailLote({ titulo, tag, blocos, papeis }) {
+export async function notificarEmailLote({ titulo, tag, blocos, papeis, usuarioIds, emailsExtras }) {
   try {
     if (!Array.isArray(blocos) || !blocos.length) return false;
-    const dest = await destinatariosEmail({ atorId: 0, papeis });
-    if (!dest.length) return false;
+    const dosUsuarios = await destinatariosEmail({ atorId: 0, papeis, usuarioIds });
+    // Extras entram junto dos usuários, sem repetir quem já está na lista.
+    const vistos = new Set(dosUsuarios.map((e) => e.toLowerCase()));
+    const dest = [...dosUsuarios];
+    for (const e of (Array.isArray(emailsExtras) ? emailsExtras : [])) {
+      const limpo = String(e).trim();
+      if (!emailValido(limpo) || vistos.has(limpo.toLowerCase())) continue;
+      vistos.add(limpo.toLowerCase());
+      dest.push(limpo);
+    }
+    // "Ninguém para receber" NÃO é falha transiente: devolver false faria quem
+    // chama retentar (o cron do calendário insiste 3× em 15 min e repete no dia
+    // seguinte) para sempre, e o aviso nunca seria marcado como entregue.
+    if (!dest.length) {
+      console.warn('[email] lote sem destinatários:', titulo);
+      return true;
+    }
     await enviarEmail({
-      bcc: dest,
+      to: dest,
       subject: `[Gestão TI] ${titulo}`,
       text: renderBlocosTxt(blocos),
       html: montarEmailHtml({ tag, titulo, conteudoHtml: renderBlocosHtml(blocos), rodapeHtml: '' })

@@ -40,7 +40,7 @@ const CHOICES_IDS = [
   'ci_categoria', 'ci_subcategoria', 'ci_prioridade',
   'ci_unidade', 'ci_departamento', 'ciMaquinaSelect',
   'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
-  'cal_recorrencia', 'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvProprietario'
+  'cal_recorrencia', 'cal_visibilidade', 'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvProprietario'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
 const FILTRO_STATUS_IDS = new Set([
@@ -1668,6 +1668,9 @@ let modalCalendario = null;
 let CALENDARIO = [];
 let calAno = null;
 let calMes = null;
+// E-mails adicionais do evento aberto no modal (chips). São só destinatários de
+// e-mail: quem está aqui não tem conta, não vê a agenda nem recebe sininho.
+let calEmailsExtras = [];
 const MESES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
 function ymd(d) {
@@ -1726,7 +1729,8 @@ function renderCalendarioGrid() {
     const outroMes = d.getMonth() !== calMes;
     const isHoje = d.getTime() === hoje.getTime();
     const pills = eventosNoDia(d).map((e) =>
-      '<div class="cal-evento cal-evento--' + e.recorrencia + '" data-id="' + e.id + '" title="' + escapeHtml(e.titulo) + '">' + escapeHtml(e.titulo) + '</div>'
+      '<div class="cal-evento cal-evento--' + e.recorrencia + '" data-id="' + e.id + '" title="' + escapeHtml(e.titulo) + '">' +
+      (e.visibilidade === 'EU' ? '<i class="ph ph-lock"></i>' : '') + escapeHtml(e.titulo) + '</div>'
     ).join('');
     html += '<div class="cal-day' + (outroMes ? ' is-outro-mes' : '') + (isHoje ? ' is-hoje' : '') + '" data-date="' + ymd(d) + '">' +
       '<div class="cal-day-num">' + d.getDate() + '</div>' +
@@ -1846,6 +1850,151 @@ function mostrarCalListaView() {
   renderListaCalendario();
 }
 
+// Mesma régua do servidor (emailValido, em notificacoes.js) — validar aqui é só
+// para o erro aparecer antes de salvar; quem decide é a API.
+const CAL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Redesenha as pílulas, sempre antes do input dentro da mesma caixa.
+function renderCalEmails() {
+  const box = $('cal_emails_box');
+  const input = $('cal_emails_input');
+  box.querySelectorAll('.cal-email-chip').forEach((c) => c.remove());
+  calEmailsExtras.forEach((email, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'cal-email-chip';
+    chip.dataset.email = email;      // identifica pelo valor, não pelo índice:
+    chip.title = 'Duplo clique para editar';
+    chip.innerHTML = '<span>' + escapeHtml(email) + '</span>' +
+      '<button type="button" class="cal-email-x" title="Remover"><i class="ph ph-x"></i></button>';
+    box.insertBefore(chip, input);
+  });
+}
+
+// Agenda de endereços já usados aqui, para sugerir na próxima vez (como o
+// Outlook). Vive só no navegador de quem digitou — não vai para o servidor nem
+// é compartilhada entre usuários.
+const CAL_EMAILS_LS = 'calEmailsRecentes';
+const CAL_EMAILS_MAX = 50;   // teto para a lista não crescer sem fim
+const CAL_SUG_VISIVEIS = 6;
+const CAL_SUG_MIN = 3;       // só sugere a partir da 3ª letra digitada
+let calSugAtiva = -1;        // índice destacado pelas setas; -1 = nenhum
+let calSugTocado = false;    // true depois que as setas assumem o controle
+// Instante da última pílula removida pelo "×". Remover redesenha a fila, então
+// uma pílula vizinha escorrega para debaixo do cursor — sem esta janela, um
+// duplo clique no × apagaria duas de uma vez, ou cairia no duplo clique de
+// editar da pílula que tomou o lugar.
+let calChipRemovidoEm = 0;
+const CAL_CHIP_JANELA_MS = 350;
+
+function lerCalEmailsSalvos() {
+  try {
+    const lista = JSON.parse(localStorage.getItem(CAL_EMAILS_LS) || '[]');
+    return Array.isArray(lista) ? lista.filter((e) => typeof e === 'string') : [];
+  } catch { return []; }   // localStorage corrompido não pode quebrar o modal
+}
+
+// Mais recente primeiro: quem acabou de ser usado aparece no topo da próxima vez.
+function salvarCalEmail(email) {
+  const lista = lerCalEmailsSalvos().filter((e) => e !== email);
+  lista.unshift(email);
+  localStorage.setItem(CAL_EMAILS_LS, JSON.stringify(lista.slice(0, CAL_EMAILS_MAX)));
+}
+
+function esquecerCalEmail(email) {
+  localStorage.setItem(CAL_EMAILS_LS, JSON.stringify(lerCalEmailsSalvos().filter((e) => e !== email)));
+}
+
+// Lista filtrada pelo que está sendo digitado, sem repetir quem já virou pílula.
+// Abaixo de CAL_SUG_MIN letras não sugere nada: com uma ou duas o filtro casaria
+// com quase tudo que está salvo, e a lista atrapalharia mais que ajudaria.
+function calSugestoesAtuais() {
+  const termo = trim($('cal_emails_input').value).toLowerCase();
+  if (termo.length < CAL_SUG_MIN) return [];
+  return lerCalEmailsSalvos()
+    .filter((e) => !calEmailsExtras.includes(e) && e.includes(termo))
+    .slice(0, CAL_SUG_VISIVEIS);
+}
+
+// Índice que o Enter usa: o escolhido pelas setas ou, enquanto ninguém mexeu
+// nelas, o primeiro da lista quando o que foi digitado ainda é um pedaço — é
+// assim que o Outlook completa. Texto que já é um endereço completo nunca é
+// trocado pela sugestão, senão digitar "teste1@gmail.com.br" viraria
+// "teste1@gmail.com" só porque um contém o outro.
+//
+// Depois da primeira seta o destaque automático sai de cena e quem manda é o
+// calSugAtiva, inclusive para voltar ao -1 (nenhum) e usar o texto digitado.
+function calSugIndiceEfetivo(itens) {
+  if (calSugTocado) return calSugAtiva;
+  const termo = trim($('cal_emails_input').value);
+  return termo && !CAL_EMAIL_RE.test(termo) && itens.length ? 0 : -1;
+}
+
+function renderCalSugestoes() {
+  const cx = $('cal_emails_sug');
+  const itens = calSugestoesAtuais();
+  if (!itens.length) return fecharCalSugestoes();
+  if (calSugAtiva >= itens.length) { calSugAtiva = -1; calSugTocado = false; }
+  const destaque = calSugIndiceEfetivo(itens);
+  cx.innerHTML = itens.map((e, i) =>
+    '<div class="cal-emails-sug-item' + (i === destaque ? ' is-ativo' : '') + '" data-email="' + escapeHtml(e) + '">' +
+    '<i class="ph ph-envelope-simple"></i><span>' + escapeHtml(e) + '</span>' +
+    '<button type="button" class="cal-emails-sug-x" data-esquecer="' + escapeHtml(e) + '" title="Remover da lista"><i class="ph ph-x"></i></button>' +
+    '</div>').join('');
+  cx.classList.remove('d-none');
+}
+
+function fecharCalSugestoes() {
+  $('cal_emails_sug').classList.add('d-none');
+  calSugAtiva = -1;
+  calSugTocado = false;
+}
+
+// Vira pílula se o endereço for válido. Inválido não some em silêncio: fica no
+// campo, marcado, para o usuário corrigir.
+function addCalEmail(texto) {
+  const email = trim(texto).toLowerCase();
+  if (!email) return true;
+  if (!CAL_EMAIL_RE.test(email)) { $('cal_emails_box').classList.add('is-invalid'); return false; }
+  if (!calEmailsExtras.includes(email)) { calEmailsExtras.push(email); renderCalEmails(); }
+  salvarCalEmail(email);   // só endereços válidos entram na agenda
+  $('cal_emails_box').classList.remove('is-invalid');
+  return true;
+}
+
+// Desfaz a pílula e devolve o endereço ao campo, com o cursor no fim, para
+// corrigir um e-mail digitado errado sem ter que apagar e escrever tudo de novo.
+// Localiza pelo valor, não pelo índice: entre o clique e aqui a lista pode ter
+// sido redesenhada (o blur do campo confirma o que estava digitado antes).
+function editarCalEmail(email) {
+  const i = calEmailsExtras.indexOf(email);
+  if (i < 0) return;
+  calEmailsExtras.splice(i, 1);
+  renderCalEmails();
+  const input = $('cal_emails_input');
+  input.value = email;
+  input.focus();
+  input.setSelectionRange(email.length, email.length);
+  calSugAtiva = -1;
+  calSugTocado = false;
+  renderCalSugestoes();
+}
+
+// Adiciona a sugestão escolhida e limpa o que estava sendo digitado.
+function usarCalSugestao(email) {
+  addCalEmail(email);
+  $('cal_emails_input').value = '';
+  fecharCalSugestoes();
+  $('cal_emails_input').focus();
+}
+
+// Consome o que estiver digitado no campo. false = sobrou endereço inválido.
+function confirmarCalEmail() {
+  const input = $('cal_emails_input');
+  const invalidos = input.value.split(/[,;\s]+/).filter(Boolean).filter((p) => !addCalEmail(p));
+  input.value = invalidos.join(', ');
+  return !invalidos.length;
+}
+
 function abrirCalendario(id, dataPreenchida) {
   const e = id != null ? CALENDARIO.find((x) => String(x.id) === String(id)) : null;
   $('alertCalendarioModal').innerHTML = '';
@@ -1860,6 +2009,12 @@ function abrirCalendario(id, dataPreenchida) {
   $('cal_valor').value = e && e.valor != null ? formatarMoeda(e.valor) : '';
   setSelectVal('cal_recorrencia', e ? e.recorrencia : '');
   $('cal_avisar_dias').value = e && e.avisarDiasAntes != null ? e.avisarDiasAntes : '';
+  setSelectVal('cal_visibilidade', e ? (e.visibilidade || 'EQUIPE') : '');
+  calEmailsExtras = e ? (e.emailsExtras || []).slice() : [];
+  $('cal_emails_input').value = '';
+  $('cal_emails_box').classList.remove('is-invalid');
+  renderCalEmails();
+  fecharCalSugestoes();
   $('cal_observacao').value = e ? (e.observacao || '') : '';
   $('btnExcluirCalendario').classList.toggle('d-none', !e);
   modalCalendario.show();
@@ -1873,13 +2028,20 @@ function dadosCalendario() {
     recorrencia: $('cal_recorrencia').value,
     valor: parseMoeda($('cal_valor').value),
     observacao: trim($('cal_observacao').value),
-    avisarDiasAntes: trim($('cal_avisar_dias').value) === '' ? null : Number(trim($('cal_avisar_dias').value))
+    avisarDiasAntes: trim($('cal_avisar_dias').value) === '' ? null : Number(trim($('cal_avisar_dias').value)),
+    visibilidade: $('cal_visibilidade').value,
+    emailsExtras: calEmailsExtras
   };
 }
 
 async function salvarCalendario(ev) {
   ev.preventDefault();
   const form = $('formCalendario');
+  // Quem digita e clica direto em Salvar não pode perder o endereço.
+  if (!confirmarCalEmail()) {
+    showAlert('alertCalendarioModal', 'danger', 'E-mail adicional inválido: ' + $('cal_emails_input').value);
+    return;
+  }
   if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
   const id = $('cal_id').value;
   const restaurarBtn = btnSalvando($('btnSalvarCalendario'));
@@ -1915,6 +2077,86 @@ function configurarCalendario() {
   $('btnNovoEventoCal').addEventListener('click', () => abrirCalendario(null));
   $('formCalendario').addEventListener('submit', salvarCalendario);
   $('btnExcluirCalendario').addEventListener('click', excluirCalendario);
+  // Chips dos e-mails adicionais: clicar em qualquer canto da caixa foca o campo.
+  $('cal_emails_box').addEventListener('click', (ev) => {
+    const x = ev.target.closest('.cal-email-x');
+    if (x) {
+      // Dentro da janela, o clique é o segundo de um duplo: a pílula que está
+      // aqui agora não é a que o usuário mirou.
+      if (Date.now() - calChipRemovidoEm < CAL_CHIP_JANELA_MS) return;
+      const email = x.closest('.cal-email-chip').dataset.email;
+      const i = calEmailsExtras.indexOf(email);   // pelo valor, nunca pelo índice
+      if (i >= 0) calEmailsExtras.splice(i, 1);
+      calChipRemovidoEm = Date.now();
+      renderCalEmails();
+      renderCalSugestoes();
+      return;
+    }
+    $('cal_emails_input').focus();
+  });
+  // Duplo clique na pílula devolve o endereço ao campo para correção.
+  $('cal_emails_box').addEventListener('dblclick', (ev) => {
+    // O × não edita — e se acabou de remover uma pílula, este duplo clique é
+    // resquício daquele gesto, não a intenção de editar quem escorregou pra cá.
+    if (ev.target.closest('.cal-email-x')) return;
+    if (Date.now() - calChipRemovidoEm < CAL_CHIP_JANELA_MS) return;
+    const chip = ev.target.closest('.cal-email-chip');
+    if (!chip) return;
+    ev.preventDefault();   // sem isso o duplo clique seleciona o texto da pílula
+    editarCalEmail(chip.dataset.email);
+  });
+  $('cal_emails_input').addEventListener('keydown', (ev) => {
+    const itens = calSugestoesAtuais();
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      if (!itens.length) return;
+      ev.preventDefault();                     // não mexer no cursor do texto
+      // Anda a partir de quem está destacado agora — inclusive do destaque
+      // automático, senão a primeira seta só o repetiria em vez de avançar.
+      // O ciclo passa por -1 (nenhum), que é como voltar ao texto digitado.
+      const base = calSugIndiceEfetivo(itens);
+      const passo = ev.key === 'ArrowDown' ? 1 : -1;
+      calSugAtiva = (base + passo + itens.length + 2) % (itens.length + 1) - 1;
+      calSugTocado = true;
+      renderCalSugestoes();
+      return;
+    }
+    if (ev.key === 'Escape' && !$('cal_emails_sug').classList.contains('d-none')) {
+      ev.stopPropagation();                    // fecha a lista, não o modal inteiro
+      fecharCalSugestoes();
+      return;
+    }
+    if (ev.key === 'Enter' || ev.key === ',' || ev.key === ';') {
+      ev.preventDefault();
+      // Com uma sugestão destacada, Enter escolhe ela em vez do texto digitado.
+      const i = calSugIndiceEfetivo(itens);
+      if (i >= 0 && itens[i]) { usarCalSugestao(itens[i]); return; }
+      confirmarCalEmail();
+      renderCalSugestoes();
+      return;
+    }
+    if (ev.key === 'Backspace' && !ev.target.value && calEmailsExtras.length) {
+      calEmailsExtras.pop(); renderCalEmails(); renderCalSugestoes();
+    }
+  });
+  // Digitar recomeça o ciclo: o destaque automático volta a valer.
+  $('cal_emails_input').addEventListener('input', () => { calSugAtiva = -1; calSugTocado = false; renderCalSugestoes(); });
+  $('cal_emails_input').addEventListener('focus', renderCalSugestoes);
+  $('cal_emails_input').addEventListener('blur', () => { confirmarCalEmail(); fecharCalSugestoes(); });
+  // mousedown com preventDefault: sem isso o blur do campo dispara antes do
+  // clique e a lista some debaixo do cursor.
+  $('cal_emails_sug').addEventListener('mousedown', (ev) => ev.preventDefault());
+  $('cal_emails_sug').addEventListener('click', (ev) => {
+    const esquecer = ev.target.closest('.cal-emails-sug-x');
+    if (esquecer) { esquecerCalEmail(esquecer.dataset.esquecer); renderCalSugestoes(); return; }
+    const item = ev.target.closest('.cal-emails-sug-item');
+    if (item) usarCalSugestao(item.dataset.email);
+  });
+  $('cal_emails_input').addEventListener('paste', (ev) => {
+    ev.preventDefault();
+    const txt = (ev.clipboardData || window.clipboardData).getData('text');
+    txt.split(/[,;\s]+/).filter(Boolean).forEach(addCalEmail);
+    fecharCalSugestoes();
+  });
   $('calMesAnterior').addEventListener('click', () => {
     calMes--; if (calMes < 0) { calMes = 11; calAno--; }
     renderCalendarioGrid();
