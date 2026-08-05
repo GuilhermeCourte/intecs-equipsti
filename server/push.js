@@ -43,11 +43,13 @@ export async function removerSubscription(usuarioId, endpoint) {
 
 // Envia para todos os dispositivos inscritos dos usuários dados. Assinaturas
 // mortas (404/410 — usuário revogou a permissão ou desinstalou) são limpas
-// automaticamente; outros erros só ficam no log.
+// automaticamente; outros erros só ficam no log. Retorna quantos dispositivos
+// foram alvo do envio (0 = push desativado ou ninguém inscrito) — usado pelo
+// teste de notificação pra dizer ao usuário se havia algo pra receber.
 export async function enviarPush(usuarioIds, { titulo, corpo, url }) {
-  if (!HABILITADO) return;
+  if (!HABILITADO) return 0;
   const ids = (Array.isArray(usuarioIds) ? usuarioIds : []).map(Number).filter(Boolean);
-  if (!ids.length) return;
+  if (!ids.length) return 0;
   try {
     const params = {};
     ids.forEach((id, i) => { params[`uid${i}`] = id; });
@@ -71,7 +73,9 @@ export async function enviarPush(usuarioIds, { titulo, corpo, url }) {
         }
       }
     }));
+    return r.recordset.length;
   } catch (err) {
     console.warn('[push] enviarPush falhou:', err.message);
+    return 0;
   }
 }
