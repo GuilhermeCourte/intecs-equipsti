@@ -14,6 +14,7 @@ import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 import { notificar, notificarTeste, notificarSolicitante, notificarEmailLote } from './notificacoes.js';
+import { chavePublica, salvarSubscription, removerSubscription } from './push.js';
 import { inscrever } from './realtime.js';
 import { registrarLog, listarLogs, MODULOS_LOG, NIVEIS_SEGURANCA } from './logs.js';
 import { emailParaEquipe, rotular } from './emailChamado.js';
@@ -259,6 +260,27 @@ app.put('/api/notifications/:id/read', exigirAuth, wrap(async (req, res) => {
 app.post('/api/notifications/test', exigirAuth, wrap(async (req, res) => {
   const r = await notificarTeste({ id: req.user.sub, email: req.user.email });
   res.json({ ok: true, ...r });
+}));
+
+// Chave pública VAPID, para o cliente chamar PushManager.subscribe(). Não é
+// segredo (é o que qualquer serviço de push já expõe a quem envia), fica
+// atrás de exigirAuth porque a inscrição só acontece pós-login.
+app.get('/api/push/public-key', exigirAuth, wrap(async (req, res) => {
+  res.json({ publicKey: chavePublica() });
+}));
+
+app.post('/api/push/subscribe', exigirAuth, wrap(async (req, res) => {
+  const { endpoint, keys } = req.body || {};
+  if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ error: 'Inscrição inválida.' });
+  await salvarSubscription(Number(req.user.sub), { endpoint, keys });
+  res.json({ ok: true });
+}));
+
+app.post('/api/push/unsubscribe', exigirAuth, wrap(async (req, res) => {
+  const { endpoint } = req.body || {};
+  if (!endpoint) return res.status(400).json({ error: 'endpoint obrigatório.' });
+  await removerSubscription(Number(req.user.sub), endpoint);
+  res.json({ ok: true });
 }));
 
 // Canal de tempo real (SSE). Manda só um sinal — quem recarrega é o cliente,

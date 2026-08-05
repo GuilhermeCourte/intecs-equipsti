@@ -1,6 +1,6 @@
 // Service Worker — estratégia network-first para conteúdo da própria origem
 // (mantém o app sempre atualizado) com fallback para cache quando offline.
-const CACHE = 'inv-cache-v14';
+const CACHE = 'inv-cache-v15';
 const SHELL = [
   './',
   './index.html',
@@ -48,5 +48,30 @@ self.addEventListener('fetch', (event) => {
       // a tela de parede cairia no index.html offline, que é o app inteiro.
       .catch(() => caches.match(req).then((r) =>
         r || caches.match(url.pathname === '/cockpit' ? './cockpit.html' : './index.html')))
+  );
+});
+
+// Push real (Web Push/VAPID) — chega mesmo com o app fechado. Payload é o
+// JSON montado em server/push.js: { title, body, url }.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: 'Gestão TI', body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Gestão TI', {
+    body: data.body || '',
+    icon: 'icons/icon-192.png?v=4',
+    badge: 'icons/icon-192.png?v=4',
+    data: { url: data.url || './' }
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || './';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientes) => {
+      const existente = clientes.find((c) => 'focus' in c);
+      if (existente) return existente.focus();
+      return self.clients.openWindow(targetUrl);
+    })
   );
 });
