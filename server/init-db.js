@@ -262,6 +262,24 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_notif_dest')
   CREATE INDEX IX_EQUIPSTI_notif_dest
     ON dbo.EQUIPSTI_notificacoes (usuario_id, lido, criado_em DESC);
 
+-- Inscrições de push (Web Push/VAPID) do app admin — uma linha por par
+-- usuário+dispositivo/navegador. 'endpoint' é a URL do serviço de push
+-- devolvida pelo PushManager.subscribe(); é NVARCHAR(MAX) então não entra em
+-- índice único (limite do SQL Server) — duplicidade é tratada na aplicação.
+IF OBJECT_ID('dbo.EQUIPSTI_push_subscriptions', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_push_subscriptions (
+  id          INT IDENTITY(1,1) PRIMARY KEY,
+  usuario_id  INT NOT NULL,
+  endpoint    NVARCHAR(MAX) NOT NULL,
+  p256dh      NVARCHAR(255) NOT NULL,
+  auth        NVARCHAR(255) NOT NULL,
+  criado_em   DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_push_usuario')
+  CREATE INDEX IX_EQUIPSTI_push_usuario
+    ON dbo.EQUIPSTI_push_subscriptions (usuario_id);
+
 -- ============================================================
 -- Chamados INTECS (módulo interno, independente do MSA/Eurosa)
 -- + integração Tactical RMM.

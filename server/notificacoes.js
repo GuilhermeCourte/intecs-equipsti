@@ -12,6 +12,7 @@ import { query, sql } from './db.js';
 import { enviarEmail } from './email.js';
 import { emailParaSolicitante } from './emailChamado.js';
 import { emitirTodos, emitirPara } from './realtime.js';
+import { enviarPush } from './push.js';
 
 const S = (v) => ({ type: sql.NVarChar, value: v == null ? null : String(v) });
 
@@ -141,6 +142,19 @@ async function destinatariosEmail({ atorId, papeis, usuarioIds }) {
   return r.recordset.map((u) => u.email).filter(emailValido);
 }
 
+// Lista de ids que recebem o PUSH: mesma regra do sininho (não a do e-mail) —
+// o push existe pra estender o alcance do sininho a quando a tela está
+// fechada, então segue o escopo dele ('papeis').
+async function destinatariosPush({ atorId, papeis }) {
+  const params = { atorId };
+  const filtro = filtroDestinatarios({ papeis }, params);
+  const r = await query(
+    `SELECT id FROM dbo.EQUIPSTI_usuarios WHERE ativo = 1 AND id <> @atorId ${filtro}`,
+    params
+  );
+  return r.recordset.map((u) => u.id);
+}
+
 /**
  * @param {object} o
  * @param {'REGISTRO'|'EMPRESTIMO'|'CHAMADO'} o.tipo
@@ -157,8 +171,10 @@ async function destinatariosEmail({ atorId, papeis, usuarioIds }) {
  * @param {string[]} [o.papeis]   restringe o SININHO a estes papéis (só quem tem a tela)
  * @param {{html:string, texto:string}} [o.corpo]  e-mail já montado (ex.: a ficha
  *   do chamado). Quando vem, substitui o template genérico inteiro.
+ * @param {boolean} [o.push]    também enviar push (Web Push)? Segue o mesmo
+ *   escopo do sininho ('papeis'). Default true.
  */
-export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ator, email = false, mudancas, emailPapeis, emailUsuarioIds, papeis, corpo }) {
+export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ator, email = false, mudancas, emailPapeis, emailUsuarioIds, papeis, corpo, push = true }) {
   try {
     const atorId = Number(ator?.id) || 0;
 
@@ -191,7 +207,17 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
     // notificação sumindo em silêncio. Não vale o risco pela precisão.
     emitirTodos('notificacao');
 
-    // 2) E-mail (apenas quando email=true): BCC a todos os destinatários.
+    // 2) Push (Web Push): mesmo escopo do sininho, não o do e-mail — o push
+    //    existe pra alcançar quem tem a tela fechada, então segue a regra
+    //    "avisa de tudo" do sininho. Não aguardado, mesma razão do e-mail:
+    //    é I/O externo e não deve atrasar a resposta ao usuário.
+    if (push) {
+      destinatariosPush({ atorId, papeis })
+        .then((ids) => enviarPush(ids, { titulo, corpo: mensagem || titulo }))
+        .catch((e) => console.warn('[push] falhou:', e.message));
+    }
+
+    // 3) E-mail (apenas quando email=true): BCC a todos os destinatários.
     //    O envio NÃO é aguardado: quem chama responde ao usuário na hora e o
     //    diálogo SMTP corre em segundo plano. Ele já foi aguardado um dia, por
     //    causa do serverless — na Vercel a invocação congelava assim que a

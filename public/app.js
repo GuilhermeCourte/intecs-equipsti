@@ -7302,6 +7302,20 @@ function initNotificacoes() {
       catch (err) { console.error(err); }
     });
   }
+
+  const btnPush = $('btnAtivarPush');
+  if (btnPush) {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      btnPush.classList.add('hidden');
+    } else {
+      atualizarBtnPush();
+      btnPush.addEventListener('click', async () => {
+        const r = await ativarPushNotifications();
+        if (!r.ok) showAlert('', 'warning', r.motivo);
+        atualizarBtnPush();
+      });
+    }
+  }
 }
 
 async function entrarNoApp(email, restaurarAba = false) {
@@ -8330,6 +8344,47 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   });
+}
+
+// ---------- Push (Web Push/VAPID) ----------
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function ativarPushNotifications() {
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return { ok: false, motivo: 'Permissão de notificação não concedida.' };
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    const { publicKey } = await api('GET', '/api/push/public-key');
+    if (!publicKey) return { ok: false, motivo: 'Push não configurado no servidor.' };
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey)
+    });
+  }
+  const json = sub.toJSON();
+  await api('POST', '/api/push/subscribe', { endpoint: json.endpoint, keys: json.keys });
+  return { ok: true };
+}
+
+// Reflete no botão do sininho se este dispositivo já está inscrito.
+async function atualizarBtnPush() {
+  const btnPush = $('btnAtivarPush');
+  if (!btnPush) return;
+  if (Notification.permission === 'denied') {
+    btnPush.textContent = 'Notificações bloqueadas pelo navegador';
+    btnPush.disabled = true;
+    return;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  btnPush.textContent = sub ? 'Notificações ativadas neste dispositivo' : 'Ativar notificações neste dispositivo';
+  btnPush.disabled = !!sub;
 }
 
 /* ============================================================
