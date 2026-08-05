@@ -370,7 +370,7 @@ export async function notificarSolicitante({ chamado, ator, titulo, chamada, com
  * ele mesmo. Ao contrário de notificar(), aqui o objetivo é o autor VER o
  * resultado, então ele não é excluído.
  * @param {{id:number,email:string}} user
- * @returns {Promise<{emailEnviado:boolean, email:string}>}
+ * @returns {Promise<{emailEnviado:boolean, email:string, pushDispositivos:number}>}
  */
 // Marca usado para identificar/limpar as notificações geradas pelo teste.
 const ATOR_TESTE = 'simulação (teste)';
@@ -393,7 +393,7 @@ const AMOSTRAS_TESTE = [
  * usuário, e envia 1 e-mail de teste resumindo os cenários que enviam e-mail.
  * Cada clique substitui as simulações anteriores deste usuário (não acumula).
  * @param {{id:number,email:string}} user
- * @returns {Promise<{criadas:number, emailEnviado:boolean, email:string, erro:string|null}>}
+ * @returns {Promise<{criadas:number, emailEnviado:boolean, email:string, erro:string|null, pushDispositivos:number}>}
  */
 export async function notificarTeste(user) {
   const uid = Number(user?.id) || 0;
@@ -416,6 +416,14 @@ export async function notificarTeste(user) {
   // só mostraria as amostras depois de um F5 — justamente o que o canal veio
   // resolver. Mira só em quem pediu o teste: as amostras são dele.
   emitirPara([uid], 'notificacao');
+
+  // Push — aguardado (ao contrário do notificar() real) porque aqui é um clique
+  // manual de teste: o usuário está esperando ver se chega, então vale a
+  // latência do envio pra devolver um resultado confiável.
+  const pushDispositivos = await enviarPush([uid], {
+    titulo: '[TESTE] Gestão TI',
+    corpo: 'Se você está vendo isto, o push chegou — mesmo com o app fechado.'
+  });
 
   // E-mail — 1 mensagem ao próprio usuário, demonstrando como chegam por e-mail
   // os eventos que disparam e-mail na vida real (empréstimos e chamados).
@@ -451,5 +459,5 @@ export async function notificarTeste(user) {
     console.warn('[notificarTeste email] falhou:', erro);
   }
 
-  return { criadas: AMOSTRAS_TESTE.length, emailEnviado, email, erro };
+  return { criadas: AMOSTRAS_TESTE.length, emailEnviado, email, erro, pushDispositivos };
 }

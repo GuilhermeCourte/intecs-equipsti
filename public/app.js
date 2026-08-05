@@ -7316,6 +7316,29 @@ function initNotificacoes() {
       });
     }
   }
+
+  const btnTestar = $('btnTestarNotif');
+  if (btnTestar) {
+    btnTestar.addEventListener('click', async () => {
+      const restaurar = btnSalvando(btnTestar, 'Testando...');
+      try {
+        const r = await api('POST', '/api/notifications/test', {});
+        carregarNotificacoes();
+        const partes = [
+          `Sininho: ${r.criadas} notificação(ões) de exemplo criadas.`,
+          r.emailEnviado ? 'E-mail: enviado.' : `E-mail: não enviado${r.erro ? ' (' + r.erro + ')' : ''}.`,
+          r.pushDispositivos > 0
+            ? `Push: enviado para ${r.pushDispositivos} dispositivo(s) inscrito(s).`
+            : 'Push: nenhum dispositivo inscrito neste usuário (clique em "Ativar notificações neste dispositivo" primeiro).'
+        ];
+        showAlert('', 'success', partes.join(' · '));
+      } catch (err) {
+        showAlert('', 'danger', err.message);
+      } finally {
+        restaurar();
+      }
+    });
+  }
 }
 
 async function entrarNoApp(email, restaurarAba = false) {
