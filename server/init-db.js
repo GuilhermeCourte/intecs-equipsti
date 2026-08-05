@@ -669,9 +669,12 @@ CREATE TABLE dbo.EQUIPSTI_calendario_eventos (
   observacao     NVARCHAR(MAX) NOT NULL,
   avisar_dias_antes INT NULL,
   ultimo_aviso_data DATE NULL,
+  visibilidade   NVARCHAR(20) NOT NULL DEFAULT 'EQUIPE',
+  emails_extras  NVARCHAR(MAX) NULL,
   criado_em      DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   atualizado_em  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   criado_por     NVARCHAR(255) NULL,
+  criado_por_id  INT NULL,
   atualizado_por NVARCHAR(255) NULL
 );
 
@@ -693,6 +696,20 @@ IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'avisar_dias_antes') IS NULL
   ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD avisar_dias_antes INT NULL;
 IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'ultimo_aviso_data') IS NULL
   ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD ultimo_aviso_data DATE NULL;
+
+-- Destinatário do evento: 'EQUIPE' (MASTER + TECNICO veem e recebem aviso) ou
+-- 'EU' (só quem criou). 'emails_extras' é um array JSON de endereços que só
+-- recebem e-mail — não têm conta, agenda nem sininho. 'criado_por_id' existe
+-- porque 'criado_por' guarda só o e-mail em texto, e filtrar a agenda / mirar o
+-- sininho no dono exige o id. O DEFAULT 'EQUIPE' já migra os eventos antigos
+-- para o comportamento compartilhado que eles sempre tiveram; o backfill de
+-- 'criado_por_id' fica em main(), fora deste batch.
+IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'visibilidade') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD visibilidade NVARCHAR(20) NOT NULL DEFAULT 'EQUIPE';
+IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'emails_extras') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD emails_extras NVARCHAR(MAX) NULL;
+IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'criado_por_id') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD criado_por_id INT NULL;
 `;
 
 async function main() {
@@ -746,6 +763,21 @@ async function main() {
       ALTER TABLE dbo.EQUIPSTI_calendario_eventos DROP COLUMN anual;
     `);
     console.log('Migração: coluna "anual" convertida para "recorrencia" e removida.');
+  }
+
+  // Backfill de criado_por_id nos eventos criados antes da coluna existir. Fica
+  // aqui, e não no DDL, pela mesma razão da migração acima: numa tabela que já
+  // existia, a coluna nova ainda não está no catálogo quando o SQL Server faz o
+  // parse do batch inteiro. Idempotente pelo "IS NULL" — quem não casa com um
+  // usuário (conta apagada) fica sem id e o evento segue como EQUIPE.
+  const backfill = await query(`
+    UPDATE e SET e.criado_por_id = u.id
+      FROM dbo.EQUIPSTI_calendario_eventos e
+      JOIN dbo.EQUIPSTI_usuarios u ON u.email = e.criado_por
+     WHERE e.criado_por_id IS NULL;
+  `);
+  if (backfill.rowsAffected[0]) {
+    console.log(`Migração: criado_por_id preenchido em ${backfill.rowsAffected[0]} evento(s) do calendário.`);
   }
 
   const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();

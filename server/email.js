@@ -39,17 +39,23 @@ function getTransporter() {
   return transporter;
 }
 
-// Envia um e-mail. Use 'to' para um destinatário direto (ex.: teste) ou 'bcc'
-// para vários destinatários sem expor a lista (notificações em massa).
+// Envia um e-mail. 'to' aceita um endereço ou uma lista — todos vão visíveis no
+// cabeçalho To:, um destinatário por vírgula.
+//
+// Antes as notificações em massa iam em BCC, com o próprio remetente no To:,
+// para ninguém ver a lista. O preço era alto: mensagem sem To: real é o padrão
+// "undisclosed recipients", que Gmail e Outlook pontuam como spam — e era isso
+// que jogava as notificações na lixeira. Expor a lista é escolha consciente:
+// aviso que não chega não protege privacidade nenhuma.
+//
 // Retorna true se enviou, false se o SMTP não está configurado / sem destinatários.
 // Lança o erro do servidor SMTP (com a resposta) quando a entrega falha.
-export async function enviarEmail({ to, bcc, subject, html, text }) {
+export async function enviarEmail({ to, subject, html, text }) {
   const t = getTransporter();
-  const temBcc = Array.isArray(bcc) && bcc.length > 0;
-  if (!t || (!to && !temBcc)) return false;
+  const destinatarios = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (!t || !destinatarios.length) return false;
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-  // Quando só há BCC, 'to' = remetente (servidores costumam recusar msg só com BCC).
-  const info = await t.sendMail({ from, to: to || from, bcc: temBcc ? bcc : undefined, subject, text, html });
+  const info = await t.sendMail({ from, to: destinatarios, subject, text, html });
   // Entrega parcial não lança: o servidor aceita a mensagem e recusa só alguns
   // endereços. Sem este log a falha ficaria invisível.
   if (info?.rejected?.length) console.warn('[email] destinatários recusados:', info.rejected.join(', '));

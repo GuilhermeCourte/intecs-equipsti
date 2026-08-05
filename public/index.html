@@ -453,7 +453,7 @@
     #offlineOverlay .offline-btn {
       display: inline-flex; align-items: center; gap: .4rem; justify-content: center;
       border: none; cursor: pointer; font: inherit; font-weight: 600; font-size: .92rem;
-      background: var(--ink,#2b2b2b); color: #fff; padding: 11px 22px; border-radius: 999px;
+      background: var(--ink,#2b2b2b); color: var(--ink-contrast,#fff); padding: 11px 22px; border-radius: 999px;
       transition: background .15s ease, transform .05s ease;
     }
     #offlineOverlay .offline-btn:hover { background: var(--ink-2,#1c1c1c); }
@@ -915,6 +915,7 @@
     .choices:has(#ciFiltroStatus) .choices__inner,
     .choices:has(#ciFiltroResponsavel) .choices__inner,
     .choices:has(#cal_recorrencia) .choices__inner,
+    .choices:has(#cal_visibilidade) .choices__inner,
     .choices:has(#lgModulo) .choices__inner,
     .choices:has(#lgFonte) .choices__inner,
     .choices:has(#lgDrvEvento) .choices__inner,
@@ -928,6 +929,7 @@
     .choices:has(#ciFiltroStatus) .choices__list--single .choices__item,
     .choices:has(#ciFiltroResponsavel) .choices__list--single .choices__item,
     .choices:has(#cal_recorrencia) .choices__list--single .choices__item,
+    .choices:has(#cal_visibilidade) .choices__list--single .choices__item,
     .choices:has(#lgModulo) .choices__list--single .choices__item,
     .choices:has(#lgFonte) .choices__list--single .choices__item,
     .choices:has(#lgDrvEvento) .choices__list--single .choices__item,
@@ -942,6 +944,8 @@
     .choices:has(#ciFiltroResponsavel) .choices__list--dropdown .choices__item,
     .choices:has(#cal_recorrencia) .choices__list--dropdown .choices__item,
     .choices:has(#cal_recorrencia) .choices__list[aria-expanded] .choices__item,
+    .choices:has(#cal_visibilidade) .choices__list--dropdown .choices__item,
+    .choices:has(#cal_visibilidade) .choices__list[aria-expanded] .choices__item,
     .choices:has(#lgModulo) .choices__list--dropdown .choices__item,
     .choices:has(#lgModulo) .choices__list[aria-expanded] .choices__item,
     .choices:has(#lgFonte) .choices__list--dropdown .choices__item,
@@ -1220,6 +1224,56 @@
     .choices:has(#cal_recorrencia) .choices__item[data-value="MENSAL"]::before { background: var(--dash-blue); }
     .choices:has(#cal_recorrencia) .choices__item[data-value="ANUAL"]::before { background: var(--dash-orange); }
     .choices:has(#cal_recorrencia) .choices__item[data-value="NENHUMA"]::before { background: #6b7280; }
+    /* E-MAILS ADICIONAIS (modal do evento): caixa que imita o .form-control e
+       abriga as pílulas + o campo de digitar. Só usa as variáveis do tema, para
+       acompanhar o modo escuro sem regra extra. */
+    .cal-emails-box {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+      min-height: calc(1.5em + .75rem + 2px); padding: .25rem .5rem;
+      border: 1px solid var(--line); border-radius: 10px; background: var(--bg); cursor: text;
+    }
+    .cal-emails-box:focus-within { border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12); }
+    .cal-emails-box.is-invalid { border-color: #dc3545; }
+    .cal-email-chip {
+      display: inline-flex; align-items: center; gap: .25rem; max-width: 100%;
+      padding: .1rem .2rem .1rem .55rem; border-radius: 999px;
+      background: var(--bg-soft); border: 1px solid var(--line);
+      font-size: .78rem; line-height: 1.5;
+    }
+    .cal-email-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cal-email-x {
+      border: 0; background: none; color: var(--muted); cursor: pointer;
+      padding: 0 .15rem; line-height: 1; font-size: .85rem;
+    }
+    .cal-email-x:hover { color: #dc3545; }
+    .cal-emails-input {
+      flex: 1 1 9rem; min-width: 7rem; border: 0; outline: 0;
+      background: transparent; color: inherit; padding: .2rem 0; font-size: .9rem;
+    }
+    .cal-emails-input::placeholder { color: var(--muted); }
+    /* Sugestões de endereços já usados (lidas do localStorage). Mesmo padding e
+       fonte dos itens de dropdown do Choices, para não destoar do resto do modal. */
+    .cal-emails-wrap { position: relative; }
+    .cal-emails-sug {
+      position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 3px);
+      max-height: 190px; overflow-y: auto;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
+    }
+    .cal-emails-sug-item {
+      display: flex; align-items: center; gap: .5rem;
+      padding: 7px 10px; font-size: .875rem; cursor: pointer;
+    }
+    .cal-emails-sug-item + .cal-emails-sug-item { border-top: 1px solid var(--line); }
+    .cal-emails-sug-item:hover, .cal-emails-sug-item.is-ativo { background: var(--bg-soft); }
+    .cal-emails-sug-item > span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cal-emails-sug-x {
+      border: 0; background: none; color: var(--muted); cursor: pointer;
+      padding: 0 .15rem; line-height: 1; font-size: .8rem;
+    }
+    .cal-emails-sug-x:hover { color: #dc3545; }
+    /* Cadeado do evento particular na pílula da grade. */
+    .cal-evento .ph-lock { margin-right: 2px; vertical-align: -1px; }
     .cal-proximos-list { max-height: 280px; overflow-y: auto; }
     .cal-proximo-item {
       display: flex; align-items: center; gap: .6rem; padding: .6rem 1.1rem;
@@ -3905,12 +3959,31 @@
               <div class="invalid-feedback">Selecione a repetição.</div>
             </div>
             <div class="col-md-6">
+              <label class="form-label" for="cal_visibilidade">DESTINATÁRIO *</label>
+              <select class="form-select" id="cal_visibilidade" required>
+                <option value="" disabled selected>Selecione...</option>
+                <option value="EQUIPE">Equipe TI</option>
+                <option value="EU">Só para mim</option>
+              </select>
+              <div class="invalid-feedback">Selecione o destinatário.</div>
+            </div>
+            <div class="col-md-6">
               <label class="form-label" for="cal_avisar_dias">AVISAR POR E-MAIL</label>
               <div class="input-group">
                 <input type="number" min="1" class="form-control" id="cal_avisar_dias" placeholder="ex.: 10" autocomplete="off">
                 <span class="input-group-text">dias antes</span>
               </div>
               <div class="form-text">Vazio = sem aviso.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="cal_emails_input">E-MAILS ADICIONAIS</label>
+              <div class="cal-emails-wrap">
+                <div class="cal-emails-box" id="cal_emails_box">
+                  <input type="text" class="cal-emails-input" id="cal_emails_input"
+                         placeholder="digite e tecle Enter..." autocomplete="off" inputmode="email">
+                </div>
+                <div class="cal-emails-sug d-none" id="cal_emails_sug"></div>
+              </div>
             </div>
             <div class="col-12">
               <label class="form-label" for="cal_observacao">OBSERVAÇÃO *</label>

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
-import { notificar, notificarTeste, notificarSolicitante, notificarEmailLote } from './notificacoes.js';
+import { notificar, notificarTeste, notificarSolicitante, notificarEmailLote, emailValido } from './notificacoes.js';
 import { chavePublica, salvarSubscription, removerSubscription } from './push.js';
 import { inscrever } from './realtime.js';
 import { registrarLog, listarLogs, MODULOS_LOG, NIVEIS_SEGURANCA } from './logs.js';
@@ -1382,10 +1382,43 @@ app.get('/api/vps/:id/docker', exigirAuth, exigirPermissao('aba_vps'), wrap(asyn
 const CALENDARIO_SELECT = `SELECT id, titulo, tipo,
   CONVERT(varchar(10), data, 120) AS data, recorrencia, valor, observacao,
   avisar_dias_antes AS avisarDiasAntes,
-  criado_por AS criadoPor, atualizado_por AS atualizadoPor,
+  visibilidade, emails_extras AS emailsExtras,
+  criado_por AS criadoPor, criado_por_id AS criadoPorId, atualizado_por AS atualizadoPor,
   CONVERT(varchar(19), criado_em, 120) AS criadoEm,
   CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
   FROM dbo.EQUIPSTI_calendario_eventos`;
+
+// Quem vê e quem é avisado: 'EQUIPE' = MASTER + técnicos; 'EU' = só quem criou.
+const CAL_VISIBILIDADES = ['EQUIPE', 'EU'];
+const CAL_PAPEIS_EQUIPE = ['TECNICO', 'MASTER'];
+
+// emails_extras é um array JSON no banco (mesmo padrão de EQUIPSTI_usuarios.permissoes):
+// sai como string e vira array aqui, no JS — o projeto não usa OPENJSON em lugar nenhum.
+function mapEventoCalendario(row) {
+  if (!row) return row;
+  let extras = [];
+  try {
+    const lista = JSON.parse(row.emailsExtras || '[]');
+    if (Array.isArray(lista)) extras = lista;
+  } catch { /* JSON corrompido não pode derrubar a agenda inteira */ }
+  return { ...row, emailsExtras: extras };
+}
+
+// Normaliza a lista digitada no modal: minúsculas, sem espaço, sem repetição.
+// A validação em si fica em validarEventoCalendario, para o usuário ver QUAL
+// endereço está errado em vez de vê-lo sumir em silêncio.
+function lerEmailsExtras(valor) {
+  const bruto = Array.isArray(valor) ? valor : [];
+  const vistos = new Set();
+  const lista = [];
+  for (const e of bruto) {
+    const limpo = trim(e).toLowerCase();
+    if (!limpo || vistos.has(limpo)) continue;
+    vistos.add(limpo);
+    lista.push(limpo);
+  }
+  return lista;
+}
 
 function lerEventoCalendario(body) {
   return {
@@ -1398,7 +1431,9 @@ function lerEventoCalendario(body) {
     avisarDiasAntes: (() => {
       const n = Math.trunc(Number(body.avisarDiasAntes));
       return Number.isFinite(n) && n >= 1 ? n : null;
-    })()
+    })(),
+    visibilidade: CAL_VISIBILIDADES.includes(body.visibilidade) ? body.visibilidade : null,
+    emailsExtras: lerEmailsExtras(body.emailsExtras)
   };
 }
 
@@ -1409,7 +1444,9 @@ function paramsEventoCalendario(d) {
     recorrencia: S(d.recorrencia),
     valor: d.valor != null && !isNaN(d.valor) ? { type: sql.Decimal(15, 2), value: d.valor } : S(null),
     observacao: S(d.observacao),
-    avisarDias: d.avisarDiasAntes != null ? { type: sql.Int, value: d.avisarDiasAntes } : S(null)
+    avisarDias: d.avisarDiasAntes != null ? { type: sql.Int, value: d.avisarDiasAntes } : S(null),
+    visibilidade: S(d.visibilidade),
+    emailsExtras: S(d.emailsExtras.length ? JSON.stringify(d.emailsExtras) : null)
   };
 }
 
@@ -1418,34 +1455,85 @@ function validarEventoCalendario(d, res) {
   if (!d.tipo) { res.status(400).json({ error: 'Informe o tipo.' }); return false; }
   if (!d.data) { res.status(400).json({ error: 'Informe a data.' }); return false; }
   if (!d.recorrencia) { res.status(400).json({ error: 'Selecione a repetição (mensal, anual ou não repete).' }); return false; }
+  if (!d.visibilidade) { res.status(400).json({ error: 'Selecione o destinatário (equipe de TI ou só você).' }); return false; }
   if (!d.observacao) { res.status(400).json({ error: 'Informe a observação.' }); return false; }
+  const invalidos = d.emailsExtras.filter((e) => !emailValido(e));
+  if (invalidos.length) {
+    res.status(400).json({ error: `E-mail inválido: ${invalidos.join(', ')}` });
+    return false;
+  }
   return true;
 }
 
 // Campos auditados do Calendário (chave do shape → rótulo; 3º = comparar como número).
+// emailsExtras entra como texto já achatado — logMudou compara strings, não arrays.
 const CAMPOS_LOG_CALENDARIO = [
   ['titulo', 'TÍTULO'], ['tipo', 'TIPO'], ['data', 'DATA'],
   ['recorrencia', 'REPETIÇÃO'], ['valor', 'VALOR', true], ['observacao', 'OBSERVAÇÃO'],
-  ['avisarDiasAntes', 'AVISO (DIAS)', true]
+  ['avisarDiasAntes', 'AVISO (DIAS)', true], ['visibilidade', 'DESTINATÁRIO'],
+  ['emailsExtras', 'E-MAILS ADICIONAIS']
 ];
 
+// Evento particular não pode ser editado nem apagado por quem não é o dono —
+// sem isto, ele sairia da lista de todo mundo mas continuaria alcançável pelo id.
+function podeMexerNoEvento(ev, usuarioId) {
+  return ev.visibilidade !== 'EU' || Number(ev.criadoPorId) === Number(usuarioId);
+}
+
+// Destinatários de um evento, no formato que notificarEmailLote espera. Os
+// e-mails adicionais entram nos dois casos; eles só recebem e-mail, nunca
+// sininho (não têm conta no sistema).
+function publicoDoEvento(ev) {
+  const daEquipe = ev.visibilidade !== 'EU';
+  return {
+    papeis: daEquipe ? CAL_PAPEIS_EQUIPE : [],
+    usuarioIds: daEquipe ? [] : [ev.criadoPorId].filter(Boolean),
+    emailsExtras: ev.emailsExtras || []
+  };
+}
+
+const CAL_RECORRENCIA_TXT = { MENSAL: 'repete todo mês', ANUAL: 'repete todo ano' };
+const calValorTxt = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+// Ficha do evento dentro do e-mail (tipo · data · valor · repetição + observação).
+function blocoEventoCalendario(d) {
+  const partes = [d.tipo, ymdParaBR(d.data)];
+  if (d.valor != null && !isNaN(d.valor)) partes.push(calValorTxt(d.valor));
+  if (CAL_RECORRENCIA_TXT[d.recorrencia]) partes.push(CAL_RECORRENCIA_TXT[d.recorrencia]);
+  return { titulo: d.titulo, mensagem: partes.join(' · ') + (d.observacao ? `\n${d.observacao}` : '') };
+}
+
 app.get('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
-  const r = await query(`${CALENDARIO_SELECT} ORDER BY data`);
-  res.json(r.recordset);
+  // Evento 'EU' é particular: nem MASTER vê o dos outros — é o sentido da opção.
+  const r = await query(`${CALENDARIO_SELECT}
+    WHERE visibilidade <> 'EU' OR criado_por_id = @meuId ORDER BY data`, { meuId: req.user.sub });
+  res.json(r.recordset.map(mapEventoCalendario));
 }));
 
 app.post('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
   const insC = await query(`INSERT INTO dbo.EQUIPSTI_calendario_eventos
-    (titulo, tipo, data, recorrencia, valor, observacao, avisar_dias_antes, criado_por, atualizado_por)
+    (titulo, tipo, data, recorrencia, valor, observacao, avisar_dias_antes,
+     visibilidade, emails_extras, criado_por, criado_por_id, atualizado_por)
     OUTPUT INSERTED.id
-    VALUES (@titulo, @tipo, @data, @recorrencia, @valor, @observacao, @avisarDias, @criadoPor, @criadoPor)`,
-    { ...paramsEventoCalendario(d), criadoPor: S(req.user.email) });
+    VALUES (@titulo, @tipo, @data, @recorrencia, @valor, @observacao, @avisarDias,
+     @visibilidade, @emailsExtras, @criadoPor, @criadoPorId, @criadoPor)`,
+    { ...paramsEventoCalendario(d), criadoPor: S(req.user.email), criadoPorId: req.user.sub });
   await registrarLog({
     modulo: 'CALENDARIO', entidadeId: String(insC.recordset[0].id), entidadeRotulo: d.titulo,
     acao: 'CRIADO', valorNovo: `${d.tipo || '—'} · ${d.data || '—'}`,
     usuario: req.user.email, usuarioId: req.user.sub
+  });
+  // Avisa o público do evento na hora — quem está só nos e-mails adicionais não
+  // tem a agenda, então este é o único momento em que fica sabendo do evento
+  // quando não há "avisar N dias antes" configurado. Sem await, pelo mesmo
+  // motivo do resto do sistema: o Salvar não espera handshake SMTP.
+  notificarEmailLote({
+    titulo: `Novo evento na agenda: ${d.titulo}`,
+    tag: 'Calendário',
+    blocos: [blocoEventoCalendario(d)],
+    ...publicoDoEvento({ ...d, criadoPorId: req.user.sub })
   });
   res.status(201).json({ ok: true });
 }));
@@ -1454,30 +1542,46 @@ app.put('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendar
   const id = Number(req.params.id);
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
-  const antesEv = (await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0] || {};
+  const antesEv = mapEventoCalendario((await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0]) || {};
+  if (!podeMexerNoEvento(antesEv, req.user.sub)) return res.status(404).json({ error: 'Evento não encontrado.' });
   await query(`UPDATE dbo.EQUIPSTI_calendario_eventos SET
     titulo=@titulo, tipo=@tipo, data=@data, recorrencia=@recorrencia, valor=@valor, observacao=@observacao,
-    avisar_dias_antes=@avisarDias,
+    avisar_dias_antes=@avisarDias, visibilidade=@visibilidade, emails_extras=@emailsExtras,
     atualizado_por=@atualizadoPor, atualizado_em=SYSUTCDATETIME()
     WHERE id=@id`,
     { ...paramsEventoCalendario(d), id, atualizadoPor: S(req.user.email) });
+  // Listas viram texto para o log: logMudou compara strings, não arrays.
+  const antesLog = { ...antesEv, emailsExtras: (antesEv.emailsExtras || []).join(', ') };
+  const depoisLog = { ...d, emailsExtras: d.emailsExtras.join(', ') };
   for (const [key, label, num] of CAMPOS_LOG_CALENDARIO) {
-    if (logMudou(antesEv[key], d[key], num)) {
+    if (logMudou(antesLog[key], depoisLog[key], num)) {
       await registrarLog({
         modulo: 'CALENDARIO', entidadeId: String(id), entidadeRotulo: d.titulo,
         acao: 'ATUALIZADO', campo: label,
-        valorAnterior: antesEv[key] == null ? null : String(antesEv[key]),
-        valorNovo: d[key] == null ? null : String(d[key]),
+        valorAnterior: antesLog[key] == null ? null : String(antesLog[key]),
+        valorNovo: depoisLog[key] == null ? null : String(depoisLog[key]),
         usuario: req.user.email, usuarioId: req.user.sub
       });
     }
+  }
+  // Quem acabou de ser incluído nos e-mails adicionais recebe a ficha do evento;
+  // quem já estava na lista não é avisado de novo a cada edição.
+  const novosExtras = d.emailsExtras.filter((e) => !(antesEv.emailsExtras || []).includes(e));
+  if (novosExtras.length) {
+    notificarEmailLote({
+      titulo: `Evento na agenda: ${d.titulo}`,
+      tag: 'Calendário',
+      blocos: [blocoEventoCalendario(d)],
+      papeis: [], usuarioIds: [], emailsExtras: novosExtras
+    });
   }
   res.json({ ok: true });
 }));
 
 app.delete('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const prev = (await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0];
+  const prev = mapEventoCalendario((await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0]);
+  if (prev && !podeMexerNoEvento(prev, req.user.sub)) return res.status(404).json({ error: 'Evento não encontrado.' });
   await query('DELETE FROM dbo.EQUIPSTI_calendario_eventos WHERE id = @id', { id });
   if (prev) {
     await registrarLog({
@@ -1548,21 +1652,31 @@ const RETRY_EMAIL_LOTE_TENTATIVAS = 3;
 const RETRY_EMAIL_LOTE_ESPERA_MS = 5 * 60 * 1000;
 
 // Percorre os eventos com aviso configurado e dispara sininho (por evento) +
-// um único e-mail com todos os avisos do dia, para os MASTER, quando "hoje"
-// cai na janela [ocorrência - N dias, ocorrência] e essa ocorrência ainda não
-// foi avisada. Idempotente via ultimo_aviso_data — só marcado depois que o
-// e-mail em lote é confirmado, então uma falha de SMTP (mesmo esgotando as
-// tentativas) faz todo o lote tentar de novo no dia seguinte, em vez de sumir.
+// e-mail em lote quando "hoje" cai na janela [ocorrência - N dias, ocorrência] e
+// essa ocorrência ainda não foi avisada. Idempotente via ultimo_aviso_data — só
+// marcado depois que o e-mail é confirmado, então uma falha de SMTP (mesmo
+// esgotando as tentativas) faz o lote tentar de novo no dia seguinte, em vez de sumir.
+//
+// O lote é POR PÚBLICO, não mais um só: cada evento agora tem destinatário
+// próprio (a equipe de TI ou só o dono, mais os e-mails adicionais), e juntar
+// tudo num e-mail mandaria evento particular para a equipe inteira. Eventos com
+// o mesmo público continuam viajando juntos — que é o ponto do lote: um
+// handshake SMTP em vez de N (ver comentário em notificacoes.js).
 async function rodarLembretesCalendario() {
   const hojeMs = ymdParaUTC(hojeEmSaoPaulo());
   const evs = (await query(`SELECT id, titulo, tipo,
       CONVERT(varchar(10), data, 120) AS data, recorrencia, valor, observacao,
-      avisar_dias_antes AS avisarDiasAntes,
+      avisar_dias_antes AS avisarDiasAntes, visibilidade,
+      emails_extras AS emailsExtras, criado_por_id AS criadoPorId,
       CONVERT(varchar(10), ultimo_aviso_data, 120) AS ultimoAvisoData
     FROM dbo.EQUIPSTI_calendario_eventos
     WHERE avisar_dias_antes IS NOT NULL AND avisar_dias_antes > 0`)).recordset;
-  const pendentes = [];
-  for (const ev of evs) {
+  // Chave do grupo = o público exato do evento. Eventos de equipe sem e-mails
+  // adicionais (o caso comum) caem todos na mesma chave.
+  const grupos = new Map();
+  let total = 0;
+  for (const linha of evs) {
+    const ev = mapEventoCalendario(linha);
     try {
       const occMs = proximaOcorrencia(ev.data, ev.recorrencia, hojeMs);
       if (occMs == null) continue;
@@ -1572,38 +1686,54 @@ async function rodarLembretesCalendario() {
       const faltam = Math.round((occMs - hojeMs) / UM_DIA_MS);
       const quando = faltam <= 0 ? 'hoje' : faltam === 1 ? 'amanhã' : `em ${faltam} dias`;
       const partes = [ev.tipo, ymdParaBR(occStr)];
-      if (ev.valor != null) partes.push('R$ ' + Number(ev.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      if (ev.valor != null) partes.push(calValorTxt(ev.valor));
       const mensagem = partes.join(' · ') + (ev.observacao ? `\n${ev.observacao}` : '');
       const titulo = `Vence ${quando}: ${ev.titulo}`;
+      const daEquipe = ev.visibilidade !== 'EU';
       await notificar({
         tipo: 'CALENDARIO', acao: 'AVISO', titulo, mensagem,
         link: 'tab-calendario', refId: ev.id,
         ator: { id: 0, email: 'sistema' },
-        email: false, papeis: ['MASTER']
+        email: false,
+        papeis: daEquipe ? CAL_PAPEIS_EQUIPE : [],
+        sininhoUsuarioIds: daEquipe ? [] : [ev.criadoPorId].filter(Boolean)
       });
-      pendentes.push({ id: ev.id, occStr, titulo, mensagem });
+      const publico = publicoDoEvento(ev);
+      const chave = `${ev.visibilidade}|${ev.criadoPorId ?? ''}|${[...publico.emailsExtras].sort().join(',')}`;
+      if (!grupos.has(chave)) grupos.set(chave, { publico, pendentes: [] });
+      grupos.get(chave).pendentes.push({ id: ev.id, occStr, titulo, mensagem });
+      total++;
     } catch (e) {
       console.error('Falha ao avisar evento do calendário', ev.id, e.message);
     }
   }
-  if (!pendentes.length) return 0;
-  const tituloLote = pendentes.length === 1 ? pendentes[0].titulo : `${pendentes.length} avisos do calendário`;
-  const blocos = pendentes.map((p) => ({ titulo: p.titulo, mensagem: p.mensagem }));
-  for (let tentativa = 1; tentativa <= RETRY_EMAIL_LOTE_TENTATIVAS; tentativa++) {
-    const enviado = await notificarEmailLote({ titulo: tituloLote, tag: 'Calendário', papeis: ['MASTER'], blocos });
-    if (enviado) {
+  if (!total) return 0;
+
+  // Retenta só os grupos que falharam: um público com problema (SMTP recusando
+  // um endereço avulso, por exemplo) não pode reenviar o e-mail dos outros nem
+  // impedir que eles sejam marcados como avisados.
+  let restantes = [...grupos.values()];
+  for (let tentativa = 1; tentativa <= RETRY_EMAIL_LOTE_TENTATIVAS && restantes.length; tentativa++) {
+    const falharam = [];
+    for (const grupo of restantes) {
+      const { publico, pendentes } = grupo;
+      const tituloLote = pendentes.length === 1 ? pendentes[0].titulo : `${pendentes.length} avisos do calendário`;
+      const blocos = pendentes.map((p) => ({ titulo: p.titulo, mensagem: p.mensagem }));
+      const enviado = await notificarEmailLote({ titulo: tituloLote, tag: 'Calendário', blocos, ...publico });
+      if (!enviado) { falharam.push(grupo); continue; }
       for (const p of pendentes) {
         await query('UPDATE dbo.EQUIPSTI_calendario_eventos SET ultimo_aviso_data = @occ WHERE id = @id',
           { occ: { type: sql.Date, value: p.occStr }, id: p.id });
       }
-      return pendentes.length;
     }
+    restantes = falharam;
+    if (!restantes.length) break;
     const ultima = tentativa === RETRY_EMAIL_LOTE_TENTATIVAS;
-    console.error(`Calendário: e-mail em lote falhou (tentativa ${tentativa}/${RETRY_EMAIL_LOTE_TENTATIVAS})` +
+    console.error(`Calendário: ${restantes.length} lote(s) de e-mail falharam (tentativa ${tentativa}/${RETRY_EMAIL_LOTE_TENTATIVAS})` +
       (ultima ? ' — desistindo, ultimo_aviso_data não marcado, tenta de novo amanhã.' : `, nova tentativa em ${RETRY_EMAIL_LOTE_ESPERA_MS / 60000} min.`));
     if (!ultima) await new Promise((r) => setTimeout(r, RETRY_EMAIL_LOTE_ESPERA_MS));
   }
-  return 0;
+  return total - restantes.reduce((n, g) => n + g.pendentes.length, 0);
 }
 
 // Nota: existia aqui um GET /api/calendario/lembretes/run, gatilho para o
