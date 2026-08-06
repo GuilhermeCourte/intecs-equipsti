@@ -46,7 +46,7 @@ export async function removerSubscription(usuarioId, endpoint) {
 // automaticamente; outros erros só ficam no log. Retorna quantos dispositivos
 // foram alvo do envio (0 = push desativado ou ninguém inscrito) — usado pelo
 // teste de notificação pra dizer ao usuário se havia algo pra receber.
-export async function enviarPush(usuarioIds, { titulo, corpo, url }) {
+export async function enviarPush(usuarioIds, { titulo, corpo, url, tipo }) {
   if (!HABILITADO) return 0;
   const ids = (Array.isArray(usuarioIds) ? usuarioIds : []).map(Number).filter(Boolean);
   if (!ids.length) return 0;
@@ -58,7 +58,9 @@ export async function enviarPush(usuarioIds, { titulo, corpo, url }) {
         WHERE usuario_id IN (${ids.map((_, i) => `@uid${i}`).join(', ')})`,
       params
     );
-    const payload = JSON.stringify({ title: titulo, body: corpo, url: url || './' });
+    // 'tipo' vai cru; quem traduz para arquivo de ícone é o service worker, que
+    // é onde já vive o caminho dos ícones. Tipo desconhecido cai no ícone do app.
+    const payload = JSON.stringify({ title: titulo, body: corpo, url: url || './', tipo: tipo || '' });
     await Promise.all(r.recordset.map(async (row) => {
       try {
         await webPush.sendNotification(

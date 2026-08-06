@@ -51,14 +51,27 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+// Ícone grande por tipo de evento — mesmos glifos Phosphor que o sininho usa
+// em NOTIF_ICONES (public/app.js), sobre o mesmo fundo do ícone do app. Tipo
+// desconhecido cai no ícone do app, então um tipo novo no servidor nunca deixa
+// a notificação sem ícone.
+const ICONES_TIPO = {
+  REGISTRO: 'registro',
+  EMPRESTIMO: 'emprestimo',
+  CHAMADO: 'chamado',
+  CALENDARIO: 'calendario',
+  TESTE: 'teste'
+};
+
 // Push real (Web Push/VAPID) — chega mesmo com o app fechado. Payload é o
-// JSON montado em server/push.js: { title, body, url }.
+// JSON montado em server/push.js: { title, body, url, tipo }.
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = { title: 'Gestão TI', body: event.data ? event.data.text() : '' }; }
+  const slug = ICONES_TIPO[data.tipo];
   event.waitUntil(self.registration.showNotification(data.title || 'Gestão TI', {
     body: data.body || '',
-    icon: 'icons/icon-192.png?v=4',
+    icon: slug ? `icons/notif/${slug}-192.png?v=1` : 'icons/icon-192.png?v=4',
     // O badge é a silhueta da status bar do Android: só o canal alpha é usado e
     // pintado de branco. Com o icon-192 (quadrado opaco) virava um borrão sólido,
     // por isso existe um PNG monocromático com fundo transparente só pra isso.
