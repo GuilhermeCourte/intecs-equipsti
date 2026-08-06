@@ -59,7 +59,18 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(data.title || 'Gestão TI', {
     body: data.body || '',
     icon: 'icons/icon-192.png?v=4',
-    badge: 'icons/icon-192.png?v=4',
+    // O badge é a silhueta da status bar do Android: só o canal alpha é usado e
+    // pintado de branco. Com o icon-192 (quadrado opaco) virava um borrão sólido,
+    // por isso existe um PNG monocromático com fundo transparente só pra isso.
+    badge: 'icons/badge-96.png?v=1',
+    // Sem vibrate + renotify o Android agrupa e entrega em silêncio a partir da
+    // segunda notificação; tag único garante que um alerta não engula o outro.
+    vibrate: [200, 100, 200],
+    tag: `gti-${Date.now()}`,
+    renotify: true,
+    silent: false,
+    requireInteraction: true,
+    timestamp: Date.now(),
     data: { url: data.url || './' }
   }));
 });
