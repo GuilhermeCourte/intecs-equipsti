@@ -62,7 +62,7 @@ self.addEventListener('push', (event) => {
     // O badge é a silhueta da status bar do Android: só o canal alpha é usado e
     // pintado de branco. Com o icon-192 (quadrado opaco) virava um borrão sólido,
     // por isso existe um PNG monocromático com fundo transparente só pra isso.
-    badge: 'icons/badge-96.png?v=1',
+    badge: 'icons/badge-96.png?v=2',
     // Sem vibrate + renotify o Android agrupa e entrega em silêncio a partir da
     // segunda notificação; tag único garante que um alerta não engula o outro.
     vibrate: [200, 100, 200],
