@@ -7551,6 +7551,15 @@ function initNotificacoes() {
       btnPush.classList.add('hidden');
     } else {
       atualizarBtnPush();
+      // Permissão já concedida = a pessoa já disse sim neste dispositivo, então
+      // reassinar no carregamento não pergunta nada. Existe para consertar a
+      // inscrição que sumiu sem ninguém notar — navegador que limpou os dados,
+      // ou o próprio servidor que a apagou depois de um 410 (ver push.js). Sem
+      // isto o push morria em silêncio e só voltava se alguém reparasse no
+      // botão. É o que sustenta a promessa de receber com o navegador fechado.
+      if (Notification.permission === 'granted') {
+        ativarPushNotifications().then(atualizarBtnPush, () => {});
+      }
       btnPush.addEventListener('click', async () => {
         const r = await ativarPushNotifications();
         if (!r.ok) showAlert('', 'warning', r.motivo);
