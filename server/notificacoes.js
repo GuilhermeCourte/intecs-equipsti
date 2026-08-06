@@ -217,7 +217,7 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
     //    é I/O externo e não deve atrasar a resposta ao usuário.
     if (push) {
       destinatariosPush({ atorId, papeis, usuarioIds: sininhoUsuarioIds })
-        .then((ids) => enviarPush(ids, { titulo, corpo: mensagem || titulo }))
+        .then((ids) => enviarPush(ids, { titulo, corpo: mensagem || titulo, tipo }))
         .catch((e) => console.warn('[push] falhou:', e.message));
     }
 
@@ -446,7 +446,8 @@ export async function notificarTeste(user) {
   // latência do envio pra devolver um resultado confiável.
   const pushDispositivos = await enviarPush([uid], {
     titulo: '[TESTE] Gestão TI',
-    corpo: 'Se você está vendo isto, o push chegou — mesmo com o app fechado.'
+    corpo: 'Se você está vendo isto, o push chegou — mesmo com o app fechado.',
+    tipo: 'TESTE'
   });
 
   // E-mail — 1 mensagem ao próprio usuário, demonstrando como chegam por e-mail
