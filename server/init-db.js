@@ -697,8 +697,8 @@ IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'avisar_dias_antes') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'ultimo_aviso_data') IS NULL
   ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD ultimo_aviso_data DATE NULL;
 
--- Destinatário do evento: 'EQUIPE' (MASTER + TECNICO veem e recebem aviso) ou
--- 'EU' (só quem criou). 'emails_extras' é um array JSON de endereços que só
+-- Destinatário do evento: 'EQUIPE' (MASTER + TECNICO veem e recebem aviso),
+-- 'SEDE' (só os MASTER) ou 'EU' (só quem criou). 'emails_extras' é um array JSON de endereços que só
 -- recebem e-mail — não têm conta, agenda nem sininho. 'criado_por_id' existe
 -- porque 'criado_por' guarda só o e-mail em texto, e filtrar a agenda / mirar o
 -- sininho no dono exige o id. O DEFAULT 'EQUIPE' já migra os eventos antigos

@@ -1728,7 +1728,8 @@ function renderCalendarioGrid() {
     const isHoje = d.getTime() === hoje.getTime();
     const pills = eventosNoDia(d).map((e) =>
       '<div class="cal-evento cal-evento--' + e.recorrencia + '" data-id="' + e.id + '" title="' + escapeHtml(e.titulo) + '">' +
-      (e.visibilidade === 'EU' ? '<i class="ph ph-lock"></i>' : '') + escapeHtml(e.titulo) + '</div>'
+      (e.visibilidade === 'EU' ? '<i class="ph ph-lock"></i>'
+        : e.visibilidade === 'SEDE' ? '<i class="ph ph-buildings"></i>' : '') + escapeHtml(e.titulo) + '</div>'
     ).join('');
     html += '<div class="cal-day' + (outroMes ? ' is-outro-mes' : '') + (isHoje ? ' is-hoje' : '') + '" data-date="' + ymd(d) + '">' +
       '<div class="cal-day-num">' + d.getDate() + '</div>' +
