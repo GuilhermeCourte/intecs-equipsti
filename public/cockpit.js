@@ -331,7 +331,7 @@ function desenharEventos() {
   const base = new Date(hoje.getFullYear(), hoje.getMonth() + _mesOffset, 1);
   const ano = base.getFullYear(), mes = base.getMonth();
 
-  const doMes = _eventos
+  let doMes = _eventos
     .map((e) => ({ evt: e, data: ocorrenciaNoMes(e, ano, mes) }))
     .filter((x) => x.data)
     .sort((a, b) => a.data - b.data);
@@ -346,6 +346,8 @@ function desenharEventos() {
       .filter((x) => x.data < hoje)
       .sort((a, b) => a.data - b.data);
     if (vencidos.length) {
+      const idsVencidos = new Set(vencidos.map((x) => x.evt.id));
+      doMes = doMes.filter((x) => !idsVencidos.has(x.evt.id));
       html.push('<div class="cp-divisor">VENCIDOS</div>');
       html.push(...vencidos.map((x) => itemEvento(x, true)));
       if (doMes.length) html.push(`<div class="cp-divisor">${MESES_PT[mes].toUpperCase()}</div>`);
