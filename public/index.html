@@ -501,6 +501,13 @@
     .badge-inativo { color: #c0392b; background: #fdecea; }
     .badge-emprestado { color: #d68910; background: #fdf3e3; }
     .badge-devolvido  { color: #1a7f4b; background: #e6f4ec; }
+    /* SLA dos chamados INTECS: a cor aqui é informação (quanto do prazo já
+       correu), não decoração — por isso mantém a escala, mas no mesmo selo
+       .badge-status do resto do admin, e não nos bg-danger/bg-warning crus. */
+    .badge-sla-ok      { color: #1a7f4b; background: #e6f4ec; }
+    .badge-sla-atencao { color: #d68910; background: #fdf3e3; }
+    .badge-sla-risco   { color: #c0392b; background: #fdecea; }
+    .badge-sla-neutro  { color: var(--muted); background: var(--bg-soft); }
     .acao-link {
       border: none; background: none; padding: 0; cursor: pointer;
       font-weight: 600; font-size: .92rem;
@@ -903,17 +910,22 @@
 
     /* Largura fixa: evita que o filtro "Em Aberto" encolha ao trocar para "Todos" */
     .choices:has(#imFiltroStatus),
-    .choices:has(#chamadosFiltroStatus) {
+    .choices:has(#chamadosFiltroStatus),
+    .choices:has(#ciFiltroStatus) {
       width: 150px; flex: 0 0 auto;
+    }
+    /* "Personalizado" é um estado que o funil da coluna Status liga sozinho —
+       o select mostra quando está nele, mas escolher na mão não faria nada
+       (equivaleria a "Todos"), então some da lista de opções. */
+    .choices:has(#ciFiltroStatus) .choices__list--dropdown .choices__item[data-value="custom"],
+    .choices:has(#ciFiltroStatus) .choices__list[aria-expanded] .choices__item[data-value="custom"] {
+      display: none;
     }
 
     /* Filtros de status compactos (equivalente ao form-select-sm) */
     .choices:has(#imFiltroStatus) .choices__inner,
     .choices:has(#chamadosFiltroStatus) .choices__inner,
-    .choices:has(#ciFiltroCategoria) .choices__inner,
-    .choices:has(#ciFiltroPrioridade) .choices__inner,
     .choices:has(#ciFiltroStatus) .choices__inner,
-    .choices:has(#ciFiltroResponsavel) .choices__inner,
     .choices:has(#cal_recorrencia) .choices__inner,
     .choices:has(#cal_visibilidade) .choices__inner,
     .choices:has(#lgModulo) .choices__inner,
@@ -924,10 +936,7 @@
     }
     .choices:has(#imFiltroStatus) .choices__list--single .choices__item,
     .choices:has(#chamadosFiltroStatus) .choices__list--single .choices__item,
-    .choices:has(#ciFiltroCategoria) .choices__list--single .choices__item,
-    .choices:has(#ciFiltroPrioridade) .choices__list--single .choices__item,
     .choices:has(#ciFiltroStatus) .choices__list--single .choices__item,
-    .choices:has(#ciFiltroResponsavel) .choices__list--single .choices__item,
     .choices:has(#cal_recorrencia) .choices__list--single .choices__item,
     .choices:has(#cal_visibilidade) .choices__list--single .choices__item,
     .choices:has(#lgModulo) .choices__list--single .choices__item,
@@ -938,10 +947,8 @@
     .choices:has(#imFiltroStatus) .choices__list[aria-expanded] .choices__item,
     .choices:has(#chamadosFiltroStatus) .choices__list--dropdown .choices__item,
     .choices:has(#chamadosFiltroStatus) .choices__list[aria-expanded] .choices__item,
-    .choices:has(#ciFiltroCategoria) .choices__list--dropdown .choices__item,
-    .choices:has(#ciFiltroPrioridade) .choices__list--dropdown .choices__item,
     .choices:has(#ciFiltroStatus) .choices__list--dropdown .choices__item,
-    .choices:has(#ciFiltroResponsavel) .choices__list--dropdown .choices__item,
+    .choices:has(#ciFiltroStatus) .choices__list[aria-expanded] .choices__item,
     .choices:has(#cal_recorrencia) .choices__list--dropdown .choices__item,
     .choices:has(#cal_recorrencia) .choices__list[aria-expanded] .choices__item,
     .choices:has(#cal_visibilidade) .choices__list--dropdown .choices__item,
@@ -2346,7 +2353,7 @@
                   <div class="dash-stat-value" id="dash-insumos">—</div>
                 </div>
                 <div class="dash-stat hidden" id="dashStatIntecs"
-                     data-ir="tab-chamados" data-ir-sub="sub-tab-intecs" data-ir-view="lista">
+                     data-ir="tab-chamados" data-ir-sub="sub-tab-intecs">
                   <div class="dash-stat-top"><i class="ph ph-lifebuoy"></i> Chamados Intecs</div>
                   <div class="dash-stat-value" id="dash-ci-abertos">—</div>
                   <div class="dash-stat-sub" id="dash-ci-sub"></div>
@@ -3141,22 +3148,10 @@
 
               <!-- SUB-ABA: INTECS (chamado interno + Tactical RMM) -->
               <div class="tab-pane fade" id="sub-intecs" role="tabpanel">
-                <div class="d-flex justify-content-end mb-3">
-                  <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-dark btn-sm" id="btnDashboardIntecs" style="display:none">
-                      <i class="ph ph-chart-bar"></i> Dashboard
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnChamadosIntecsView" style="display:none">
-                      <i class="ph ph-headset"></i> Chamados
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Dashboard (visão padrão) -->
-                <div id="ciDashboardPainel">
-
-                  <!-- Stats row -->
-                  <div class="dash-stats-row">
+                <div id="ciChamadosView">
+                  <!-- Indicadores acima da lista. Escondidos para BASICO, que
+                       não tem permissão na rota que os alimenta. -->
+                  <div class="dash-stats-row" id="ciStatsRow" style="display:none">
                     <div class="dash-stat">
                       <div class="dash-stat-top"><i class="ph ph-tray"></i> Abertos</div>
                       <div class="dash-stat-value" id="ciDashAbertos">—</div>
@@ -3164,14 +3159,6 @@
                     <div class="dash-stat">
                       <div class="dash-stat-top"><i class="ph ph-hourglass-medium"></i> Em andamento</div>
                       <div class="dash-stat-value" id="ciDashAndamento">—</div>
-                    </div>
-                    <div class="dash-stat">
-                      <div class="dash-stat-top"><i class="ph ph-check-circle"></i> Resolvidos hoje</div>
-                      <div class="dash-stat-value dash-stat-value--green" id="ciDashResolvidosHoje">—</div>
-                    </div>
-                    <div class="dash-stat">
-                      <div class="dash-stat-top"><i class="ph ph-archive"></i> Fechados</div>
-                      <div class="dash-stat-value" id="ciDashFechados">—</div>
                     </div>
                     <div class="dash-stat">
                       <div class="dash-stat-top"><i class="ph ph-warning-circle"></i> Vencidos</div>
@@ -3183,78 +3170,25 @@
                     </div>
                   </div>
 
-                  <!-- Tempos médios -->
-                  <div class="dash-stats-row">
-                    <div class="dash-stat">
-                      <div class="dash-stat-top"><i class="ph ph-timer"></i> Tempo médio de atendimento</div>
-                      <div class="dash-stat-value" style="font-size:1.15rem" id="ciDashTempoAtend">—</div>
-                    </div>
-                    <div class="dash-stat">
-                      <div class="dash-stat-top"><i class="ph ph-flag-checkered"></i> Tempo médio de resolução</div>
-                      <div class="dash-stat-value" style="font-size:1.15rem" id="ciDashTempoResol">—</div>
-                    </div>
-                  </div>
-
-                  <!-- Charts -->
-                  <div class="row g-3 mb-3">
-                    <div class="col-md-6">
-                      <div class="dash-panel mb-0">
-                        <div class="dash-panel-head">
-                          <div class="dash-panel-title"><i class="ph ph-tag"></i> Por Categoria</div>
-                        </div>
-                        <div class="dash-chart-wrap"><canvas id="ciChartCategoria"></canvas></div>
-                      </div>
-                    </div>
-                    <div class="col-md-6">
-                      <div class="dash-panel mb-0">
-                        <div class="dash-panel-head">
-                          <div class="dash-panel-title"><i class="ph ph-flag"></i> Por Prioridade</div>
-                        </div>
-                        <div class="dash-chart-wrap"><canvas id="ciChartPrioridade"></canvas></div>
-                      </div>
-                    </div>
-                    <div class="col-md-6">
-                      <div class="dash-panel mb-0">
-                        <div class="dash-panel-head">
-                          <div class="dash-panel-title"><i class="ph ph-list-checks"></i> Por Status</div>
-                        </div>
-                        <div class="dash-chart-wrap"><canvas id="ciChartStatus"></canvas></div>
-                      </div>
-                    </div>
-                    <div class="col-md-6">
-                      <div class="dash-panel mb-0">
-                        <div class="dash-panel-head">
-                          <div class="dash-panel-title"><i class="ph ph-calendar-blank"></i> Por Mês</div>
-                        </div>
-                        <div class="dash-chart-wrap"><canvas id="ciChartMes"></canvas></div>
-                      </div>
-                    </div>
-                    <div class="col-md-6">
-                      <div class="dash-panel mb-0">
-                        <div class="dash-panel-head">
-                          <div class="dash-panel-title"><i class="ph ph-map-pin"></i> Por Unidade</div>
-                        </div>
-                        <div class="dash-chart-wrap"><canvas id="ciChartUnidade"></canvas></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Chamados (lista + criação) -->
-                <div id="ciChamadosView" style="display:none">
-                  <div class="d-flex justify-content-end mb-2">
+                  <div class="d-flex justify-content-end mb-3">
                     <button type="button" class="btn btn-primary btn-sm" id="btnNovoChamadoIntecs">
-                      <i class="ph ph-plus"></i> Novo Chamado
+                      <i class="ph ph-plus"></i> Novo
                     </button>
                   </div>
 
-                  <!-- Filtros -->
-                  <div class="row g-2 mb-2">
-                  <div class="col-12 col-md-3">
-                    <div class="d-flex align-items-center gap-1">
+                  <!-- Toolbar padrão das tabelas do admin: o select de status
+                       (mesmo da sub-aba MSA), a lupa e o funil de cada coluna. -->
+                  <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                    <select class="form-select form-select-sm w-auto" id="ciFiltroStatus">
+                      <option value="">Todos</option>
+                      <option value="aberto" selected>Em Aberto</option>
+                      <option value="finalizado">Finalizado</option>
+                      <option value="custom">Personalizado</option>
+                    </select>
+                    <div class="d-flex align-items-center gap-1 ms-sm-auto">
                       <div class="input-group input-group-sm busca-tabela">
                         <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
-                        <input type="text" class="form-control" id="ciBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                        <input type="search" class="form-control" id="ciBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
                       </div>
                       <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosIntecs" title="Limpar filtros">
                         <i class="ph ph-funnel-x fs-5"></i>
@@ -3267,63 +3201,16 @@
                       </button>
                     </div>
                   </div>
-                  <div class="col-6 col-md-2">
-                    <select class="form-select form-select-sm" id="ciFiltroCategoria"><option value="">Categoria (todas)</option></select>
-                  </div>
-                  <div class="col-6 col-md-2">
-                    <select class="form-select form-select-sm" id="ciFiltroPrioridade">
-                      <option value="">Prioridade (todas)</option>
-                      <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
-                      <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
-                    </select>
-                  </div>
-                  <div class="col-6 col-md-2">
-                    <select class="form-select form-select-sm" id="ciFiltroStatus">
-                      <option value="">Status (todos)</option>
-                      <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
-                      <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
-                      <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
-                      <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
-                    </select>
-                  </div>
-                  <div class="col-6 col-md-3">
-                    <select class="form-select form-select-sm" id="ciFiltroResponsavel"><option value="">Responsável (todos)</option></select>
-                  </div>
-                </div>
-                <div class="row g-2 mb-2">
-                  <div class="col-6 col-md-3">
-                    <input type="text" class="form-control form-control-sm" id="ciFiltroUnidade" placeholder="Unidade">
-                  </div>
-                  <div class="col-6 col-md-3">
-                    <input type="text" class="form-control form-control-sm" id="ciFiltroDepartamento" placeholder="Departamento">
-                  </div>
-                  <div class="col-6 col-md-3">
-                    <input type="date" class="form-control form-control-sm" id="ciFiltroDataInicial" title="Data inicial">
-                  </div>
-                  <div class="col-6 col-md-3">
-                    <input type="date" class="form-control form-control-sm" id="ciFiltroDataFinal" title="Data final">
-                  </div>
-                </div>
 
-                <div id="ciStatus" class="text-muted small mb-2"></div>
-                <div class="table-responsive table-sticky">
-                  <table class="table table-sm table-striped table-hover align-middle" id="tabelaChamadosIntecs">
-                    <thead class="table-light">
-                      <tr>
-                        <th data-sort="id">Nº</th>
-                        <th data-sort="titulo">Título</th>
-                        <th data-sort="categoria_nome">Categoria</th>
-                        <th data-sort="prioridade">Prioridade</th>
-                        <th data-sort="status">Status</th>
-                        <th>SLA</th>
-                        <th data-sort="responsavel_email">Responsável</th>
-                        <th data-sort="criado_em">Aberto em</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody id="ciTbody"></tbody>
-                  </table>
-                </div>
+                  <div id="ciStatus" class="text-muted small mb-2"></div>
+                  <div class="table-responsive table-sticky">
+                    <table class="table table-sm table-striped table-hover align-middle" id="tabelaChamadosIntecs">
+                      <thead class="table-light">
+                        <tr id="ciThead"></tr>
+                      </thead>
+                      <tbody id="ciTbody"></tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 

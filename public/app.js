@@ -35,17 +35,15 @@ const CHOICES_IDS = [
   'listaAlvo', 'emp_pat', 'emp_unidade',
   'nc_assunto', 'nc_unidade', 'nc_patrimonio', 'nc_ns',
   'im_unidade', 'im_bkp_pat',
-  'imFiltroStatus', 'chamadosFiltroStatus',
+  'imFiltroStatus', 'chamadosFiltroStatus', 'ciFiltroStatus',
   'internet_unidade', 'internet_contrato',
   'ci_categoria', 'ci_subcategoria', 'ci_prioridade',
   'ci_unidade', 'ci_departamento', 'ciMaquinaSelect',
-  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
   'cal_recorrencia', 'cal_visibilidade', 'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvProprietario'
 ];
 // Filtros de status (Choices.js sem placeholder — "Todos" é uma opção normal).
 const FILTRO_STATUS_IDS = new Set([
-  'imFiltroStatus', 'chamadosFiltroStatus',
-  'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
+  'imFiltroStatus', 'chamadosFiltroStatus', 'ciFiltroStatus',
   'lgModulo', 'lgFonte', 'lgDrvEvento', 'lgDrvProprietario'
 ]);
 
@@ -5402,8 +5400,6 @@ let _chamadoIntecsAtual = null;
 let _chamadoIntecsDetalhe = null; // dados do chamado aberto no modal (p/ regra de conexão remota)
 let _ciCategorias = [];
 let _ciUsuarios = [];
-let _ciSort = { col: 'criado_em', dir: 'desc' };
-let _ciCharts = {};
 
 let CI_STATUS_LABEL = {
   ABERTO: 'Aberto', EM_ANALISE: 'Em análise', AGUARDANDO_USUARIO: 'Aguardando usuário',
@@ -5425,28 +5421,25 @@ function fmtDataHora(v) {
   return isNaN(d) ? '' : d.toLocaleString('pt-BR');
 }
 
-function fmtMinutos(min) {
-  if (min == null || isNaN(min)) return '-';
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
-  return h > 0 ? `${h}h ${m}min` : `${m}min`;
-}
-
 // Indicador de SLA (verde/amarelo/vermelho/expirado) — calculado no cliente
 // a partir do percentual de tempo decorrido até o prazo de conclusão.
+// Status que tiraram o chamado da fila — o mesmo conjunto vale para o SLA
+// ("Concluído"), para o selo sólido na tabela e para o filtro "Finalizado".
+const CI_STATUS_CONCLUIDOS = ['RESOLVIDO', 'FECHADO', 'CANCELADO'];
+
 function slaInfo(c) {
-  if (['RESOLVIDO', 'FECHADO', 'CANCELADO'].includes(c.status)) {
-    return { texto: 'Concluído', classe: 'bg-secondary' };
+  if (CI_STATUS_CONCLUIDOS.includes(c.status)) {
+    return { texto: 'Concluído', classe: 'badge-sla-neutro' };
   }
-  if (!c.sla_conclusao_prazo) return { texto: '-', classe: 'bg-secondary' };
+  if (!c.sla_conclusao_prazo) return { texto: '-', classe: 'badge-sla-neutro' };
   const agora = Date.now();
   const criado = new Date(c.criado_em).getTime();
   const prazo = new Date(c.sla_conclusao_prazo).getTime();
-  if (agora > prazo) return { texto: 'Expirado', classe: 'bg-danger' };
+  if (agora > prazo) return { texto: 'Expirado', classe: 'badge-sla-risco' };
   const pct = (agora - criado) / (prazo - criado);
-  if (pct >= 0.8) return { texto: 'Vermelho', classe: 'bg-danger' };
-  if (pct >= 0.5) return { texto: 'Amarelo', classe: 'bg-warning text-dark' };
-  return { texto: 'Verde', classe: 'bg-success' };
+  if (pct >= 0.8) return { texto: 'Vermelho', classe: 'badge-sla-risco' };
+  if (pct >= 0.5) return { texto: 'Amarelo', classe: 'badge-sla-atencao' };
+  return { texto: 'Verde', classe: 'badge-sla-ok' };
 }
 
 async function carregarCategoriasIntecs() {
@@ -5459,13 +5452,6 @@ async function carregarCategoriasIntecs() {
     instCategoria.setChoices([{ value: '', label: 'Selecione...', placeholder: true }, ...itens], 'value', 'label', true);
   } else {
     $('ci_categoria').innerHTML = '<option value="">Selecione...</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
-  }
-  const instFiltro = choicesMap['ciFiltroCategoria'];
-  if (instFiltro) {
-    instFiltro.clearChoices();
-    instFiltro.setChoices([{ value: '', label: 'Categoria (todas)' }, ...itens], 'value', 'label', true);
-  } else {
-    $('ciFiltroCategoria').innerHTML = '<option value="">Categoria (todas)</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
   }
 }
 
@@ -5495,13 +5481,6 @@ async function carregarUsuariosIntecs() {
     _ciUsuarios = await api('GET', '/api/chamados-intecs/atendentes');
   } catch { _ciUsuarios = []; }
   const itens = _ciUsuarios.map((u) => ({ value: String(u.id), label: u.email }));
-  const instFiltro = choicesMap['ciFiltroResponsavel'];
-  if (instFiltro) {
-    instFiltro.clearChoices();
-    instFiltro.setChoices([{ value: '', label: 'Responsável (todos)' }, ...itens], 'value', 'label', true);
-  } else {
-    $('ciFiltroResponsavel').innerHTML = '<option value="">Responsável (todos)</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
-  }
   $('ciDetResponsavel').innerHTML = '<option value="">Ninguém</option>' + itens.map((i) => `<option value="${i.value}">${escapeHtml(i.label)}</option>`).join('');
 }
 
@@ -5541,118 +5520,131 @@ async function carregarPrioridadesEStatusIntecs() {
 
   setSelectChoices('ci_prioridade', itensPrioridade, null);
   choicesMap['ci_prioridade']?.setChoiceByValue('MEDIA');
-  setSelectChoices('ciFiltroPrioridade', itensPrioridade, 'Prioridade (todas)');
-  setSelectChoices('ciFiltroStatus', itensStatus, 'Status (todos)');
   setSelectPlano('ciDetStatus', itensStatus, null);
   setSelectPlano('ciDetPrioridade', itensPrioridade, null);
 }
 
+// Colunas da tabela — mesma ideia de CHAMADOS_COLS: o cabeçalho (com o funil
+// de cada coluna) e o valor de cada célula saem daqui. A coluna de ação
+// ("Atribuir") fica fora, porque não é dado filtrável.
+const CI_COLS = [
+  { key: 'id',                label: 'Nº' },
+  { key: 'titulo',            label: 'Título' },
+  { key: 'categoria_nome',    label: 'Categoria' },
+  { key: 'prioridade',        label: 'Prioridade' },
+  { key: 'status',            label: 'Status' },
+  { key: 'sla',               label: 'SLA' },
+  { key: 'responsavel_email', label: 'Responsável' },
+  { key: 'criado_em',         label: 'Aberto em' },
+];
+// Larguras do skeleton, na ordem de CI_COLS + a coluna de ação.
+const CI_SKEL = ['32px', '60%', '70%', '58px', 'pill', 'pill', '65%', '92px', '70px'];
+
+function ciColVal(r, col) {
+  const c = CI_COLS[col];
+  if (!c) return '';
+  let v;
+  if (c.key === 'sla') v = slaInfo(r).texto;
+  else if (c.key === 'prioridade') v = CI_PRIORIDADE_LABEL[r.prioridade] || r.prioridade;
+  else if (c.key === 'status') v = CI_STATUS_LABEL[r.status] || r.status;
+  else if (c.key === 'criado_em') v = fmtDataHora(r.criado_em);
+  else v = r[c.key];
+  return (v == null || String(v).trim() === '') ? '-' : String(v);
+}
+
+const ciFilterCtx = {
+  theadSel: '#ciThead th[data-col]',
+  getRows: () => _chamadosIntecs,
+  colVal: ciColVal,
+  filters: {},
+  clearBtnId: 'btnLimparFiltrosIntecs',
+  buscaId: 'ciBusca',
+  // Filtrar pela coluna Status contradiz o select de cima; ele passa a
+  // "Personalizado" para não dizer que está filtrando o que não filtra.
+  onApply: () => {
+    if (Object.keys(ciFilterCtx.filters).length) setSelectVal('ciFiltroStatus', 'custom');
+    renderChamadosIntecs();
+  },
+};
+
 async function carregarChamadosIntecs() {
-  $('ciStatus').textContent = 'Carregando...';
+  $('ciStatus').textContent = 'Carregando…';
+  $('ciThead').innerHTML = skelTh(CI_SKEL);
+  $('ciTbody').innerHTML = skelTr(CI_SKEL);
   try {
     _chamadosIntecs = await api('GET', '/api/chamados-intecs');
+    $('ciThead').innerHTML = thFiltravel(CI_COLS) + '<th></th>';
     renderChamadosIntecs();
   } catch (err) {
-    $('ciTbody').innerHTML = '<tr><td colspan="8" class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
+    $('ciThead').innerHTML = '';
+    $('ciTbody').innerHTML = '<tr><td class="text-danger">Erro: ' + escapeHtml(err.message) + '</td></tr>';
     $('ciStatus').textContent = '';
   }
 }
 
 function renderChamadosIntecs() {
-  const busca = trim($('ciBusca').value).toLowerCase();
-  const fCategoria = $('ciFiltroCategoria').value;
-  const fPrioridade = $('ciFiltroPrioridade').value;
-  const fStatus = $('ciFiltroStatus').value;
-  const fResponsavel = $('ciFiltroResponsavel').value;
-  const fUnidade = trim($('ciFiltroUnidade').value).toLowerCase();
-  const fDepartamento = trim($('ciFiltroDepartamento').value).toLowerCase();
-  const fDataIni = $('ciFiltroDataInicial').value;
-  const fDataFim = $('ciFiltroDataFinal').value;
+  const busca = trim($('ciBusca').value);
+  const status = $('ciFiltroStatus').value;
+  const statusAtivo = status && status !== 'custom';
 
-  let rows = _chamadosIntecs.filter((c) => {
-    if (busca) {
-      // Lupa: procura em qualquer coluna exibida na tabela (nº, título,
-      // categoria, prioridade, status, responsável, data) sem acento/caixa.
-      const hay = buscaNorm([
-        c.id, c.titulo, c.categoria_nome,
-        CI_PRIORIDADE_LABEL[c.prioridade] || c.prioridade,
-        CI_STATUS_LABEL[c.status] || c.status,
-        c.responsavel_email, fmtDataHora(c.criado_em),
-        c.unidade, c.departamento
-      ].join(' '));
-      if (!hay.includes(buscaNorm(busca))) return false;
+  const rows = _chamadosIntecs.filter((c) => {
+    if (statusAtivo) {
+      const concluido = CI_STATUS_CONCLUIDOS.includes(c.status);
+      if (status === 'aberto' ? concluido : !concluido) return false;
     }
-    if (fCategoria && String(c.categoria_id) !== fCategoria) return false;
-    if (fPrioridade && c.prioridade !== fPrioridade) return false;
-    if (fStatus && c.status !== fStatus) return false;
-    if (fResponsavel && String(c.responsavel_id) !== fResponsavel) return false;
-    if (fUnidade && !(c.unidade || '').toLowerCase().includes(fUnidade)) return false;
-    if (fDepartamento && !(c.departamento || '').toLowerCase().includes(fDepartamento)) return false;
-    if (fDataIni && new Date(c.criado_em) < new Date(fDataIni)) return false;
-    if (fDataFim && new Date(c.criado_em) > new Date(fDataFim + 'T23:59:59')) return false;
+    if (busca) {
+      // Lupa: procura em qualquer coluna da tabela (valores como exibidos)
+      // mais unidade e departamento, que não têm coluna própria.
+      const hay = CI_COLS.map((_, i) => ciColVal(c, i)).concat([c.unidade, c.departamento]).join(' ');
+      if (!buscaNorm(hay).includes(buscaNorm(busca))) return false;
+    }
+    if (!ctxPassa(ciFilterCtx, c)) return false;
     return true;
-  });
-
-  const { col, dir } = _ciSort;
-  rows = rows.slice().sort((a, b) => {
-    const va = a[col] ?? '';
-    const vb = b[col] ?? '';
-    const cmp = typeof va === 'string' ? va.localeCompare(vb) : (va > vb ? 1 : va < vb ? -1 : 0);
-    return dir === 'asc' ? cmp : -cmp;
   });
 
   const tbody = $('ciTbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="text-muted text-center py-3">Nenhum chamado encontrado.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${CI_COLS.length + 1}" class="text-muted text-center py-3">Nenhum chamado encontrado.</td></tr>`;
   } else {
     tbody.innerHTML = rows.map((c) => {
-      const sla = slaInfo(c);
-      return `
-      <tr data-ci-id="${c.id}" style="cursor:pointer">
-        <td>${c.id}</td>
-        <td>${escapeHtml(c.titulo)}</td>
-        <td>${escapeHtml(c.categoria_nome || '-')}</td>
-        <td>${escapeHtml(CI_PRIORIDADE_LABEL[c.prioridade] || c.prioridade || '-')}</td>
-        <td>${escapeHtml(CI_STATUS_LABEL[c.status] || c.status || '-')}</td>
-        <td><span class="badge ${sla.classe}">${sla.texto}</span></td>
-        <td>${escapeHtml(c.responsavel_email || '-')}</td>
-        <td>${fmtDataHora(c.criado_em)}</td>
-        <td>${podeAtenderCI() && c.responsavel_id !== _ciPerfil.id
-          ? `<button type="button" class="btn btn-sm btn-outline-primary btn-pegar-chamado" data-ci-id="${c.id}" data-ci-titulo="${escapeHtml(c.titulo)}"><i class="ph ph-hand-palm"></i> Atribuir</button>`
-          : ''}</td>
-      </tr>
-    `;
+      const celulas = CI_COLS.map((col, i) => {
+        if (col.key === 'status') {
+          // Selo sólido só para quem já saiu da fila, como o "Finalizado" da MSA.
+          return `<td>${imStatusBadge(ciColVal(c, i), CI_STATUS_CONCLUIDOS.includes(c.status))}</td>`;
+        }
+        if (col.key === 'sla') {
+          const sla = slaInfo(c);
+          return `<td><span class="badge-status ${sla.classe}">${escapeHtml(sla.texto)}</span></td>`;
+        }
+        return `<td>${escapeHtml(ciColVal(c, i))}</td>`;
+      }).join('');
+      const acao = podeAtenderCI() && c.responsavel_id !== _ciPerfil.id
+        ? `<button type="button" class="btn btn-sm btn-outline-primary btn-pegar-chamado" data-ci-id="${c.id}" data-ci-titulo="${escapeHtml(c.titulo)}"><i class="ph ph-hand-palm"></i> Atribuir</button>`
+        : '';
+      return `<tr class="row-clicavel" data-ci-id="${c.id}">${celulas}<td>${acao}</td></tr>`;
     }).join('');
   }
   $('ciStatus').textContent = `${rows.length} de ${_chamadosIntecs.length} chamado(s).`;
-  // Funil aceso quando qualquer filtro (busca, selects, unidade/depto, datas) está ativo.
-  $('btnLimparFiltrosIntecs').classList.toggle('filtro-on',
-    !!(busca || fCategoria || fPrioridade || fStatus || fResponsavel || fUnidade || fDepartamento || fDataIni || fDataFim));
+  ctxAtualizarTh(ciFilterCtx);
 }
 
 function configurarFiltrosChamadosIntecs() {
-  ['ciBusca', 'ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel',
-    'ciFiltroUnidade', 'ciFiltroDepartamento', 'ciFiltroDataInicial', 'ciFiltroDataFinal'].forEach((id) => {
-    $(id).addEventListener('input', renderChamadosIntecs);
-    $(id).addEventListener('change', renderChamadosIntecs);
+  $('ciBusca').addEventListener('input', renderChamadosIntecs);
+  $('ciFiltroStatus').addEventListener('change', () => {
+    if (_suprimirChangeFiltro) return;
+    // Mexer no filtro de cima sobrepõe o filtro de coluna do Status.
+    const i = CI_COLS.findIndex((c) => c.key === 'status');
+    delete ciFilterCtx.filters[String(i)];
+    renderChamadosIntecs();
   });
   $('btnLimparFiltrosIntecs').addEventListener('click', () => {
-    ['ciBusca', 'ciFiltroUnidade', 'ciFiltroDepartamento', 'ciFiltroDataInicial', 'ciFiltroDataFinal'].forEach((id) => { $(id).value = ''; });
-    ['ciFiltroCategoria', 'ciFiltroPrioridade', 'ciFiltroStatus', 'ciFiltroResponsavel'].forEach((id) => {
-      const inst = choicesMap[id];
-      if (inst) inst.setChoiceByValue(''); else $(id).value = '';
-    });
+    $('ciBusca').value = '';
+    Object.keys(ciFilterCtx.filters).forEach((k) => { delete ciFilterCtx.filters[k]; });
+    if ($('ciFiltroStatus').value === 'custom') setSelectVal('ciFiltroStatus', 'aberto');
     renderChamadosIntecs();
   });
   $('btnRefreshChamadosIntecs').addEventListener('click', carregarChamadosIntecs);
-  document.querySelectorAll('#tabelaChamadosIntecs th[data-sort]').forEach((th) => {
-    th.style.cursor = 'pointer';
-    th.addEventListener('click', () => {
-      const col = th.getAttribute('data-sort');
-      _ciSort = { col, dir: _ciSort.col === col && _ciSort.dir === 'asc' ? 'desc' : 'asc' };
-      renderChamadosIntecs();
-    });
-  });
+  wireCtxFiltro(ciFilterCtx, document.querySelector('#tabelaChamadosIntecs thead'));
 }
 
 function renderCamposEquipamento(obj) {
@@ -5732,7 +5724,7 @@ async function abrirChamadoIntecsDetalhe(id) {
     $('ciDetPrioridade').value = data.prioridade;
     $('ciDetResponsavel').value = data.responsavel_id || '';
     const sla = slaInfo(data);
-    $('ciDetSlaBadge').innerHTML = `<span class="badge ${sla.classe}">${sla.texto}</span> <span class="text-muted">até ${fmtDataHora(data.sla_conclusao_prazo)}</span>`;
+    $('ciDetSlaBadge').innerHTML = `<span class="badge-status ${sla.classe}">${escapeHtml(sla.texto)}</span> <span class="text-muted">até ${fmtDataHora(data.sla_conclusao_prazo)}</span>`;
     renderDadosChamado(data);
     renderComentarios(data.comentarios || []);
     renderHistorico(data.historico || []);
@@ -5945,65 +5937,22 @@ function configurarChamadosIntecs() {
   });
 }
 
-function renderBarChart(canvasId, labels, data, cor) {
-  if (_ciCharts[canvasId]) _ciCharts[canvasId].destroy();
-  const canvas = $(canvasId);
-  if (!canvas) return;
-  _ciCharts[canvasId] = new Chart(canvas.getContext('2d'), {
-    type: 'bar',
-    data: { labels, datasets: [{ data, backgroundColor: cor, borderRadius: 6, borderSkipped: false }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-    }
-  });
-}
-
-async function carregarDashboardIntecs() {
+// Indicadores acima da lista. Vêm da mesma rota do antigo dashboard — dela só
+// interessam agora os quatro números do topo.
+async function carregarIndicadoresIntecs() {
+  const ids = ['ciDashAbertos', 'ciDashAndamento', 'ciDashVencidos', 'ciDashProxVenc'];
   try {
     const d = await api('GET', '/api/chamados-intecs/dashboard');
     $('ciDashAbertos').textContent = d.abertos ?? 0;
     $('ciDashAndamento').textContent = d.em_andamento ?? 0;
-    $('ciDashResolvidosHoje').textContent = d.resolvidos_hoje ?? 0;
-    $('ciDashFechados').textContent = d.fechados ?? 0;
     $('ciDashVencidos').textContent = d.vencidos ?? 0;
     $('ciDashProxVenc').textContent = d.sla_proximos_vencimento ?? 0;
-    $('ciDashTempoAtend').textContent = fmtMinutos(d.tempo_medio_atendimento_min);
-    $('ciDashTempoResol').textContent = fmtMinutos(d.tempo_medio_resolucao_min);
-
-    renderBarChart('ciChartCategoria', d.por_categoria.map(r => r.categoria), d.por_categoria.map(r => r.total), '#4f7cf5');
-    renderBarChart('ciChartPrioridade', d.por_prioridade.map(r => CI_PRIORIDADE_LABEL[r.prioridade] || r.prioridade), d.por_prioridade.map(r => r.total), '#ff8c42');
-    renderBarChart('ciChartStatus', d.por_status.map(r => CI_STATUS_LABEL[r.status] || r.status), d.por_status.map(r => r.total), '#16a34a');
-    renderBarChart('ciChartMes', d.por_mes.map(r => r.mes), d.por_mes.map(r => r.total), '#a259ff');
-    renderBarChart('ciChartUnidade', d.por_unidade.map(r => r.unidade), d.por_unidade.map(r => r.total), '#0891b2');
   } catch (err) {
-    console.error('[dashboard intecs] erro:', err.message);
+    console.error('[indicadores chamados intecs] erro:', err.message);
+    // Sem isto, um erro deixa na tela os números da carga anterior como se
+    // fossem atuais.
+    ids.forEach((id) => { $(id).textContent = '—'; });
   }
-}
-
-function mostrarViewDashboardIntecs() {
-  $('ciDashboardPainel').style.display = '';
-  $('ciChamadosView').style.display = 'none';
-  $('btnDashboardIntecs').classList.replace('btn-outline-secondary', 'btn-dark');
-  $('btnChamadosIntecsView').classList.replace('btn-dark', 'btn-outline-secondary');
-}
-
-function mostrarViewChamadosIntecs() {
-  $('ciDashboardPainel').style.display = 'none';
-  $('ciChamadosView').style.display = '';
-  $('btnChamadosIntecsView').classList.replace('btn-outline-secondary', 'btn-dark');
-  $('btnDashboardIntecs').classList.replace('btn-dark', 'btn-outline-secondary');
-}
-
-function configurarDashboardIntecs() {
-  $('btnDashboardIntecs').addEventListener('click', async () => {
-    mostrarViewDashboardIntecs();
-    await carregarDashboardIntecs();
-  });
-  $('btnChamadosIntecsView').addEventListener('click', () => {
-    mostrarViewChamadosIntecs();
-  });
 }
 
 // ============================================================
@@ -6194,7 +6143,6 @@ let _deepLinkConectar = null;
 let _deepLinkConexoes = false;
 let _deepLinkIr = null;
 let _deepLinkIrId = null;
-let _forcarViewChamadosIntecs = false; // deep-link pede a lista; o shown.bs.tab consome
 
 function ciCapturarDeepLinkChamado() {
   const params = new URLSearchParams(location.search);
@@ -6243,20 +6191,10 @@ async function processarDeepLinkChamado() {
   if (!_ciPerfil) return;
   const abaEl = $('tab-chamados');
   if (abaEl) bootstrap.Tab.getOrCreateInstance(abaEl).show();
-  // Sub-aba INTECS com a visão "Chamados" (lista): fechando o modal a pessoa
-  // cai na lista, não no comparativo nem no Dashboard. O shown.bs.tab da
-  // sub-aba força o Dashboard para quem pode vê-lo, então o pedido vai num
-  // flag que o próprio handler consome; se a sub-aba já estiver ativa, o
-  // evento não dispara e a troca é feita direto.
+  // Sub-aba INTECS: fechando o modal a pessoa cai na lista de chamados
+  // internos, não no comparativo com a MSA.
   const subEl = $('sub-tab-intecs');
-  if (subEl) {
-    if (subEl.classList.contains('active')) {
-      mostrarViewChamadosIntecs();
-    } else {
-      _forcarViewChamadosIntecs = true;
-      bootstrap.Tab.getOrCreateInstance(subEl).show();
-    }
-  }
+  if (subEl) bootstrap.Tab.getOrCreateInstance(subEl).show();
 
   // Conexão direta: mesma regra do modal — só o responsável (offline não bloqueia).
   // Navega a PRÓPRIA aba (sem window.open): clique de e-mail já abriu esta aba,
@@ -6365,9 +6303,8 @@ let _ciPerfil = null;
 
 async function carregarMeuPerfilCI() {
   _ciPerfil = await api('GET', '/api/chamados-intecs/meu-perfil');
-  const podeDashboard = ['GESTOR', 'TECNICO', 'MASTER'].includes(_ciPerfil.role);
-  $('btnDashboardIntecs').style.display = podeDashboard ? '' : 'none';
-  $('btnChamadosIntecsView').style.display = '';
+  // A rota dos indicadores nega BASICO — para ele a faixa não aparece.
+  $('ciStatsRow').style.display = podeVerIndicadoresCI() ? '' : 'none';
 }
 
 // ---- Permissões por usuário: quais abas do admin aparecem ----
@@ -6448,6 +6385,11 @@ function primeiraAbaPermitida() {
 
 function podeAtenderCI() {
   return !!_ciPerfil && ['TECNICO', 'MASTER'].includes(_ciPerfil.role);
+}
+
+// Mesma regra da rota /dashboard no servidor, que devolve 403 para BASICO.
+function podeVerIndicadoresCI() {
+  return !!_ciPerfil && ['GESTOR', 'TECNICO', 'MASTER'].includes(_ciPerfil.role);
 }
 
 // ============================================================
@@ -7189,19 +7131,11 @@ function irParaAba(abaId, subId, extras = {}) {
   const aba = $(abaId);
   if (!aba) return;
 
-  // Sub-aba que JÁ está ativa não dispara shown.bs.tab ao ser mostrada de novo
-  // — e é ele quem aplica a intenção de view. Nesse caso, aplicar na mão.
   const subEl = subId ? $(subId) : null;
-  const subJaAtiva = !!subEl && subEl.classList.contains('active');
-
-  // A sub-aba INTECS abre no dashboard dela por padrão; vindo do tile de
-  // chamados o destino é a LISTA. O flag é consumido pelo shown.bs.tab.
-  if (extras.view === 'lista' && !subJaAtiva) _forcarViewChamadosIntecs = true;
 
   bootstrap.Tab.getOrCreateInstance(aba).show();
   if (subEl) bootstrap.Tab.getOrCreateInstance(subEl).show();
 
-  if (extras.view === 'lista' && subJaAtiva) mostrarViewChamadosIntecs();
   if (extras.lista) selecionarListaOpcoes(extras.lista);
 }
 
@@ -7217,7 +7151,7 @@ const DESTINOS = {
   emprestimos: { aba: 'tab-emprestimos' },
   // Sem id: o nome do card "Chamados" no cockpit leva à lista, não a um
   // registro. O par dele com id é o ?chamado=ID, que o deep-link já trata.
-  chamados:    { aba: 'tab-chamados', sub: 'sub-tab-intecs', view: 'lista' },
+  chamados:    { aba: 'tab-chamados', sub: 'sub-tab-intecs' },
   msa:         { aba: 'tab-chamados', sub: 'sub-tab-intecsmsa',
                  carregar: carregarIntecsMsa, abrir: abrirEdicaoIntecsMsa },
   evento:      { aba: 'tab-calendario', carregar: carregarCalendario, abrir: abrirCalendario },
@@ -7228,7 +7162,7 @@ async function irParaDestino(tipo, id) {
   const d = DESTINOS[tipo];
   if (!d || !permiteAba(d.aba)) return;
   if (id && d.carregar) await d.carregar().catch(() => {});
-  irParaAba(d.aba, d.sub, { lista: d.lista, view: d.view });
+  irParaAba(d.aba, d.sub, { lista: d.lista });
   if (id && d.abrir) d.abrir(id);
 }
 
@@ -7271,7 +7205,7 @@ function configurarAtalhosDashboard() {
     // closest — ela abre o registro; o painel em volta continua indo à aba.
     if (alvo.dataset.irAbrir) irParaDestino(alvo.dataset.irAbrir, alvo.dataset.irId);
     else irParaAba(alvo.dataset.ir, alvo.dataset.irSub,
-      { lista: alvo.dataset.irLista, view: alvo.dataset.irView });
+      { lista: alvo.dataset.irLista });
   };
   conteudo.addEventListener('click', acionar);
   conteudo.addEventListener('keydown', (ev) => {
@@ -7788,9 +7722,11 @@ function statusMsaDe(r) {
   return trim(r.status_msa) || statusMsaCalc(r.data_retirada_equip, r.data_entrega_equip);
 }
 
-function imStatusBadge(st) {
+// `solido` decide o selo preenchido (o que já saiu da fila); por padrão é o
+// "Finalizado" da MSA, mas quem chama pode dizer o que conta como concluído.
+function imStatusBadge(st, solido) {
   if (!st) return '';
-  const dark = st === 'Finalizado';
+  const dark = solido === undefined ? st === 'Finalizado' : solido;
   const estilo = dark
     ? 'background:var(--ink);color:var(--ink-contrast);'
     : 'background:var(--bg-soft);color:var(--ink);border:1px solid var(--line);';
@@ -8283,7 +8219,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarIntecsMsa();
   configurarChamadosIntecs();
   configurarFiltrosChamadosIntecs();
-  configurarDashboardIntecs();
   configurarCategoriasIntecs();
   configurarVerificarMaquina();
   configurarConexaoRemota();
@@ -8517,13 +8452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!_ciUsuarios.length) await carregarUsuariosIntecs();
     if (!_ciPrioridadesConfig.length) await carregarPrioridadesEStatusIntecs();
     carregarChamadosIntecs();
-    if (_ciPerfil.role === 'BASICO' || _forcarViewChamadosIntecs) {
-      _forcarViewChamadosIntecs = false; // pedido de uma vez só (deep-link do e-mail)
-      mostrarViewChamadosIntecs();
-    } else {
-      mostrarViewDashboardIntecs();
-      await carregarDashboardIntecs();
-    }
+    if (podeVerIndicadoresCI()) carregarIndicadoresIntecs();
   });
   $('btnRefreshChamados').addEventListener('click', carregarChamados);
   $('chamadosBusca').addEventListener('input', renderChamados);
