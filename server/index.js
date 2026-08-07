@@ -1388,9 +1388,11 @@ const CALENDARIO_SELECT = `SELECT id, titulo, tipo,
   CONVERT(varchar(19), atualizado_em, 120) AS atualizadoEm
   FROM dbo.EQUIPSTI_calendario_eventos`;
 
-// Quem vê e quem é avisado: 'EQUIPE' = MASTER + técnicos; 'EU' = só quem criou.
-const CAL_VISIBILIDADES = ['EQUIPE', 'EU'];
+// Quem vê e quem é avisado: 'EQUIPE' = MASTER + técnicos; 'SEDE' = só os MASTER;
+// 'EU' = só quem criou.
+const CAL_VISIBILIDADES = ['EQUIPE', 'SEDE', 'EU'];
 const CAL_PAPEIS_EQUIPE = ['TECNICO', 'MASTER'];
+const CAL_PAPEIS_SEDE = ['MASTER'];
 
 // emails_extras é um array JSON no banco (mesmo padrão de EQUIPSTI_usuarios.permissoes):
 // sai como string e vira array aqui, no JS — o projeto não usa OPENJSON em lugar nenhum.
@@ -1455,7 +1457,7 @@ function validarEventoCalendario(d, res) {
   if (!d.tipo) { res.status(400).json({ error: 'Informe o tipo.' }); return false; }
   if (!d.data) { res.status(400).json({ error: 'Informe a data.' }); return false; }
   if (!d.recorrencia) { res.status(400).json({ error: 'Selecione a repetição (mensal, anual ou não repete).' }); return false; }
-  if (!d.visibilidade) { res.status(400).json({ error: 'Selecione o destinatário (equipe de TI ou só você).' }); return false; }
+  if (!d.visibilidade) { res.status(400).json({ error: 'Selecione o destinatário (equipe de TI, Sede TI ou só você).' }); return false; }
   if (!d.observacao) { res.status(400).json({ error: 'Informe a observação.' }); return false; }
   const invalidos = d.emailsExtras.filter((e) => !emailValido(e));
   if (invalidos.length) {
@@ -1474,20 +1476,26 @@ const CAMPOS_LOG_CALENDARIO = [
   ['emailsExtras', 'E-MAILS ADICIONAIS']
 ];
 
-// Evento particular não pode ser editado nem apagado por quem não é o dono —
-// sem isto, ele sairia da lista de todo mundo mas continuaria alcançável pelo id.
-function podeMexerNoEvento(ev, usuarioId) {
-  return ev.visibilidade !== 'EU' || Number(ev.criadoPorId) === Number(usuarioId);
+// Evento restrito não pode ser editado nem apagado por quem não o enxerga —
+// sem isto, ele sairia da lista mas continuaria alcançável pelo id. O dono
+// sempre mexe no que criou, inclusive no evento de Sede TI feito por um técnico.
+function podeMexerNoEvento(ev, usuarioId, papel) {
+  if (Number(ev.criadoPorId) === Number(usuarioId)) return true;
+  if (ev.visibilidade === 'EU') return false;
+  if (ev.visibilidade === 'SEDE') return papel === 'MASTER';
+  return true;
 }
 
 // Destinatários de um evento, no formato que notificarEmailLote espera. Os
-// e-mails adicionais entram nos dois casos; eles só recebem e-mail, nunca
+// e-mails adicionais entram nos três casos; eles só recebem e-mail, nunca
 // sininho (não têm conta no sistema).
 function publicoDoEvento(ev) {
-  const daEquipe = ev.visibilidade !== 'EU';
+  const papeis = ev.visibilidade === 'EU' ? []
+    : ev.visibilidade === 'SEDE' ? CAL_PAPEIS_SEDE
+      : CAL_PAPEIS_EQUIPE;
   return {
-    papeis: daEquipe ? CAL_PAPEIS_EQUIPE : [],
-    usuarioIds: daEquipe ? [] : [ev.criadoPorId].filter(Boolean),
+    papeis,
+    usuarioIds: ev.visibilidade === 'EU' ? [ev.criadoPorId].filter(Boolean) : [],
     emailsExtras: ev.emailsExtras || []
   };
 }
@@ -1505,8 +1513,14 @@ function blocoEventoCalendario(d) {
 
 app.get('/api/calendario/eventos', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   // Evento 'EU' é particular: nem MASTER vê o dos outros — é o sentido da opção.
+  // 'SEDE' só aparece para os MASTER. Em ambos, quem criou continua vendo o
+  // próprio evento: um técnico que pauta algo para a Sede TI não pode salvar e
+  // ver o evento sumir da agenda dele.
   const r = await query(`${CALENDARIO_SELECT}
-    WHERE visibilidade <> 'EU' OR criado_por_id = @meuId ORDER BY data`, { meuId: req.user.sub });
+    WHERE criado_por_id = @meuId
+       OR (visibilidade <> 'EU' AND (visibilidade <> 'SEDE' OR @ehMaster = 1))
+    ORDER BY data`,
+    { meuId: req.user.sub, ehMaster: { type: sql.Bit, value: req.perfilCI.role === 'MASTER' ? 1 : 0 } });
   res.json(r.recordset.map(mapEventoCalendario));
 }));
 
@@ -1543,7 +1557,7 @@ app.put('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendar
   const d = lerEventoCalendario(req.body);
   if (!validarEventoCalendario(d, res)) return;
   const antesEv = mapEventoCalendario((await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0]) || {};
-  if (!podeMexerNoEvento(antesEv, req.user.sub)) return res.status(404).json({ error: 'Evento não encontrado.' });
+  if (!podeMexerNoEvento(antesEv, req.user.sub, req.perfilCI.role)) return res.status(404).json({ error: 'Evento não encontrado.' });
   await query(`UPDATE dbo.EQUIPSTI_calendario_eventos SET
     titulo=@titulo, tipo=@tipo, data=@data, recorrencia=@recorrencia, valor=@valor, observacao=@observacao,
     avisar_dias_antes=@avisarDias, visibilidade=@visibilidade, emails_extras=@emailsExtras,
@@ -1581,7 +1595,7 @@ app.put('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendar
 app.delete('/api/calendario/eventos/:id', exigirAuth, exigirPermissao('aba_calendario'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const prev = mapEventoCalendario((await query(`${CALENDARIO_SELECT} WHERE id = @id`, { id })).recordset[0]);
-  if (prev && !podeMexerNoEvento(prev, req.user.sub)) return res.status(404).json({ error: 'Evento não encontrado.' });
+  if (prev && !podeMexerNoEvento(prev, req.user.sub, req.perfilCI.role)) return res.status(404).json({ error: 'Evento não encontrado.' });
   await query('DELETE FROM dbo.EQUIPSTI_calendario_eventos WHERE id = @id', { id });
   if (prev) {
     await registrarLog({
@@ -1658,7 +1672,7 @@ const RETRY_EMAIL_LOTE_ESPERA_MS = 5 * 60 * 1000;
 // esgotando as tentativas) faz o lote tentar de novo no dia seguinte, em vez de sumir.
 //
 // O lote é POR PÚBLICO, não mais um só: cada evento agora tem destinatário
-// próprio (a equipe de TI ou só o dono, mais os e-mails adicionais), e juntar
+// próprio (a equipe de TI, a Sede TI ou só o dono, mais os e-mails adicionais), e juntar
 // tudo num e-mail mandaria evento particular para a equipe inteira. Eventos com
 // o mesmo público continuam viajando juntos — que é o ponto do lote: um
 // handshake SMTP em vez de N (ver comentário em notificacoes.js).
@@ -1689,16 +1703,15 @@ async function rodarLembretesCalendario() {
       if (ev.valor != null) partes.push(calValorTxt(ev.valor));
       const mensagem = partes.join(' · ') + (ev.observacao ? `\n${ev.observacao}` : '');
       const titulo = `Vence ${quando}: ${ev.titulo}`;
-      const daEquipe = ev.visibilidade !== 'EU';
+      const publico = publicoDoEvento(ev);
       await notificar({
         tipo: 'CALENDARIO', acao: 'AVISO', titulo, mensagem,
         link: 'tab-calendario', refId: ev.id,
         ator: { id: 0, email: 'sistema' },
         email: false,
-        papeis: daEquipe ? CAL_PAPEIS_EQUIPE : [],
-        sininhoUsuarioIds: daEquipe ? [] : [ev.criadoPorId].filter(Boolean)
+        papeis: publico.papeis,
+        sininhoUsuarioIds: publico.usuarioIds
       });
-      const publico = publicoDoEvento(ev);
       const chave = `${ev.visibilidade}|${ev.criadoPorId ?? ''}|${[...publico.emailsExtras].sort().join(',')}`;
       if (!grupos.has(chave)) grupos.set(chave, { publico, pendentes: [] });
       grupos.get(chave).pendentes.push({ id: ev.id, occStr, titulo, mensagem });

@@ -1279,8 +1279,9 @@
       padding: 0 .15rem; line-height: 1; font-size: .8rem;
     }
     .cal-emails-sug-x:hover { color: #dc3545; }
-    /* Cadeado do evento particular na pílula da grade. */
-    .cal-evento .ph-lock { margin-right: 2px; vertical-align: -1px; }
+    /* Cadeado do evento particular / prédio do evento da Sede TI na pílula da grade. */
+    .cal-evento .ph-lock,
+    .cal-evento .ph-buildings { margin-right: 2px; vertical-align: -1px; }
     .cal-proximos-list { max-height: 280px; overflow-y: auto; }
     .cal-proximo-item {
       display: flex; align-items: center; gap: .6rem; padding: .6rem 1.1rem;
@@ -3852,6 +3853,7 @@
               <label class="form-label" for="cal_visibilidade">DESTINATÁRIO *</label>
               <select class="form-select" id="cal_visibilidade" required>
                 <option value="" disabled selected>Selecione...</option>
+                <option value="SEDE">Sede TI</option>
                 <option value="EQUIPE">Equipe TI</option>
                 <option value="EU">Só para mim</option>
               </select>
