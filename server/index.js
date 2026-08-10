@@ -3825,6 +3825,26 @@ app.get('/api/drive-logs/diagnostico', exigirAuth, exigirPermissao('aba_logs'), 
   }
 }));
 
+// ===================== UTILITÁRIOS (/utils) =====================
+// Encurtador com login para a pasta de instaladores no Drive (a mesma do antigo
+// bit.ly/prsistemas). Nada de API do Google aqui: o GTI só guarda o destino e
+// exige que a pessoa entre antes de recebê-lo.
+// Aceita tanto o ID puro quanto a URL da pasta colada do navegador.
+const PASTA_UTILS = String(process.env.GOOGLE_DRIVE_UTILS_FOLDER_ID || '')
+  .trim()
+  .replace(/^.*\/folders\//, '')
+  .split(/[?#]/)[0];
+
+// O destino só sai daqui, e só para quem entrou: se o link estivesse no HTML da
+// página, o login seria decoração — bastaria ver o código-fonte.
+app.get('/api/utils/destino', exigirAuth, exigirPermissao('utils_acessar'), (req, res) => {
+  if (!PASTA_UTILS) {
+    return res.status(503).json({ error: 'Pasta de utilitários não configurada: preencha GOOGLE_DRIVE_UTILS_FOLDER_ID no .env.' });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ url: 'https://drive.google.com/drive/folders/' + PASTA_UTILS });
+});
+
 // ===================== ESTÁTICO (front-end vanilla) =====================
 app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.html')));
 // Painel de parede: tela cheia, sem interação, aberto em aba própria pelo
@@ -3833,6 +3853,16 @@ app.get('/cockpit', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cockpit.ht
 // Buscador do catálogo de e-mails: como /chamados, a rota é aberta e quem
 // exige login é o conteúdo (GET /api/emails).
 app.get('/emails', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'emails.html')));
+// Utilitários: a tela é aberta no PC do colaborador, então nem ela nem o JS
+// dela ficam em cache de disco por lá.
+app.get('/utils', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(PUBLIC_DIR, 'utils.html'));
+});
+app.get('/utils.js', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(PUBLIC_DIR, 'utils.js'));
+});
 app.use(express.static(PUBLIC_DIR));
 
 // ===================== AGENDAMENTO =====================

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <!-- Sem o script de "sessao-ativa" do index.html de propósito: esta tela roda
+       no PC do colaborador e não restaura (nem grava) sessão nenhuma. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b2b2b">
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>Gestão TI · Utilitários</title>
+  <link rel="icon" type="image/png" href="favicon_intecs.png?v=5">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <style>
+    /* ============================================================
+       Mesmo tema monocromático do Gestão TI (public/index.html).
+       Esta página é só a tela de login: entrou, vai para o Drive.
+       ============================================================ */
+    :root {
+      --ink:      #2b2b2b;
+      --ink-2:    #1c1c1c;
+      --muted:    #9a9a9a;
+      --line:     #e4e4e4;
+      --bg:       #ffffff;
+      --bg-soft:  #f4f4f5;
+      --radius:   16px;
+
+      --bs-primary: #2b2b2b;
+      --bs-primary-rgb: 43, 43, 43;
+    }
+
+    * { -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background-color: var(--bg);
+      font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+    }
+    html { scrollbar-width: none; }
+    html::-webkit-scrollbar { display: none; }
+
+    .hidden { display: none !important; }
+    .form-label { font-weight: 600; font-size: .85rem; letter-spacing: .3px; color: #555; }
+    .text-muted { color: var(--muted) !important; }
+
+    /* ---------- Botões monocromáticos ---------- */
+    .btn { border-radius: 10px; font-weight: 600; letter-spacing: .4px; }
+    .btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .btn-primary:hover, .btn-primary:focus, .btn-primary:active {
+      background: var(--ink-2) !important; border-color: var(--ink-2) !important; color: #fff !important;
+    }
+    .btn-primary:disabled, .btn-primary.disabled {
+      background: var(--ink); border-color: var(--ink); color: #fff;
+    }
+    .form-control:focus { border-color: var(--ink); box-shadow: 0 0 0 .2rem rgba(43,43,43,.12); }
+    .form-control { border-radius: 10px; }
+    input.form-control { height: calc(1.5em + .75rem + 2px); }
+    .alert { border-radius: 10px; }
+
+    /* ============================================================
+       Tela de login — mesmo split-screen do Gestão TI
+       ============================================================ */
+    #authView {
+      max-width: none; padding: 24px; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .auth-shell {
+      display: flex; width: 100%; max-width: 1000px; min-height: 580px;
+      background: #fff; border-radius: 24px; overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0,0,0,.18);
+    }
+    .auth-aside {
+      position: relative; flex: 1 1 50%;
+      color: #fff; overflow: hidden;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 56px 48px;
+      background:
+        radial-gradient(620px 620px at -10% 30%, rgba(255,255,255,.12) 0%, rgba(255,255,255,.04) 30%, rgba(255,255,255,0) 60%),
+        radial-gradient(210px 210px at 72% 34%, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 55%, rgba(255,255,255,0) 80%),
+        radial-gradient(640px 540px at 96% 114%, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 60%),
+        linear-gradient(160deg, #3A3A3A 0%, #2b2b2b 52%, #191919 100%);
+    }
+    .auth-aside::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+      opacity: .08; mix-blend-mode: overlay;
+    }
+    .auth-aside .auth-head { position: relative; z-index: 1; }
+    .auth-aside .brand-mark { display: inline-flex; align-items: center; justify-content: center; margin-bottom: 26px; }
+    .auth-aside .brand-mark img { width: 72px; height: 72px; object-fit: contain; }
+    .auth-aside h1 { font-weight: 800; font-size: 3rem; line-height: 1.05; margin: 0 0 14px; color: #fff; }
+    .auth-aside p { color: rgba(255,255,255,.7); margin: 0; max-width: 320px; font-size: 1rem; }
+    .auth-glass, .auth-corner, .auth-foot, .icone-campo, .auth-title, .auth-sub, .so-desktop { display: none; }
+
+    .auth-main {
+      position: relative;   /* âncora da .auth-nota no rodapé */
+      flex: 1 1 50%;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 48px 48px;
+    }
+    .auth-panel { position: relative; z-index: 1; }
+    .auth-panel .form-label { text-transform: none; font-weight: 500; color: var(--muted); margin-bottom: 2px; }
+    .auth-panel .form-control {
+      border: none; border-bottom: 2px solid var(--line); border-radius: 0;
+      padding: 10px 2px; background: transparent; font-size: 1.05rem; font-weight: 500;
+    }
+    .auth-panel .form-control:focus { border-bottom-color: var(--ink); box-shadow: none; background: transparent; }
+    .auth-panel .btn-primary { text-transform: uppercase; padding: .8rem; letter-spacing: 1.5px; border-radius: 10px; }
+    .auth-foot { color: var(--muted); font-size: .8rem; text-align: center; margin-top: 28px; }
+    /* Aviso de sessão que não fica salva — é a diferença desta tela para o login
+       do Gestão TI, e a pessoa precisa saber disso antes de digitar a senha.
+       No celular ele vem logo abaixo do formulário (que já começa no topo);
+       no desktop vira rodapé absoluto, para o formulário ficar centralizado
+       exatamente como no Gestão TI. */
+    .auth-nota {
+      display: flex; align-items: flex-start; gap: 8px; margin: 22px 0 0;
+      font-size: .78rem; color: var(--muted); line-height: 1.45;
+    }
+    .auth-nota i.ph { font-size: 1rem; margin-top: 1px; flex: none; }
+
+    /* Estado entre o login e o Drive: a tela não pode ficar parada, senão
+       parece que o clique não pegou. */
+    .indo { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+    .indo .spinner-border { width: 1.4rem; height: 1.4rem; border-width: .18em; color: var(--ink); }
+    .indo-sub { color: var(--muted); font-size: .82rem; font-weight: 500; margin: 10px 0 0; }
+    .indo-sub a { color: var(--ink); }
+
+    @media (max-width: 767.98px) {
+      #authView { padding: 0; }
+      .auth-shell { flex-direction: column; max-width: 460px; min-height: 100vh; border-radius: 0; box-shadow: none; }
+      .auth-aside {
+        flex: 0 0 auto; padding: 44px 32px 36px;
+        background:
+          radial-gradient(240px 240px at -6% 60%, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 35%, rgba(255,255,255,0) 65%),
+          radial-gradient(150px 150px at 80% 25%, rgba(255,255,255,.2) 0%, rgba(255,255,255,.07) 55%, rgba(255,255,255,0) 80%),
+          radial-gradient(260px 220px at 100% 130%, rgba(0,0,0,.45) 0%, rgba(0,0,0,0) 60%),
+          linear-gradient(160deg, #3A3A3A 0%, #2b2b2b 55%, #1D1D1D 100%);
+      }
+      .auth-aside h1 { font-size: 2.4rem; }
+      .auth-aside p { max-width: 260px; font-size: .92rem; }
+      .auth-main { padding: 32px 28px 40px; justify-content: flex-start; }
+    }
+
+    @media (min-width: 768px) {
+      #authView { padding: 0; align-items: stretch; }
+      .auth-shell { max-width: none; min-height: 100vh; min-height: 100dvh; border-radius: 0; box-shadow: none; }
+      .auth-aside { flex: 1 1 41.7%; }
+      .auth-main { flex: 1 1 58.3%; }
+      .auth-panel { width: 100%; max-width: 420px; margin: 0 auto; }
+      .auth-aside .brand-mark img { width: clamp(72px, 6vw, 88px); height: clamp(72px, 6vw, 88px); }
+      .auth-aside h1 { font-size: clamp(2.4rem, 3.2vw, 3.4rem); letter-spacing: -.025em; }
+      .auth-aside p { font-size: clamp(1.05rem, 1.3vw, 1.3rem); max-width: 420px; }
+      .auth-glass {
+        display: flex; align-items: center; gap: 14px; width: fit-content;
+        margin-top: 28px; padding: 14px 20px; border-radius: 12px;
+        background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      }
+      .ag-icon { font-size: 24px; color: rgba(255,255,255,.85); display: inline-flex; }
+      .ag-bars { display: flex; flex-direction: column; gap: 7px; }
+      .ag-bars span { display: block; height: 7px; border-radius: 4px; background: rgba(255,255,255,.45); width: 118px; }
+      .ag-bars span + span { width: 70px; background: rgba(255,255,255,.22); }
+      .auth-corner { display: block; position: absolute; width: 6px; height: 6px; background: rgba(255,255,255,.3); z-index: 1; }
+      .auth-corner.tr { top: 20px; right: 20px; }
+      .auth-corner.bl { bottom: 20px; left: 20px; }
+      .auth-foot { display: block; position: absolute; left: 48px; bottom: 44px; z-index: 1; margin-top: 0; }
+      .auth-meta { font-family: ui-monospace, Consolas, monospace; font-size: .68rem; letter-spacing: .14em; color: rgba(255,255,255,.55); }
+      .auth-panel .input-icon { position: relative; }
+      .auth-panel .icone-campo {
+        display: block; position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+        color: #9a9a9a; font-size: 18px; pointer-events: none; z-index: 5;
+      }
+      .auth-panel .form-label { font-weight: 600; font-size: .8rem; letter-spacing: .3px; color: #555; margin-bottom: 6px; }
+      .auth-panel .form-control {
+        border: 1px solid #cfcfcf; border-radius: 12px; background: #fff;
+        height: 48px; padding: 10px 14px 10px 42px; font-size: .95rem; font-weight: 500;
+        transition: border-color .15s, box-shadow .15s;
+      }
+      .auth-panel .form-control:focus { border-color: var(--ink); box-shadow: 0 0 0 4px rgba(43,43,43,.12); background: #fff; }
+      .auth-title {
+        display: block; font-size: clamp(1.45rem, 1.8vw, 2.1rem); font-weight: 800;
+        letter-spacing: -.015em; margin: 0 0 6px; color: var(--ink);
+      }
+      .auth-sub { display: block; color: var(--muted); font-size: clamp(.88rem, 1vw, 1.05rem); margin: 0 0 26px; }
+      .auth-panel .btn-primary {
+        text-transform: none; letter-spacing: normal; font-weight: 700;
+        height: 48px; font-size: .95rem;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+      }
+      .so-desktop { display: inline-flex; }
+      .auth-nota {
+        position: absolute; left: 48px; right: 48px; bottom: 90px; margin: 0;
+        max-width: 420px; margin-inline: auto; justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== TELA DE LOGIN ===================== -->
+  <div id="authView" data-bs-theme="light">
+    <div class="auth-shell">
+
+      <aside class="auth-aside">
+        <span class="auth-corner tr" aria-hidden="true"></span>
+        <span class="auth-corner bl" aria-hidden="true"></span>
+        <div class="auth-head">
+          <span class="brand-mark"><img src="logo_intecs.png" alt="Intecs"></span>
+          <h1>Utilitários</h1>
+          <p>Programas e instaladores</p>
+          <div class="auth-glass" aria-hidden="true">
+            <span class="ag-icon"><i class="ph ph-download-simple"></i></span>
+            <span class="ag-bars"><span></span><span></span></span>
+          </div>
+        </div>
+        <div class="auth-foot"><span class="auth-meta">INTECS · GESTÃO DE TI</span></div>
+      </aside>
+
+      <main class="auth-main">
+        <div class="auth-panel">
+          <h2 class="auth-title">Bem-vindo(a)</h2>
+          <p class="auth-sub">Entre com seu e-mail para continuar.</p>
+          <div id="alertAuth"></div>
+
+          <!-- Sem <form> de propósito: submit de formulário com campo de senha é
+               o gatilho do "Salvar senha?" do navegador, e esta tela é aberta na
+               máquina do colaborador. O Enter é tratado no utils.js. -->
+          <div id="boxLogin">
+            <div class="mb-3">
+              <label class="form-label" for="auth_email">E-mail</label>
+              <div class="input-icon">
+                <i class="ph ph-envelope-simple icone-campo" aria-hidden="true"></i>
+                <input type="text" class="form-control" id="auth_email" placeholder="E-mail"
+                  autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+              </div>
+            </div>
+            <div class="mb-4">
+              <label class="form-label" for="auth_senha">Senha</label>
+              <div class="position-relative input-icon">
+                <i class="ph ph-lock-key icone-campo" aria-hidden="true"></i>
+                <input type="password" class="form-control" id="auth_senha" placeholder="••••••••"
+                  autocomplete="new-password" style="padding-right:2.5rem;">
+                <i class="ph ph-eye" id="iconVerSenha" role="button" aria-label="Mostrar senha"
+                  style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);cursor:pointer;color:#888;font-size:1.1rem;"></i>
+              </div>
+            </div>
+            <div class="d-grid">
+              <button type="button" class="btn btn-primary" id="btnEntrar">Entrar <i class="ph ph-arrow-right so-desktop" aria-hidden="true"></i></button>
+            </div>
+          </div>
+
+          <div id="boxIndo" class="hidden" aria-live="polite">
+            <div class="indo">
+              <span class="spinner-border" role="status" aria-hidden="true"></span>
+              <span>Abrindo a pasta no Drive...</span>
+            </div>
+            <p class="indo-sub">Se nada acontecer em alguns segundos, verifique o bloqueador de pop-ups do navegador.</p>
+          </div>
+        </div>
+        <p class="auth-nota">
+          <i class="ph ph-shield-check" aria-hidden="true"></i>
+          <span>Esta sessão não fica salva no computador: ao fechar a aba, o acesso se encerra.</span>
+        </p>
+      </main>
+
+    </div>
+  </div>
+
+  <script src="utils.js?v=2"></script>
+</body>
+</html>

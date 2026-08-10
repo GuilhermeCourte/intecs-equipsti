@@ -36,6 +36,8 @@ self.addEventListener('fetch', (event) => {
   // Nunca cachear /api/*: resposta autenticada não deve persistir no disco —
   // e, sendo network-first, esse cache nunca acelerava o caminho online.
   if (url.pathname.startsWith('/api/')) return;
+  // /utils é aberta no PC do colaborador: nada dessa tela pode ficar em disco lá.
+  if (url.pathname.startsWith('/utils')) return;
 
   event.respondWith(
     fetch(req)
