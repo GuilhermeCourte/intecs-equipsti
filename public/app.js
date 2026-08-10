@@ -6317,6 +6317,7 @@ const ABA_PERMISSAO = {
   'tab-chamados': 'aba_chamados',
   'tab-conexao': 'aba_conexao',
   'tab-internet': 'aba_internet',
+  'tab-emails': 'aba_emails',
   'tab-senhas': 'aba_senhas',
   'tab-vps': 'aba_vps',
   'tab-calendario': 'aba_calendario',
@@ -6330,7 +6331,7 @@ const ABA_PERMISSAO = {
 // o grupo inteiro só some quando nenhuma aba dele está liberada.
 const GRUPOS_ABAS = {
   equipamentos: { abas: ['tab-registros', 'tab-emprestimos'], desktopId: 'grupo-equipamentos', mobileId: 'mmGrupoEquipamentos' },
-  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet', 'tab-senhas', 'tab-vps'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
+  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet', 'tab-emails', 'tab-senhas', 'tab-vps'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
   opcoes: { abas: ['tab-gerenciar', 'tab-usuarios'], desktopId: 'grupo-opcoes', mobileId: 'mmGrupoOpcoes' }
 };
 
@@ -6688,6 +6689,319 @@ function aplicarPermissoesDetalheChamado(chamado) {
   const btnAtribuir = $('btnAtribuirAMim');
   btnAtribuir.style.display = podeAtender ? '' : 'none';
   btnAtribuir.disabled = chamado.responsavel_id === _ciPerfil.id;
+}
+
+// ============================================================
+//  Aba E-mails — catálogo que alimenta o buscador /emails
+//
+//  O grosso do catálogo vem do painel da Locaweb, mas o login de lá é CAS
+//  com reCAPTCHA de imagem: não dá para o servidor buscar sozinho. Por isso
+//  a importação é assistida — quem já está logado no navegador traz o HTML
+//  da página de grupos, que embute grupos E caixas de uma vez só.
+// ============================================================
+let _emItens = [];
+let _modalEmail = null;
+let _modalImportarEmails = null;
+let _modalMembrosEmail = null;
+let _membrosAbertos = [];   // integrantes do grupo aberto no modal (base da busca)
+// `oculto` do registro aberto no modal: quando o botão está travado (endereço
+// já fora do buscador por decisão do painel), é este valor que volta no salvar.
+let _emailOcultoOriginal = false;
+
+const EM_COLS = [
+  { key: 'tipo', label: 'Tipo' },
+  { key: 'email', label: 'E-mail' },
+  { key: 'nome', label: 'Nome' },
+  { key: 'membros', label: 'Integrantes' },
+  { key: 'origem', label: 'Origem' },
+  { key: 'visivel', label: 'Visível' }
+];
+
+const EM_TIPO_LABEL = { GRUPO: 'Grupo', CAIXA: 'Caixa', CONTATO: 'Contato' };
+
+function emColVal(item, col) {
+  switch (EM_COLS[col]?.key) {
+    case 'tipo': return EM_TIPO_LABEL[item.tipo] || item.tipo || '';
+    case 'email': return item.email || '';
+    case 'nome': return item.nome || '';
+    case 'membros': return String(item.totalMembros || 0);
+    case 'origem': return item.origem === 'LOCAWEB' ? 'Locaweb' : 'Manual';
+    // Cada motivo de estar fora do buscador é um valor próprio da coluna: o
+    // funil isola de uma vez tudo que a TI precisa revisar, e são causas
+    // diferentes — "Inativo" sumiu do painel, "Desativada" ainda está lá mas
+    // não recebe e-mail, "Não" foi a TI que escondeu.
+    case 'visivel':
+      if (!item.ativo) return 'Inativo';
+      if (item.desativado) return 'Desativada';
+      return item.oculto ? 'Não' : 'Sim';
+    default: return '';
+  }
+}
+
+const emFilterCtx = {
+  theadSel: '#emThead th[data-col]',
+  getRows: () => _emItens,
+  colVal: emColVal,
+  filters: {},
+  clearBtnId: 'btnLimparFiltrosEmails',
+  buscaId: 'emBusca',
+  onApply: () => renderEmails()
+};
+
+function renderEmails() {
+  const lista = _emItens.filter((x) => ctxPassa(emFilterCtx, x));
+
+  $('emTbody').innerHTML = lista.map((x) => {
+    // Dois motivos diferentes de o painel dizer "não use este endereço":
+    // sumiu de lá (inativo) ou continua lá marcada como Desativada.
+    const inativo = !x.ativo;
+    const desativado = !!x.desativado;
+    const foraDaBusca = inativo || desativado;
+    const selo = inativo
+      ? ' <span class="badge bg-secondary">inativo</span>'
+      : (desativado ? ' <span class="badge bg-secondary">desativada</span>' : '');
+    // O número abre a lista de quem recebe. Não uso linha expansível porque
+    // wireBuscaTabela trata linha de célula única como linha-mensagem e a
+    // deixaria visível mesmo com a busca filtrando tudo.
+    const membros = x.tipo !== 'GRUPO' ? '—'
+      : (x.totalMembros
+        ? '<button type="button" class="btn btn-link btn-sm p-0 btn-em-membros" title="Ver integrantes">'
+          + x.totalMembros + '</button>'
+        // Os endereços dos integrantes entram escondidos na célula para que a
+        // lupa ache o GRUPO ao buscar por quem recebe — a mesma resposta que o
+        // /emails dá pelo EXISTS no banco. wireBuscaTabela casa por
+        // tr.textContent, que inclui texto de elemento com d-none: assim a
+        // paridade sai sem duplicar o helper de busca das tabelas.
+          + '<span class="d-none">' + escapeHtml((x.membros || []).map((m) => m.email).join(' ')) + '</span>'
+        : '0');
+    return '<tr data-email-id="' + x.id + '" style="cursor:pointer"' + (foraDaBusca ? ' class="text-muted"' : '') + '>'
+      + '<td>' + escapeHtml(EM_TIPO_LABEL[x.tipo] || x.tipo) + '</td>'
+      + '<td><span class="font-monospace">' + escapeHtml(x.email) + '</span>' + selo + '</td>'
+      + '<td>' + escapeHtml(x.nome || '—') + '</td>'
+      + '<td>' + membros + '</td>'
+      + '<td>' + (x.origem === 'LOCAWEB' ? 'Locaweb' : 'Manual') + '</td>'
+      // Quem está fora da busca por decisão do painel já não aparece lá —
+      // mostrar olho aberto seria mentira. O olho fica desligado, sem ação:
+      // o que devolve o endereço à busca é o painel, não um clique aqui.
+      + (foraDaBusca
+        ? '<td><i class="ph ph-eye-slash fs-5 opacity-50" title="Fora do buscador: '
+          + (inativo ? 'sumiu do painel da Locaweb' : 'marcada como Desativada no painel da Locaweb') + '"></i></td>'
+        // Um clique tira a caixa técnica (bkp_, cas_) do buscador sem sumir com
+        // ela daqui — é a operação mais repetida logo depois de uma importação.
+        : '<td><button type="button" class="btn btn-link btn-sm text-muted p-0 btn-em-visivel" '
+          + 'title="' + (x.oculto ? 'Oculto no buscador — clique para mostrar' : 'Visível no buscador — clique para ocultar') + '">'
+          + '<i class="ph ' + (x.oculto ? 'ph-eye-slash' : 'ph-eye') + ' fs-5"></i></button></td>')
+      + '</tr>';
+  }).join('') || '<tr><td colspan="6" class="text-muted">Nenhum e-mail no catálogo. Use "Importar" ou cadastre um.</td></tr>';
+
+  // Só a contagem. Desativados e inativos se veem na própria linha (selo
+  // cinza + olho cortado) e se isolam pelo funil da coluna Visível.
+  $('emStatus').textContent = lista.length + (lista.length === 1 ? ' endereço' : ' endereços');
+  ctxAtualizarTh(emFilterCtx);
+}
+
+async function carregarEmails() {
+  $('emTbody').innerHTML = skelTr(['60px', '220px', '140px', '40px', '70px', '30px'], 6);
+  try {
+    _emItens = await api('GET', '/api/emails/admin');
+    renderEmails();
+  } catch (err) {
+    $('emTbody').innerHTML = '<tr><td colspan="6" class="text-danger">Erro ao carregar: ' + escapeHtml(err.message) + '</td></tr>';
+    $('emStatus').textContent = '';
+  }
+}
+
+function abrirEmail(id) {
+  const x = id != null ? _emItens.find((i) => String(i.id) === String(id)) : null;
+  $('alertEmailModal').innerHTML = '';
+  $('formEmail').classList.remove('was-validated');
+  $('email_id').value = x ? x.id : '';
+  $('emailModalTitle').textContent = x ? 'Editar e-mail' : 'Novo e-mail';
+  $('email_endereco').value = x ? x.email : '';
+  setSelectVal('email_tipo', x ? x.tipo : 'CONTATO');
+  $('email_nome').value = x ? (x.nome || '') : '';
+  $('email_descricao').value = x ? (x.descricao || '') : '';
+
+  // "Visível no buscador" tem que dizer a verdade: quem está desativado ou
+  // sumiu do painel JÁ está fora, independente do `oculto`. Nesse caso o botão
+  // aparece desligado e travado — quem devolve o endereço à busca é o painel,
+  // não este modal. O `oculto` real fica guardado para o salvar não alterá-lo
+  // por tabela.
+  const foraPeloPainel = !!x && (!x.ativo || !!x.desativado);
+  _emailOcultoOriginal = !!x && !!x.oculto;
+  $('email_visivel').checked = x ? (!x.oculto && !foraPeloPainel) : true;
+  $('email_visivel').disabled = foraPeloPainel;
+  $('email_visivel_aviso').classList.toggle('d-none', !foraPeloPainel);
+  $('email_visivel_aviso').textContent = !foraPeloPainel ? ''
+    : (!x.ativo
+      ? 'Fora do buscador: este endereço sumiu do painel da Locaweb. Volta sozinho se for recriado lá.'
+      : 'Fora do buscador: caixa marcada como Desativada no painel da Locaweb. Reative por lá para ela voltar.');
+
+  _modalEmail = _modalEmail || new bootstrap.Modal($('modalEmail'));
+  _modalEmail.show();
+}
+
+async function salvarEmail(ev) {
+  ev.preventDefault();
+  const form = $('formEmail');
+  form.classList.add('was-validated');
+  if (!form.checkValidity()) return;
+
+  const id = trim($('email_id').value);
+  const corpo = {
+    tipo: $('email_tipo').value,
+    email: trim($('email_endereco').value),
+    nome: trim($('email_nome').value),
+    descricao: trim($('email_descricao').value),
+    // Botão travado = a exclusão vem do painel, não do `oculto`: devolve o
+    // valor original para salvar o nome/descrição não esconder o endereço.
+    oculto: $('email_visivel').disabled ? _emailOcultoOriginal : !$('email_visivel').checked
+  };
+  const restaurarBtn = btnSalvando($('btnSalvarEmail'));
+  try {
+    if (id) await api('PUT', '/api/emails/' + id, corpo);
+    else await api('POST', '/api/emails', corpo);
+    _modalEmail.hide();
+    await carregarEmails();
+    showAlert('alertEmails', 'success', id ? 'E-mail atualizado.' : 'E-mail cadastrado.');
+  } catch (err) {
+    showAlert('alertEmailModal', 'danger', 'Erro: ' + err.message);
+  } finally {
+    restaurarBtn();
+  }
+}
+
+async function alternarVisivelEmail(id) {
+  const x = _emItens.find((i) => String(i.id) === String(id));
+  if (!x) return;
+  try {
+    await api('PUT', '/api/emails/' + x.id, {
+      tipo: x.tipo, email: x.email, nome: x.nome, descricao: x.descricao, oculto: !x.oculto
+    });
+    x.oculto = !x.oculto;
+    renderEmails();
+  } catch (err) {
+    showAlert('alertEmails', 'danger', 'Erro: ' + err.message);
+  }
+}
+
+// Lista de quem recebe o e-mail do grupo. Só leitura: entrar e sair de grupo
+// se resolve no painel da Locaweb, e a próxima importação traz a mudança.
+function renderMembrosEmail() {
+  const termo = buscaNorm(trim($('membrosModalBusca').value));
+  const achados = termo
+    ? _membrosAbertos.filter((m) => buscaNorm(m.email).includes(termo))
+    : _membrosAbertos;
+
+  $('membrosModalLista').innerHTML = achados.map((m) =>
+    '<div class="d-flex align-items-center gap-2">'
+    + '<span class="font-monospace small">' + escapeHtml(m.email) + '</span>'
+    // Endereço de fora do domínio: vale destacar, é quem recebe e-mail interno
+    // sem estar na empresa.
+    + (m.tipo === 'external' ? '<span class="badge bg-warning-subtle text-warning-emphasis">externo</span>' : '')
+    + '</div>'
+  ).join('')
+    || '<div class="text-muted small">' + (termo
+      ? 'Nenhum integrante corresponde a "' + escapeHtml(trim($('membrosModalBusca').value)) + '".'
+      : 'Nenhum integrante.') + '</div>';
+}
+
+function abrirMembrosEmail(id) {
+  const x = _emItens.find((i) => String(i.id) === String(id));
+  if (!x) return;
+  _membrosAbertos = x.membros || [];
+  $('membrosModalTitle').textContent = x.nome || x.email;
+  // A contagem é sempre a do grupo, não a do filtro: é o dado do grupo.
+  $('membrosModalSub').textContent = x.email + ' · ' + _membrosAbertos.length
+    + (_membrosAbertos.length === 1 ? ' integrante' : ' integrantes');
+  $('membrosModalBusca').value = '';
+  renderMembrosEmail();
+  _modalMembrosEmail = _modalMembrosEmail || new bootstrap.Modal($('modalMembrosEmail'));
+  _modalMembrosEmail.show();
+}
+
+function abrirImportarEmails() {
+  $('alertImportarEmails').innerHTML = '';
+  $('impEmailsConteudo').value = '';
+  $('impEmailsArquivo').value = '';
+  $('impEmailsTamanho').textContent = '';
+  _modalImportarEmails = _modalImportarEmails || new bootstrap.Modal($('modalImportarEmails'));
+  _modalImportarEmails.show();
+}
+
+async function confirmarImportarEmails() {
+  const conteudo = $('impEmailsConteudo').value;
+  if (!trim(conteudo)) {
+    showAlert('alertImportarEmails', 'warning', 'Cole o conteúdo da página de grupos da Locaweb.');
+    return;
+  }
+  const restaurarBtn = btnSalvando($('btnConfirmarImportarEmails'), 'Importando...');
+  try {
+    const r = await api('POST', '/api/emails/importar', { conteudo });
+    _modalImportarEmails.hide();
+    await carregarEmails();
+    // O resumo diz qual das duas páginas foi lida — é como a pessoa confere
+    // que colou a que pretendia.
+    const oQue = r.pagina === 'CAIXAS'
+      ? 'Caixas postais: ' + r.caixas + ' caixas (' + r.comNome + ' com nome, ' + r.desativadas + ' desativadas)'
+      : 'Grupos: ' + r.grupos + ' grupos e ' + r.caixas + ' caixas';
+    showAlert('alertEmails', 'success',
+      oQue + ' de ' + r.dominio + ' · ' + r.novos + ' novos, '
+      + r.atualizados + ' atualizados, ' + r.inativados + ' inativados.');
+  } catch (err) {
+    showAlert('alertImportarEmails', 'danger', 'Erro: ' + err.message);
+  } finally {
+    restaurarBtn();
+  }
+}
+
+function configurarEmails() {
+  $('emThead').innerHTML = thFiltravel(EM_COLS);
+  wireCtxFiltro(emFilterCtx, $('emThead'));
+  wireBuscaTabela('emBusca', 'emTbody', 'btnLimparFiltrosEmails', () => ctxTemFiltro(emFilterCtx));
+
+  $('tab-emails').addEventListener('shown.bs.tab', carregarEmails);
+  $('btnRefreshEmails').addEventListener('click', carregarEmails);
+  $('btnLimparFiltrosEmails').addEventListener('click', () => {
+    Object.keys(emFilterCtx.filters).forEach((k) => delete emFilterCtx.filters[k]);
+    $('emBusca').value = '';
+    $('emBusca').dispatchEvent(new Event('input'));
+    renderEmails();
+  });
+
+  $('membrosModalBusca').addEventListener('input', renderMembrosEmail);
+  $('btnNovoEmail').addEventListener('click', () => abrirEmail(null));
+  $('btnImportarEmails').addEventListener('click', abrirImportarEmails);
+  $('formEmail').addEventListener('submit', salvarEmail);
+  $('btnConfirmarImportarEmails').addEventListener('click', confirmarImportarEmails);
+
+  // O bookmarklet precisa continuar arrastável (href javascript:), então o
+  // clique dentro do modal não deve executá-lo — só explicar o que fazer.
+  $('bookmarkletEmails').addEventListener('click', (ev) => {
+    ev.preventDefault();
+    showAlert('alertImportarEmails', 'info',
+      'Arraste este botão para a barra de favoritos do navegador e clique nele quando estiver na página de grupos da Locaweb.');
+  });
+
+  $('impEmailsArquivo').addEventListener('change', async (ev) => {
+    const arquivo = ev.target.files && ev.target.files[0];
+    if (!arquivo) return;
+    $('impEmailsConteudo').value = await arquivo.text();
+    $('impEmailsTamanho').textContent = 'Arquivo carregado: ' + arquivo.name;
+  });
+  $('impEmailsConteudo').addEventListener('input', () => {
+    const n = $('impEmailsConteudo').value.length;
+    $('impEmailsTamanho').textContent = n ? n.toLocaleString('pt-BR') + ' caracteres colados' : '';
+  });
+
+  $('emTbody').addEventListener('click', (ev) => {
+    const tr = ev.target.closest('tr[data-email-id]');
+    if (!tr) return;
+    const id = tr.getAttribute('data-email-id');
+    if (ev.target.closest('.btn-em-visivel')) return alternarVisivelEmail(id);
+    if (ev.target.closest('.btn-em-membros')) return abrirMembrosEmail(id);
+    abrirEmail(id);
+  });
 }
 
 // ============================================================
@@ -8223,6 +8537,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarCategoriasIntecs();
   configurarVerificarMaquina();
   configurarConexaoRemota();
+  configurarEmails();
   configurarConexoes();
   configurarVps();
   configurarMenuMobile();

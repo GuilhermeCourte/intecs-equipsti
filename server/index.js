@@ -24,6 +24,8 @@ import * as uptimeRobot from './uptimerobot/service.js';
 import * as hostinger from './hostinger/service.js';
 import * as googleDrive from './googleworkspace/service.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
+import * as emailsRepo from './emailsRepository.js';
+import { parsePainelLocaweb } from './locaweb/parser.js';
 import { calcularPrazosSla } from './chamadosIntecsSla.js';
 import { carregarPerfilChamados, exigirPapel, exigirPermissao, podeVerChamado } from './chamadosIntecsAuth.js';
 import {
@@ -1753,6 +1755,130 @@ async function rodarLembretesCalendario() {
 // Vercel Cron chamar de fora. Ele dependia de CRON_SECRET, que nunca foi
 // definida — então respondia 404 desde sempre. Quem dispara os lembretes é o
 // agendador interno, no fim deste arquivo.
+
+// ===================== CATÁLOGO DE E-MAILS =====================
+// GET /api/emails é o buscador de /emails: exige login, mas NÃO exige
+// permissão de aba — é para a empresa inteira, como o portal de chamados.
+// O resto é manutenção do catálogo e fica atrás de aba_emails.
+app.get('/api/emails', exigirAuth, wrap(async (req, res) => {
+  res.json(await emailsRepo.listarPublico({
+    q: trim(req.query.q) || null,
+    tipo: trim(req.query.tipo).toUpperCase() || null
+  }));
+}));
+
+app.get('/api/emails/admin', exigirAuth, exigirPermissao('aba_emails'), wrap(async (req, res) => {
+  res.json(await emailsRepo.listarAdmin({ q: trim(req.query.q) || null }));
+}));
+
+// Aceita só o que a TI digita: da Locaweb vem tudo pela importação.
+function lerEmail(body) {
+  return {
+    tipo: trim(body.tipo).toUpperCase(),
+    email: trim(body.email).toLowerCase(),
+    nome: trim(body.nome) || null,
+    descricao: trim(body.descricao) || null,
+    oculto: !!body.oculto
+  };
+}
+
+function validarEmailCatalogo(d) {
+  if (!emailsRepo.TIPOS.includes(d.tipo)) return 'Tipo inválido (esperado GRUPO, CAIXA ou CONTATO).';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return 'E-mail inválido.';
+  return null;
+}
+
+app.post('/api/emails', exigirAuth, exigirPermissao('aba_emails'), wrap(async (req, res) => {
+  const d = lerEmail(req.body);
+  const erroValidacao = validarEmailCatalogo(d);
+  if (erroValidacao) return res.status(400).json({ error: erroValidacao });
+  if (await emailsRepo.existeEmail(d.email)) return res.status(409).json({ error: 'Esse e-mail já está no catálogo.' });
+
+  const criado = await emailsRepo.criar(d, req.user.email);
+  await registrarLog({
+    modulo: 'EMAILS', entidadeId: String(criado.id), entidadeRotulo: criado.email,
+    acao: 'CRIADO', valorNovo: [criado.tipo, criado.nome].filter(Boolean).join(' · '),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.status(201).json(criado);
+}));
+
+app.put('/api/emails/:id', exigirAuth, exigirPermissao('aba_emails'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const d = lerEmail(req.body);
+  const erroValidacao = validarEmailCatalogo(d);
+  if (erroValidacao) return res.status(400).json({ error: erroValidacao });
+
+  const antes = await emailsRepo.obter(id);
+  if (!antes) return res.status(404).json({ error: 'E-mail não encontrado.' });
+  if (await emailsRepo.existeEmail(d.email, id)) return res.status(409).json({ error: 'Esse e-mail já está no catálogo.' });
+
+  const depois = await emailsRepo.atualizar(id, d, req.user.email);
+  const campos = [
+    ['E-MAIL', antes.email, depois.email],
+    ['TIPO', antes.tipo, depois.tipo],
+    ['NOME', antes.nome, depois.nome],
+    ['DESCRIÇÃO', antes.descricao, depois.descricao],
+    ['VISÍVEL NO BUSCADOR', antes.oculto ? 'Não' : 'Sim', depois.oculto ? 'Não' : 'Sim']
+  ];
+  for (const [campo, de, para] of campos) {
+    if (!logMudou(de, para)) continue;
+    await registrarLog({
+      modulo: 'EMAILS', entidadeId: String(id), entidadeRotulo: depois.email,
+      acao: 'ATUALIZADO', campo, valorAnterior: de, valorNovo: para,
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  res.json(depois);
+}));
+
+app.delete('/api/emails/:id', exigirAuth, exigirPermissao('aba_emails'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const antes = await emailsRepo.obter(id);
+  if (!antes) return res.status(404).json({ error: 'E-mail não encontrado.' });
+
+  await emailsRepo.excluir(id);
+  await registrarLog({
+    modulo: 'EMAILS', entidadeId: String(id), entidadeRotulo: antes.email,
+    acao: 'EXCLUIDO', valorAnterior: [antes.tipo, antes.nome].filter(Boolean).join(' · '),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.json({ ok: true });
+}));
+
+// Importação assistida: o login do painel da Locaweb é CAS com reCAPTCHA de
+// imagem, então quem já está logado no navegador cola aqui o HTML. Nenhuma
+// credencial da Locaweb passa por este servidor.
+//
+// Aceita as DUAS páginas e reconhece sozinho qual chegou — quem importa não
+// precisa dizer o que copiou. Cada uma completa a outra: grupos traz os grupos
+// e seus integrantes, caixas postais traz o nome e o "Desativada" das caixas.
+app.post('/api/emails/importar', exigirAuth, exigirPermissao('aba_emails'), wrap(async (req, res) => {
+  const conteudo = String(req.body?.conteudo || '');
+  if (!conteudo.trim()) return res.status(400).json({ error: 'Cole o conteúdo copiado do painel da Locaweb.' });
+
+  let dados;
+  try {
+    dados = parsePainelLocaweb(conteudo);
+  } catch (err) {
+    // Erro de conteúdo, não do servidor: a mensagem do parser diz o que fazer.
+    return res.status(400).json({ error: err.message });
+  }
+
+  const resumo = await emailsRepo.importarLocaweb(dados, req.user.email);
+  // Uma linha de auditoria por importação — não uma por endereço.
+  const detalhe = dados.pagina === 'CAIXAS'
+    ? `${resumo.caixas} caixas (${resumo.comNome} com nome, ${resumo.desativadas} desativadas)`
+    : `${resumo.grupos} grupos, ${resumo.caixas} caixas`;
+  await registrarLog({
+    modulo: 'EMAILS', entidadeRotulo: dados.dominio, acao: 'IMPORTADO',
+    campo: dados.pagina === 'CAIXAS' ? 'CAIXAS POSTAIS' : 'GRUPOS',
+    valorNovo: `${detalhe} · ${resumo.novos} novos, ${resumo.atualizados} atualizados, `
+      + `${resumo.inativados} inativados`,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.json({ ...resumo, dominio: dados.dominio });
+}));
 
 // ===================== PATs (origem dos empréstimos) =====================
 // Só lista PATs que já passaram pela aba Empréstimos (EQUIPSTI_emprestimos).
@@ -3704,6 +3830,9 @@ app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.
 // Painel de parede: tela cheia, sem interação, aberto em aba própria pelo
 // dashboard. Sem gate aqui — os blocos herdam a permissão de cada endpoint.
 app.get('/cockpit', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cockpit.html')));
+// Buscador do catálogo de e-mails: como /chamados, a rota é aberta e quem
+// exige login é o conteúdo (GET /api/emails).
+app.get('/emails', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'emails.html')));
 app.use(express.static(PUBLIC_DIR));
 
 // ===================== AGENDAMENTO =====================

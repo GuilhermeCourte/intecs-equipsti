@@ -552,6 +552,61 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_gdrive_data')
   CREATE INDEX IX_EQUIPSTI_gdrive_data
     ON dbo.EQUIPSTI_google_drive_eventos (data_evento DESC);
 
+-- ============================================================
+--  Catálogo de e-mails (buscador /emails + aba "E-mails" do admin).
+--  Uma linha por endereço: grupo da Locaweb, caixa postal ou contato
+--  cadastrado à mão. A importação da Locaweb é assistida — ver
+--  server/locaweb/parser.js.
+-- ============================================================
+IF OBJECT_ID('dbo.EQUIPSTI_emails', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_emails (
+  id              INT IDENTITY(1,1) PRIMARY KEY,
+  tipo            NVARCHAR(10)  NOT NULL,               -- GRUPO | CAIXA | CONTATO
+  email           NVARCHAR(255) NOT NULL,               -- normalizado: minúsculo, no domínio público
+  nome            NVARCHAR(255) NULL,                   -- "Equipe TI" (group_description) ou nome digitado
+  descricao       NVARCHAR(500) NULL,                   -- quando usar, setor, observação
+  origem          NVARCHAR(20)  NOT NULL DEFAULT 'MANUAL',  -- LOCAWEB | MANUAL
+  externo_id      NVARCHAR(50)  NULL,                   -- id do grupo/caixa no painel da Locaweb
+  oculto          BIT NOT NULL DEFAULT 0,               -- decisão da TI: fora do buscador (caixas técnicas: bkp_, cas_)
+  ativo           BIT NOT NULL DEFAULT 1,               -- sumiu da Locaweb → inativa; nunca apaga
+  desativado      BIT NOT NULL DEFAULT 0,               -- existe no painel, mas marcada "Desativada" (não recebe e-mail)
+  sincronizado_em DATETIME2 NULL,
+  criado_em       DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em   DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  criado_por      NVARCHAR(255) NULL,
+  atualizado_por  NVARCHAR(255) NULL
+);
+
+-- O endereço é a identidade da linha: é por ele que a importação decide entre
+-- inserir e atualizar, e é o que impede o mesmo e-mail entrar duas vezes
+-- (uma pela Locaweb, outra na mão).
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_EQUIPSTI_emails_email')
+  CREATE UNIQUE INDEX UQ_EQUIPSTI_emails_email ON dbo.EQUIPSTI_emails (email);
+
+-- Migração: "Desativada" no painel. Só a página de caixas postais conhece esse
+-- estado, por isso ele é uma coluna própria — a importação da página de grupos
+-- não sabe dele e não pode zerá-lo sem querer.
+IF COL_LENGTH('dbo.EQUIPSTI_emails', 'desativado') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_emails ADD desativado BIT NOT NULL DEFAULT 0;
+
+-- Integrantes de um grupo. Substituídos por inteiro a cada importação
+-- (são ~10 linhas por grupo — diff não pagaria a complexidade).
+IF OBJECT_ID('dbo.EQUIPSTI_emails_membros', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_emails_membros (
+  id           INT IDENTITY(1,1) PRIMARY KEY,
+  email_id     INT NOT NULL,
+  membro_email NVARCHAR(255) NOT NULL,
+  membro_tipo  NVARCHAR(10)  NOT NULL DEFAULT 'internal',  -- internal | external
+  CONSTRAINT FK_emails_membros_email FOREIGN KEY (email_id)
+    REFERENCES dbo.EQUIPSTI_emails(id) ON DELETE CASCADE
+);
+
+-- Serve tanto a montagem da lista de integrantes quanto o EXISTS da busca
+-- por integrante (achar o grupo digitando o nome de quem recebe).
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_emails_membros_email_id')
+  CREATE INDEX IX_EQUIPSTI_emails_membros_email_id
+    ON dbo.EQUIPSTI_emails_membros (email_id);
+
 -- Pré-requisito da migração dos logs de registros (em bancos onde
 -- migrate-add-justificativa.js nunca rodou): garante a coluna antes do SELECT.
 IF COL_LENGTH('dbo.EQUIPSTI_registros_log', 'justificativa') IS NULL
