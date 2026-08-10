@@ -311,25 +311,28 @@
     /* ---------- Barra de scroll das tabelas e listas roláveis ----------
        Oculta por padrão; aparece ao passar o mouse (hover)
        ou enquanto rola (classe .is-scrolling via JS). */
-    .table-scroll-x, .table-sticky, .cal-proximos-list {
+    .table-scroll-x, .table-sticky, .cal-proximos-list, .scroll-suave {
       scrollbar-width: thin;            /* Firefox: largura fixa (reserva o espaço) */
       scrollbar-color: transparent transparent; /* thumb invisível até o hover */
       scrollbar-gutter: stable;         /* reserva a calha p/ não deslocar o conteúdo */
     }
     .table-scroll-x::-webkit-scrollbar,
     .table-sticky::-webkit-scrollbar,
-    .cal-proximos-list::-webkit-scrollbar {
+    .cal-proximos-list::-webkit-scrollbar,
+    .scroll-suave::-webkit-scrollbar {
       width: 9px;
       height: 9px;
     }
     .table-scroll-x::-webkit-scrollbar-track,
     .table-sticky::-webkit-scrollbar-track,
-    .cal-proximos-list::-webkit-scrollbar-track {
+    .cal-proximos-list::-webkit-scrollbar-track,
+    .scroll-suave::-webkit-scrollbar-track {
       background: transparent;
     }
     .table-scroll-x::-webkit-scrollbar-thumb,
     .table-sticky::-webkit-scrollbar-thumb,
-    .cal-proximos-list::-webkit-scrollbar-thumb {
+    .cal-proximos-list::-webkit-scrollbar-thumb,
+    .scroll-suave::-webkit-scrollbar-thumb {
       background-color: transparent;    /* oculta por padrão */
       border-radius: 999px;
       border: 2px solid transparent;
@@ -337,13 +340,15 @@
       transition: background-color .2s ease;
     }
     .table-scroll-x::-webkit-scrollbar-corner,
-    .table-sticky::-webkit-scrollbar-corner {
+    .table-sticky::-webkit-scrollbar-corner,
+    .scroll-suave::-webkit-scrollbar-corner {
       background: transparent;
     }
     /* Revela ao passar o mouse ou enquanto rola */
     .table-scroll-x:hover, .table-scroll-x.is-scrolling,
     .table-sticky:hover, .table-sticky.is-scrolling,
-    .cal-proximos-list:hover, .cal-proximos-list.is-scrolling {
+    .cal-proximos-list:hover, .cal-proximos-list.is-scrolling,
+    .scroll-suave:hover, .scroll-suave.is-scrolling {
       scrollbar-color: var(--line) transparent; /* Firefox: revela o thumb */
     }
     .table-scroll-x:hover::-webkit-scrollbar-thumb,
@@ -351,12 +356,15 @@
     .table-sticky:hover::-webkit-scrollbar-thumb,
     .table-sticky.is-scrolling::-webkit-scrollbar-thumb,
     .cal-proximos-list:hover::-webkit-scrollbar-thumb,
-    .cal-proximos-list.is-scrolling::-webkit-scrollbar-thumb {
+    .cal-proximos-list.is-scrolling::-webkit-scrollbar-thumb,
+    .scroll-suave:hover::-webkit-scrollbar-thumb,
+    .scroll-suave.is-scrolling::-webkit-scrollbar-thumb {
       background-color: var(--line);
     }
     .table-scroll-x:hover::-webkit-scrollbar-thumb:hover,
     .table-sticky:hover::-webkit-scrollbar-thumb:hover,
-    .cal-proximos-list:hover::-webkit-scrollbar-thumb:hover {
+    .cal-proximos-list:hover::-webkit-scrollbar-thumb:hover,
+    .scroll-suave:hover::-webkit-scrollbar-thumb:hover {
       background-color: var(--muted);
     }
     .table > thead th {
@@ -531,6 +539,18 @@
     }
     .btn-link.filtro-on {
       color: #fff !important; background: var(--ink); border-radius: 8px;
+    }
+    /* Aba E-mails: "Visível" guarda um ícone só. Sem largura própria a coluna
+       encolhe até o tamanho do olho e ele acaba colado em "Origem" — daí a
+       largura fixa e a centralização, no cabeçalho e nas células. */
+    #tabelaEmails th[data-col="5"], #tabelaEmails td:nth-child(6) {
+      width: 96px; text-align: center;
+    }
+    /* Contagem de integrantes: é clicável, mas o azul de link roubava a
+       atenção numa coluna que é, antes de tudo, um número. Fica a cor do
+       texto e só o sublinhado sinalizando que dá para clicar. */
+    .btn-em-membros, .btn-em-membros:hover, .btn-em-membros:focus {
+      color: inherit !important; text-decoration: underline;
     }
     .btn-link.filtro-on:hover { background: var(--ink); color: #fff !important; }
     #colFilterDropdown {
@@ -2084,6 +2104,7 @@
               <button type="button" class="mm-item" data-tab="tab-chamados"><i class="ph ph-headset"></i> Chamados</button>
               <button type="button" class="mm-item" data-tab="tab-conexao"><i class="ph ph-screencast"></i> Conexão Remota</button>
               <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
+              <button type="button" class="mm-item" data-tab="tab-emails"><i class="ph ph-at"></i> E-mails</button>
               <button type="button" class="mm-item" data-tab="tab-senhas"><i class="ph ph-key"></i> Senhas</button>
               <button type="button" class="mm-item" data-tab="tab-vps"><i class="ph ph-hard-drives"></i> VPS</button>
             </div>
@@ -2154,6 +2175,12 @@
                 <button class="dropdown-item" id="tab-internet" data-bs-toggle="tab"
                   data-bs-target="#pane-internet" type="button" role="tab">
                   <i class="ph ph-wifi-high"></i> Internet
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-emails" data-bs-toggle="tab"
+                  data-bs-target="#pane-emails" type="button" role="tab">
+                  <i class="ph ph-at"></i> E-mails
                 </button>
               </li>
               <li>
@@ -3255,6 +3282,49 @@
             </div>
           </div>
 
+          <!-- ABA E-MAILS -->
+          <div class="tab-pane fade" id="pane-emails" role="tabpanel">
+            <h2 class="pane-titulo-mobile"><i class="ph ph-at"></i> E-mails</h2>
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+              <p class="text-muted mb-0">Lista que alimenta a pagina <a href="/emails" target="_blank" rel="noopener">/emails</a>.</p>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnImportarEmails">
+                  <i class="ph ph-cloud-arrow-down"></i> Importar
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnNovoEmail">
+                  <i class="ph ph-plus"></i> Novo
+                </button>
+              </div>
+            </div>
+            <div id="alertEmails"></div>
+
+            <div class="d-flex align-items-center justify-content-end gap-1 mb-2">
+              <div id="emStatus" class="text-muted small me-2"></div>
+              <div class="input-group input-group-sm busca-tabela">
+                <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                <input type="search" class="form-control" id="emBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosEmails" title="Limpar filtros">
+                <i class="ph ph-funnel-x fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshEmails" title="Atualizar">
+                <i class="ph ph-arrow-clockwise fs-5"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="EMAILS" title="Ver logs deste módulo">
+                <i class="material-icons ic-logs fs-5">travel_explore</i>
+              </button>
+            </div>
+            <div class="table-responsive table-sticky">
+              <table class="table table-sm table-striped table-hover align-middle" id="tabelaEmails">
+                <thead class="table-light">
+                  <!-- Cabeçalho montado pelo JS (thFiltravel): colunas com funil. -->
+                  <tr id="emThead"></tr>
+                </thead>
+                <tbody id="emTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- ABA LOGS -->
           <div class="tab-pane fade" id="pane-logs" role="tabpanel">
             <h2 class="pane-titulo-mobile"><i class="material-icons ic-logs">travel_explore</i> Logs</h2>
@@ -3530,6 +3600,145 @@
         </div>
         <div class="modal-footer">
           <button type="submit" form="formEmprestimo" class="btn btn-primary" id="btnEmprestar">Emprestar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL INTEGRANTES DO GRUPO ===================== -->
+  <!-- Só leitura: quem entra e sai de um grupo é o painel da Locaweb. -->
+  <div class="modal fade" id="modalMembrosEmail" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-users-three me-2"></i><span id="membrosModalTitle">Integrantes</span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <!-- Fora do .modal-body de propósito: só o corpo rola, então endereço,
+             contagem e busca ficam parados no topo mesmo em grupo de 51. -->
+        <div class="px-3 pt-3 pb-2 border-bottom">
+          <p class="text-muted small mb-2" id="membrosModalSub"></p>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+            <input type="search" class="form-control" id="membrosModalBusca" placeholder="Buscar integrantes..." autocomplete="off">
+          </div>
+        </div>
+        <div class="modal-body scroll-suave">
+          <div id="membrosModalLista" class="d-flex flex-column gap-1"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL E-MAIL (novo/editar) ===================== -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalEmail" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-at me-2"></i><span id="emailModalTitle">Novo e-mail</span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertEmailModal"></div>
+          <form id="formEmail" class="needs-validation row g-3" novalidate>
+            <input type="hidden" id="email_id">
+            <div class="col-12">
+              <label class="form-label" for="email_endereco">E-MAIL *</label>
+              <input type="email" class="form-control" id="email_endereco" required autocomplete="off" placeholder="fornecedor@empresa.com.br">
+              <div class="invalid-feedback">Informe um e-mail válido.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="email_tipo">TIPO *</label>
+              <select class="form-select" id="email_tipo" required>
+                <option value="CONTATO">Contato</option>
+                <option value="GRUPO">Grupo</option>
+                <option value="CAIXA">Caixa postal</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="email_nome">NOME</label>
+              <input type="text" class="form-control" id="email_nome" autocomplete="off" placeholder="Equipe TI">
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="email_descricao">DESCRIÇÃO</label>
+              <input type="text" class="form-control" id="email_descricao" autocomplete="off" placeholder="Quando usar, setor, observação">
+            </div>
+            <div class="col-12">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="email_visivel" checked>
+                <label class="form-check-label" for="email_visivel">Visível no buscador <span class="text-muted">(/emails)</span></label>
+              </div>
+              <!-- Quando quem tira do buscador é o painel da Locaweb, o botão
+                   acima não tem o que decidir: fica desligado e a razão vem aqui. -->
+              <div class="form-text d-none" id="email_visivel_aviso"></div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" form="formEmail" class="btn btn-primary" id="btnSalvarEmail"><i class="ph ph-check"></i> Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL IMPORTAR DA LOCAWEB ===================== -->
+  <!-- O login do painel da Locaweb é CAS com reCAPTCHA de imagem: não há como
+       o servidor buscar sozinho. Quem já está logado no navegador traz o HTML
+       da página de grupos — que embute tanto os grupos quanto as caixas. -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalImportarEmails" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-cloud-arrow-down me-2"></i>Importar da Locaweb</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertImportarEmails"></div>
+
+          <p class="small mb-2">
+            São <strong>duas páginas</strong> do painel, e uma completa a outra — importe as duas,
+            uma de cada vez, em qualquer ordem. O sistema reconhece sozinho qual você colou.
+          </p>
+          <ul class="small mb-3 ps-3">
+            <li><strong>Grupos</strong> — os grupos e quem recebe cada um.</li>
+            <li><strong>Caixas postais</strong> — o nome de cada caixa e quais estão desativadas.</li>
+          </ul>
+
+          <ol class="ps-3 mb-3 small">
+            <li class="mb-2">
+              Abra uma delas no painel (você já precisa estar logado lá):<br>
+              <a href="https://painel-email.locaweb.com.br/domains/intecsbr.org/groups?per_page=200"
+                 target="_blank" rel="noopener">painel-email.locaweb.com.br › grupos <i class="ph ph-arrow-square-out"></i></a><br>
+              <a href="https://painel-email.locaweb.com.br/domains/intecsbr.org/mailboxes?per_page=200"
+                 target="_blank" rel="noopener">painel-email.locaweb.com.br › caixas postais <i class="ph ph-arrow-square-out"></i></a>
+            </li>
+            <li class="mb-2">
+              Nessa página, clique no favorito abaixo (arraste uma vez para a barra de favoritos)
+              — ele copia o conteúdo da página:<br>
+              <a class="btn btn-outline-secondary btn-sm mt-1" id="bookmarkletEmails"
+                 href="javascript:(()=>{navigator.clipboard.writeText(document.documentElement.outerHTML).then(()=>alert('Conteudo copiado — cole no Gestao TI.'),()=>alert('Nao foi possivel copiar.'))})()"
+                 onclick="return false;" title="Arraste para a barra de favoritos">
+                <i class="ph ph-bookmark-simple"></i> Copiar e-mails da Locaweb
+              </a>
+              <span class="text-muted d-block mt-1">
+                Sem barra de favoritos? Salve a página (Ctrl+S) e use o botão de arquivo abaixo.
+              </span>
+            </li>
+            <li>Cole aqui e importe — depois repita com a outra página.</li>
+          </ol>
+
+          <div class="mb-2 d-flex align-items-center gap-2 flex-wrap">
+            <input type="file" class="form-control form-control-sm" id="impEmailsArquivo" accept=".html,.htm,text/html" style="max-width:280px;">
+            <span class="text-muted small">ou cole no campo abaixo</span>
+          </div>
+          <textarea class="form-control" id="impEmailsConteudo" rows="6"
+            placeholder="Cole aqui o conteúdo copiado do painel (grupos ou caixas postais)..." spellcheck="false"></textarea>
+          <div class="form-text" id="impEmailsTamanho"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="btnConfirmarImportarEmails">
+            <i class="ph ph-cloud-arrow-down"></i> Importar
+          </button>
         </div>
       </div>
     </div>
@@ -4880,7 +5089,7 @@
     /* Mostra a barra de scroll das tabelas e listas roláveis enquanto rola e a
        oculta pouco depois de parar (~700ms). Funciona para X e Y. */
     (function () {
-      var sel = '.table-scroll-x, .table-sticky, .cal-proximos-list';
+      var sel = '.table-scroll-x, .table-sticky, .cal-proximos-list, .scroll-suave';
       document.addEventListener('scroll', function (e) {
         var el = e.target;
         if (!el || !el.matches || !el.matches(sel)) return;
