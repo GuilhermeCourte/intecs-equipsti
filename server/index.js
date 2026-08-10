@@ -23,6 +23,7 @@ import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as uptimeRobot from './uptimerobot/service.js';
 import * as hostinger from './hostinger/service.js';
 import * as googleDrive from './googleworkspace/service.js';
+import * as driveArquivos from './googleworkspace/driveArquivos.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
 import * as emailsRepo from './emailsRepository.js';
 import { parsePainelLocaweb } from './locaweb/parser.js';
@@ -3825,6 +3826,53 @@ app.get('/api/drive-logs/diagnostico', exigirAuth, exigirPermissao('aba_logs'), 
   }
 }));
 
+// ===================== UTILITÁRIOS (/utils) =====================
+// Encurtador com login para a pasta de instaladores no Drive (a mesma do antigo
+// bit.ly/prsistemas). Nada de API do Google aqui: o GTI só guarda o destino e
+// exige que a pessoa entre antes de recebê-lo.
+// Aceita tanto o ID puro quanto a URL da pasta colada do navegador.
+const PASTA_UTILS = String(process.env.GOOGLE_DRIVE_UTILS_FOLDER_ID || '')
+  .trim()
+  .replace(/^.*\/folders\//, '')
+  .split(/[?#]/)[0];
+
+// O destino só sai daqui, e só para quem entrou: se o link estivesse no HTML da
+// página, o login seria decoração — bastaria ver o código-fonte.
+app.get('/api/utils/destino', exigirAuth, exigirPermissao('utils_acessar'), (req, res) => {
+  if (!PASTA_UTILS) {
+    return res.status(503).json({ error: 'Pasta de utilitários não configurada: preencha GOOGLE_DRIVE_UTILS_FOLDER_ID no .env.' });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ url: 'https://drive.google.com/drive/folders/' + PASTA_UTILS });
+});
+
+// Conteúdo da pasta, para a aba "Utilitários" do admin. Só leitura: o GTI
+// nunca sobe nem apaga nada no Drive. Mesma régua de erro da auditoria:
+// falta de setup é 503, falha ao falar com o Google é 502.
+app.get('/api/utils/arquivos', exigirAuth, exigirPermissao('utils_acessar'), wrap(async (req, res) => {
+  if (!googleDrive.configurado()) return res.status(503).json({ error: SEM_GOOGLE });
+  if (!driveArquivos.raizConfigurada()) {
+    return res.status(503).json({ error: 'Pasta de utilitários não configurada: preencha GOOGLE_DRIVE_UTILS_FOLDER_ID no .env.' });
+  }
+
+  const busca = trim(req.query.q);
+  const pedida = trim(req.query.pasta) || driveArquivos.RAIZ;
+  try {
+    // A busca ignora a pasta aberta e varre tudo abaixo da raiz — quem procura
+    // um instalador não sabe (nem precisa saber) em que subpasta ele mora.
+    if (busca) {
+      const itens = await driveArquivos.buscar(busca, { forcar: req.query.forcar === '1' });
+      return res.json({ busca, caminho: [], itens });
+    }
+    // Também é a validação de escopo: subpasta que não desce da raiz é 403.
+    const caminho = await driveArquivos.caminhoAteRaiz(pedida);
+    if (!caminho) return res.status(403).json({ error: 'Pasta fora da pasta de utilitários.' });
+    res.json({ caminho, itens: await driveArquivos.listarPasta(pedida) });
+  } catch (err) {
+    erroDrive(res, err);
+  }
+}));
+
 // ===================== ESTÁTICO (front-end vanilla) =====================
 app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.html')));
 // Painel de parede: tela cheia, sem interação, aberto em aba própria pelo
@@ -3833,6 +3881,16 @@ app.get('/cockpit', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cockpit.ht
 // Buscador do catálogo de e-mails: como /chamados, a rota é aberta e quem
 // exige login é o conteúdo (GET /api/emails).
 app.get('/emails', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'emails.html')));
+// Utilitários: a tela é aberta no PC do colaborador, então nem ela nem o JS
+// dela ficam em cache de disco por lá.
+app.get('/utils', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(PUBLIC_DIR, 'utils.html'));
+});
+app.get('/utils.js', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(PUBLIC_DIR, 'utils.js'));
+});
 app.use(express.static(PUBLIC_DIR));
 
 // ===================== AGENDAMENTO =====================

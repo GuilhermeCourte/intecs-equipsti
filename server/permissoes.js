@@ -24,7 +24,9 @@ const ABAS = [
 ];
 
 // Permissões funcionais (não são abas).
-const FUNCIONAIS = ['chamados_ver_todas_maquinas'];
+// utils_acessar não é aba: /utils é uma página à parte, feita para ser digitada
+// no PC do colaborador na hora de baixar um instalador.
+const FUNCIONAIS = ['chamados_ver_todas_maquinas', 'utils_acessar'];
 
 export const CHAVES_PERMISSOES = [...ABAS, ...FUNCIONAIS];
 
@@ -42,7 +44,8 @@ export const ROTULOS = {
   aba_gerenciar: 'Opções',
   aba_usuarios: 'Usuários',
   aba_logs: 'Logs',
-  chamados_ver_todas_maquinas: 'Ver todas as máquinas no portal de chamados'
+  chamados_ver_todas_maquinas: 'Ver todas as máquinas no portal de chamados',
+  utils_acessar: 'Utilitários (/utils)'
 };
 
 const PAPEIS = ['BASICO', 'GESTOR', 'TECNICO', 'MASTER'];
@@ -60,11 +63,13 @@ function conjunto(abasLigadas, funcionaisLigadas = []) {
 // liberam por usuário, virando "TECNICO+").
 // GESTOR/BASICO: só GTI - Chamados.
 // Ver todas as máquinas no portal: só TECNICO por padrão (MASTER liga por usuário).
+// Utilitários (/utils): TECNICO e MASTER — é a tela que o técnico abre no PC do
+// colaborador; como é funcional e não aba, MASTER precisa ligar explicitamente.
 export const PADROES_POR_PAPEL = {
   BASICO: conjunto(['aba_chamados']),
   GESTOR: conjunto(['aba_chamados']),
-  TECNICO: conjunto(ABAS.filter((k) => k !== 'aba_logs' && k !== 'aba_senhas' && k !== 'aba_vps'), ['chamados_ver_todas_maquinas']),
-  MASTER: conjunto(ABAS)
+  TECNICO: conjunto(ABAS.filter((k) => k !== 'aba_logs' && k !== 'aba_senhas' && k !== 'aba_vps'), ['chamados_ver_todas_maquinas', 'utils_acessar']),
+  MASTER: conjunto(ABAS, ['utils_acessar'])
 };
 
 export function papelValido(role) {

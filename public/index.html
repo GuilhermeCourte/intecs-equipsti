@@ -603,6 +603,31 @@
     /* ---------- Senhas de portas: login/senha em fonte monoespaçada ---------- */
     .mono { font-family: ui-monospace, 'Courier New', monospace; letter-spacing: .08em; }
 
+    /* ---------- Aba Utilitários: trilha de pastas e ícone do arquivo ---------- */
+    .ut-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font-size: .88rem; }
+    .ut-crumbs button {
+      border: 0; background: none; padding: 2px 6px; border-radius: 8px;
+      font: inherit; font-weight: 600; color: var(--ink);
+    }
+    .ut-crumbs button:hover { background: var(--bg-soft); }
+    .ut-crumbs button:disabled { color: var(--muted); font-weight: 500; }
+    .ut-crumbs .sep { color: var(--muted); }
+    .ut-icone {
+      width: 30px; height: 30px; min-width: 30px; border-radius: 8px;
+      background: var(--bg-soft); color: var(--ink);
+      display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+    }
+    /* Linha de pasta abre a pasta; o botão dentro dela é link para o Drive. */
+    .ut-linha-pasta { cursor: pointer; }
+    /* Coluna do botão: encolhe até o conteúdo, mas sem quebrar o rótulo em
+       duas linhas (ícone em cima, texto embaixo). */
+    .ut-acao { width: 1%; white-space: nowrap; }
+    /* Subpasta de onde veio o resultado da busca */
+    .ut-caminho {
+      display: flex; align-items: center; gap: 4px;
+      color: var(--muted); font-size: .74rem; font-weight: 500; margin-top: 1px;
+    }
+
     /* ---------- Busca de tabela (lupa: filtra qualquer coluna) ---------- */
     .busca-tabela { width: 160px; max-width: 100%; flex-wrap: nowrap; }
     /* Sem o "x" nativo do input de busca — limpar é pelo funil ao lado */
@@ -2137,6 +2162,7 @@
               <button type="button" class="mm-item" data-tab="tab-internet"><i class="ph ph-wifi-high"></i> Internet</button>
               <button type="button" class="mm-item" data-tab="tab-emails"><i class="ph ph-at"></i> E-mails</button>
               <button type="button" class="mm-item" data-tab="tab-senhas"><i class="ph ph-key"></i> Senhas</button>
+              <button type="button" class="mm-item" data-tab="tab-utils"><i class="ph ph-download-simple"></i> Utilitários</button>
               <button type="button" class="mm-item" data-tab="tab-vps"><i class="ph ph-hard-drives"></i> VPS</button>
             </div>
           </div>
@@ -2218,6 +2244,12 @@
                 <button class="dropdown-item" id="tab-senhas" data-bs-toggle="tab"
                   data-bs-target="#pane-senhas" type="button" role="tab">
                   <i class="ph ph-key"></i> Senhas
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" id="tab-utils" data-bs-toggle="tab"
+                  data-bs-target="#pane-utils" type="button" role="tab">
+                  <i class="ph ph-download-simple"></i> Utilitários
                 </button>
               </li>
               <li>
@@ -2995,6 +3027,47 @@
             </div>
           </div>
 
+          <!-- ABA UTILITÁRIOS (leitura da pasta do Drive que a /utils abre) -->
+          <div class="tab-pane fade" id="pane-utils" role="tabpanel">
+            <h2 class="pane-titulo-mobile"><i class="ph ph-download-simple"></i> Utilitários</h2>
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+              <p class="text-muted mb-0">Programas e instaladores que alimenta a pagina <a href="/utils" target="_blank" rel="noopener">/utils</a></p>
+              <!-- Mesmo estilo do "Abrir hPanel" da aba VPS. O href é preenchido
+                   pelo app.js com a pasta que estiver aberta. -->
+              <a id="btnAbrirPastaUtils" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
+                <i class="ph ph-arrow-square-out"></i> Abrir no Drive
+              </a>
+            </div>
+            <div id="alertUtils"></div>
+
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
+              <nav class="ut-crumbs" id="utCrumbs" aria-label="Pastas"></nav>
+              <div class="d-flex align-items-center gap-1 ms-auto">
+                <div id="utStatus" class="text-muted small me-2"></div>
+                <div class="input-group input-group-sm busca-tabela">
+                  <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                  <input type="search" class="form-control" id="utBusca" placeholder="Buscar..." title="Buscar em qualquer coluna">
+                </div>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosUtils" title="Limpar filtros">
+                  <i class="ph ph-funnel-x fs-5"></i>
+                </button>
+                <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnRefreshUtils" title="Atualizar">
+                  <i class="ph ph-arrow-clockwise fs-5"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="table-responsive table-sticky">
+              <table class="table table-sm table-striped table-hover align-middle" id="tabelaUtils">
+                <thead class="table-light">
+                  <!-- Cabeçalho montado pelo JS (thFiltravel): colunas com funil. -->
+                  <tr id="utThead"></tr>
+                </thead>
+                <tbody id="utTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- ABA VPS (monitoramento read-only do Hostinger) -->
           <div class="tab-pane fade" id="pane-vps" role="tabpanel">
             <h2 class="pane-titulo-mobile"><i class="ph ph-hard-drives"></i> VPS</h2>
@@ -3317,7 +3390,7 @@
           <div class="tab-pane fade" id="pane-emails" role="tabpanel">
             <h2 class="pane-titulo-mobile"><i class="ph ph-at"></i> E-mails</h2>
             <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
-              <p class="text-muted mb-0">Lista que alimenta a pagina <a href="/emails" target="_blank" rel="noopener">/emails</a>.</p>
+              <p class="text-muted mb-0">Lista que alimenta a pagina <a href="/emails" target="_blank" rel="noopener">/emails</a></p>
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btnImportarEmails">
                   <i class="ph ph-cloud-arrow-down"></i> Importar
