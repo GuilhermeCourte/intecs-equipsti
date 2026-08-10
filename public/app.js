@@ -1636,6 +1636,285 @@ async function carregarDockerVps(vmId) {
   }
 }
 
+// ============================================================
+//  Aba Utilitários — leitura da pasta do Drive que a página /utils abre.
+//  Só mostra: quem publica arquivo continua fazendo isso pelo Drive, e o
+//  download sai direto de lá (nada trafega pela VPS).
+// ============================================================
+let _utPasta = '';   // pasta aberta na aba ('' = a raiz configurada no .env)
+let _utBusca = '';   // termo da lupa; com termo, a listagem vira busca global
+let _utItens = [];   // o que veio do servidor, antes dos filtros de coluna
+let _utCaminho = [];
+let _utDebounce = null;
+let _utReq = 0;      // descarta resposta atrasada de uma pasta anterior
+
+function utTamanho(bytes) {
+  if (bytes == null) return '—';
+  const un = ['B', 'KB', 'MB', 'GB'];
+  let v = Number(bytes), i = 0;
+  while (v >= 1024 && i < un.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(v >= 10 ? 0 : 1)) + ' ' + un[i];
+}
+
+// Sem os segundos: o fmtDataHora geral usa toLocaleString cheio, e aqui a
+// precisão de segundo só polui a coluna.
+function utDataHora(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  return isNaN(d) ? '—' : d.toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
+
+// Ícone pela extensão primeiro (o Drive manda octet-stream para instalador) e
+// pelo mime só como reforço.
+function utIcone(item) {
+  if (item.tipo === 'pasta') return 'ph-folder';
+  const ext = (item.nome.split('.').pop() || '').toLowerCase();
+  if (['exe', 'msi', 'bat', 'cmd'].includes(ext)) return 'ph-windows-logo';
+  if (['zip', 'rar', '7z', 'gz', 'tar'].includes(ext)) return 'ph-file-zip';
+  if (ext === 'pdf') return 'ph-file-pdf';
+  if (['doc', 'docx'].includes(ext)) return 'ph-file-doc';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'ph-file-xls';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) return 'ph-file-image';
+  if (['iso', 'img'].includes(ext)) return 'ph-disc';
+  if (ext === 'apk') return 'ph-android-logo';
+  return 'ph-file';
+}
+
+// O Drive não entrega o arquivo direto em dois casos: executável (de qualquer
+// tamanho) e arquivo acima de ~25 MB, o limite do antivírus dele. Nos dois ele
+// devolve a página "não pode fazer a verificação de vírus", com o botão "fazer
+// o download mesmo assim". Como é HTML e não o arquivo, na mesma aba isso
+// levaria a pessoa para fora do Gestão TI — então esses vão em aba nova, e só
+// os demais ficam na mesma aba (sem a piscada de abrir e fechar).
+const UT_EXT_EXECUTAVEL = ['exe', 'msi', 'bat', 'cmd', 'com', 'scr', 'ps1', 'apk', 'jar'];
+const UT_LIMITE_ANTIVIRUS = 25 * 1024 * 1024;
+
+function utTelaDeAviso(item) {
+  const ext = (item.nome.split('.').pop() || '').toLowerCase();
+  return UT_EXT_EXECUTAVEL.includes(ext)
+    || (item.tamanho != null && item.tamanho > UT_LIMITE_ANTIVIRUS);
+}
+
+function utLinha(item) {
+  // Na busca o resultado vem de qualquer subpasta: sem dizer de onde, dois
+  // arquivos de mesmo nome viram adivinhação.
+  const caminho = _utBusca && item.caminho
+    ? '<div class="ut-caminho"><i class="ph ph-folder"></i>' + escapeHtml(item.caminho) + '</div>'
+    : '';
+  const nome = '<div class="d-flex align-items-center gap-2">'
+    + '<span class="ut-icone"><i class="ph ' + utIcone(item) + '"></i></span>'
+    + '<span>' + escapeHtml(item.nome) + caminho + '</span></div>';
+
+  // Só arquivo tem botão: pasta se abre clicando na linha, e o "Abrir no Drive"
+  // da barra já cobre quem quiser ver a pasta lá.
+  //
+  // Baixar vai SEM target="_blank" quando o link devolve mesmo o arquivo
+  // (Content-Disposition attachment): a aba nova abria e o navegador a fechava
+  // no mesmo instante — a piscada. Quem cai na tela de aviso do antivírus, e o
+  // "Abrir" dos Docs/Sheets, são páginas de verdade e vão em aba nova.
+  const novaAba = !item.direto || utTelaDeAviso(item);
+  const acao = item.tipo === 'arquivo' && item.url
+    ? '<a class="btn btn-outline-secondary btn-sm" href="' + escapeHtml(item.url) + '"'
+      + (novaAba ? ' target="_blank" rel="noopener"' : '') + '>'
+      + '<i class="ph ' + (item.direto ? 'ph-download-simple' : 'ph-arrow-square-out') + '"></i> '
+      + (item.direto ? 'Baixar' : 'Abrir') + '</a>'
+    : '';
+
+  return '<tr' + (item.tipo === 'pasta' ? ' class="ut-linha-pasta" data-pasta="' + escapeHtml(item.id) + '" title="Abrir a pasta"' : '') + '>'
+    + '<td>' + nome + '</td>'
+    + '<td>' + (item.tipo === 'pasta' ? '—' : utTamanho(item.tamanho)) + '</td>'
+    + '<td>' + utDataHora(item.modificadoEm) + '</td>'
+    + '<td class="ut-acao text-end">' + acao + '</td>'
+    + '</tr>';
+}
+
+// Colunas filtráveis (funil), no padrão das outras tabelas. A da ação fica
+// fora: não tem valor para filtrar.
+const UT_COLS = [
+  { key: 'nome', label: 'Nome' },
+  { key: 'tamanho', label: 'Tamanho' },
+  { key: 'modificado', label: 'Modificado' }
+];
+
+// O valor do filtro é o mesmo texto que a célula mostra — assim a lista do
+// funil bate com o que se lê na tela.
+function utColVal(item, col) {
+  switch (UT_COLS[col]?.key) {
+    case 'nome': return item.nome || '';
+    case 'tamanho': return item.tipo === 'pasta' ? '—' : utTamanho(item.tamanho);
+    case 'modificado': return utDataHora(item.modificadoEm);
+    default: return '';
+  }
+}
+
+const utFilterCtx = {
+  theadSel: '#utThead th[data-col]',
+  getRows: () => _utItens,
+  colVal: utColVal,
+  filters: {},
+  clearBtnId: 'btnLimparFiltrosUtils',
+  buscaId: 'utBusca',
+  onApply: () => renderUtilsLista()
+};
+
+function renderUtils(dados) {
+  _utCaminho = dados.caminho || [];
+  _utItens = dados.itens || [];
+  const caminho = _utCaminho;
+
+  // Na busca a trilha vira o caminho de volta para a pasta que estava aberta.
+  $('utCrumbs').innerHTML = _utBusca
+    ? '<button type="button" data-pasta="' + escapeHtml(_utPasta) + '" data-limpar="1">'
+      + '<i class="ph ph-arrow-left"></i> Voltar</button>'
+      + '<span class="sep">/</span><button type="button" disabled>Busca em todas as pastas</button>'
+    : caminho.map((p, i) => {
+        const ultimo = i === caminho.length - 1;
+        const rotulo = i === 0 ? '<i class="ph ph-house"></i> ' + escapeHtml(p.nome) : escapeHtml(p.nome);
+        return (i ? '<span class="sep">/</span>' : '')
+          + '<button type="button" data-pasta="' + escapeHtml(p.id) + '"' + (ultimo ? ' disabled' : '') + '>' + rotulo + '</button>';
+      }).join('');
+
+  // O botão do topo acompanha a pasta aberta, não a raiz (na busca ele
+  // continua apontando para a pasta de onde a busca partiu).
+  const atual = caminho[caminho.length - 1];
+  if (atual && atual.url) $('btnAbrirPastaUtils').href = atual.url;
+
+  renderUtilsLista();
+}
+
+// Só a tabela: é o que o funil de coluna re-renderiza (onApply), sem refazer
+// trilha nem ir ao servidor de novo.
+function renderUtilsLista() {
+  const lista = _utItens.filter((x) => ctxPassa(utFilterCtx, x));
+
+  const vazio = _utItens.length
+    ? 'Nenhum item com os filtros atuais.'
+    : (_utBusca ? 'Nada com "' + escapeHtml(_utBusca) + '" em nenhuma pasta.' : 'Esta pasta está vazia.');
+  $('utTbody').innerHTML = lista.length
+    ? lista.map(utLinha).join('')
+    : '<tr><td colspan="4" class="text-center text-muted py-4">' + vazio + '</td></tr>';
+
+  const arquivos = lista.filter((i) => i.tipo === 'arquivo').length;
+  const pastas = lista.length - arquivos;
+  $('utStatus').textContent = [
+    pastas ? pastas + (pastas === 1 ? ' pasta' : ' pastas') : '',
+    arquivos ? arquivos + (arquivos === 1 ? ' arquivo' : ' arquivos') : ''
+  ].filter(Boolean).join(' · ');
+
+  // Acende o funil das colunas filtradas e o botão de limpar (que também
+  // considera a busca, via buscaId do contexto).
+  ctxAtualizarTh(utFilterCtx);
+}
+
+async function carregarUtils(pastaId = _utPasta, { forcar = false } = {}) {
+  const meu = ++_utReq;
+  $('alertUtils').innerHTML = '';
+  $('utTbody').innerHTML = skelTr(['200px', '60px', '120px', 'pill'], 6);
+  $('utStatus').textContent = '';
+
+  const params = new URLSearchParams();
+  if (_utBusca) params.set('q', _utBusca);
+  else if (pastaId) params.set('pasta', pastaId);
+  if (forcar) params.set('forcar', '1');
+
+  try {
+    const dados = await api('GET', '/api/utils/arquivos' + (params.toString() ? '?' + params : ''));
+    if (meu !== _utReq) return;   // resposta de uma pasta (ou busca) que já saiu da tela
+    if (!_utBusca) _utPasta = pastaId;   // na busca, guarda a pasta para o "Voltar"
+    renderUtils(dados);
+  } catch (err) {
+    if (meu !== _utReq) return;
+    $('utTbody').innerHTML = '';
+    $('utCrumbs').innerHTML = '';
+    $('alertUtils').innerHTML = '<div class="alert alert-danger py-2 mb-2">' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+// O navegador NÃO avisa a página quando um download cross-origin começa ou
+// termina — não existe evento para ouvir. Então o "Baixando..." é só a
+// confirmação de que o clique pegou (e a trava contra o clique duplo, que
+// dispararia o download duas vezes); ele volta sozinho depois de alguns
+// segundos, sem prometer que o arquivo já chegou.
+const UT_BAIXANDO_MS = 5000;
+
+function utBaixando(link) {
+  const original = link.innerHTML;
+  link.classList.add('disabled');
+  link.setAttribute('aria-disabled', 'true');
+  link.innerHTML = '<i class="ph ph-circle-notch fd-spin"></i> Baixando...';
+  setTimeout(() => {
+    link.classList.remove('disabled');
+    link.removeAttribute('aria-disabled');
+    link.innerHTML = original;
+  }, UT_BAIXANDO_MS);
+}
+
+function utLimparBusca() {
+  $('utBusca').value = '';
+  _utBusca = '';
+  clearTimeout(_utDebounce);
+}
+
+// Trocar de pasta (ou entrar/sair da busca) zera os funis: eles guardam valores
+// da listagem anterior — um nome de arquivo de outra pasta esconderia tudo.
+function utLimparFiltrosColuna() {
+  Object.keys(utFilterCtx.filters).forEach((k) => delete utFilterCtx.filters[k]);
+}
+
+function configurarUtils() {
+  $('utThead').innerHTML = thFiltravel(UT_COLS) + '<th class="ut-acao"></th>';
+  wireCtxFiltro(utFilterCtx, $('utThead'));
+
+  // Ao contrário das outras tabelas, a lupa aqui NÃO é filtro local: ela
+  // procura em todas as subpastas, e isso só o servidor sabe fazer. Daí o
+  // debounce — sem ele, cada tecla vira uma requisição.
+  $('utBusca').addEventListener('input', (ev) => {
+    _utBusca = trim(ev.target.value);
+    utLimparFiltrosColuna();
+    clearTimeout(_utDebounce);
+    _utDebounce = setTimeout(() => carregarUtils(), 300);
+  });
+
+  $('tab-utils').addEventListener('shown.bs.tab', () => carregarUtils());
+  // Atualizar durante a busca refaz o índice da árvore, senão um arquivo
+  // publicado agora não apareceria por até 5 minutos.
+  $('btnRefreshUtils').addEventListener('click', () => carregarUtils(_utPasta, { forcar: true }));
+  $('btnLimparFiltrosUtils').addEventListener('click', () => {
+    const tinhaBusca = _utBusca !== '';
+    utLimparFiltrosColuna();
+    utLimparBusca();
+    // Só volta ao servidor se estava em modo busca; funil de coluna é local.
+    if (tinhaBusca) carregarUtils(); else renderUtilsLista();
+  });
+
+  // Entrar na pasta: o botão dentro da linha é link para o Drive e não pode
+  // navegar aqui junto.
+  $('utTbody').addEventListener('click', (ev) => {
+    const link = ev.target.closest('a');
+    if (link) {
+      if (link.classList.contains('disabled')) { ev.preventDefault(); return; }
+      // Só o download direto: "Abrir" leva a uma página, que se resolve sozinha.
+      if (!link.hasAttribute('target')) utBaixando(link);
+      return;
+    }
+    const tr = ev.target.closest('tr[data-pasta]');
+    if (!tr) return;
+    utLimparBusca();
+    utLimparFiltrosColuna();
+    carregarUtils(tr.getAttribute('data-pasta'));
+  });
+
+  $('utCrumbs').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-pasta]');
+    if (!btn || btn.disabled) return;
+    utLimparBusca();
+    utLimparFiltrosColuna();
+    carregarUtils(btn.getAttribute('data-pasta'));
+  });
+}
+
 function configurarVps() {
   $('tab-vps').addEventListener('shown.bs.tab', carregarVps);
   $('btnAtualizarVps').addEventListener('click', carregarVps);
@@ -6319,6 +6598,7 @@ const ABA_PERMISSAO = {
   'tab-internet': 'aba_internet',
   'tab-emails': 'aba_emails',
   'tab-senhas': 'aba_senhas',
+  'tab-utils': 'utils_acessar',
   'tab-vps': 'aba_vps',
   'tab-calendario': 'aba_calendario',
   'tab-gerenciar': 'aba_gerenciar',
@@ -6331,7 +6611,7 @@ const ABA_PERMISSAO = {
 // o grupo inteiro só some quando nenhuma aba dele está liberada.
 const GRUPOS_ABAS = {
   equipamentos: { abas: ['tab-registros', 'tab-emprestimos'], desktopId: 'grupo-equipamentos', mobileId: 'mmGrupoEquipamentos' },
-  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet', 'tab-emails', 'tab-senhas', 'tab-vps'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
+  suporte: { abas: ['tab-chamados', 'tab-conexao', 'tab-internet', 'tab-emails', 'tab-senhas', 'tab-utils', 'tab-vps'], desktopId: 'grupo-suporte', mobileId: 'mmGrupoSuporte' },
   opcoes: { abas: ['tab-gerenciar', 'tab-usuarios'], desktopId: 'grupo-opcoes', mobileId: 'mmGrupoOpcoes' }
 };
 
@@ -8667,6 +8947,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarConexaoRemota();
   configurarEmails();
   configurarConexoes();
+  configurarUtils();
   configurarVps();
   configurarMenuMobile();
   configurarDropdownsAbas();

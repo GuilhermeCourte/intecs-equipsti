@@ -23,6 +23,7 @@ import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as uptimeRobot from './uptimerobot/service.js';
 import * as hostinger from './hostinger/service.js';
 import * as googleDrive from './googleworkspace/service.js';
+import * as driveArquivos from './googleworkspace/driveArquivos.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
 import * as emailsRepo from './emailsRepository.js';
 import { parsePainelLocaweb } from './locaweb/parser.js';
@@ -3844,6 +3845,33 @@ app.get('/api/utils/destino', exigirAuth, exigirPermissao('utils_acessar'), (req
   res.set('Cache-Control', 'no-store');
   res.json({ url: 'https://drive.google.com/drive/folders/' + PASTA_UTILS });
 });
+
+// Conteúdo da pasta, para a aba "Utilitários" do admin. Só leitura: o GTI
+// nunca sobe nem apaga nada no Drive. Mesma régua de erro da auditoria:
+// falta de setup é 503, falha ao falar com o Google é 502.
+app.get('/api/utils/arquivos', exigirAuth, exigirPermissao('utils_acessar'), wrap(async (req, res) => {
+  if (!googleDrive.configurado()) return res.status(503).json({ error: SEM_GOOGLE });
+  if (!driveArquivos.raizConfigurada()) {
+    return res.status(503).json({ error: 'Pasta de utilitários não configurada: preencha GOOGLE_DRIVE_UTILS_FOLDER_ID no .env.' });
+  }
+
+  const busca = trim(req.query.q);
+  const pedida = trim(req.query.pasta) || driveArquivos.RAIZ;
+  try {
+    // A busca ignora a pasta aberta e varre tudo abaixo da raiz — quem procura
+    // um instalador não sabe (nem precisa saber) em que subpasta ele mora.
+    if (busca) {
+      const itens = await driveArquivos.buscar(busca, { forcar: req.query.forcar === '1' });
+      return res.json({ busca, caminho: [], itens });
+    }
+    // Também é a validação de escopo: subpasta que não desce da raiz é 403.
+    const caminho = await driveArquivos.caminhoAteRaiz(pedida);
+    if (!caminho) return res.status(403).json({ error: 'Pasta fora da pasta de utilitários.' });
+    res.json({ caminho, itens: await driveArquivos.listarPasta(pedida) });
+  } catch (err) {
+    erroDrive(res, err);
+  }
+}));
 
 // ===================== ESTÁTICO (front-end vanilla) =====================
 app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.html')));

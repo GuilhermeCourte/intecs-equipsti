@@ -20,7 +20,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-export const ESCOPO = 'https://www.googleapis.com/auth/admin.reports.audit.readonly';
+
+// Um token por escopo, e não um token com os dois escopos juntos: se a
+// delegação do drive.readonly for salva errada no Admin Console, quem para de
+// funcionar é só a aba Utilitários — a auditoria do Drive segue sincronizando.
+export const ESCOPO_REPORTS = 'https://www.googleapis.com/auth/admin.reports.audit.readonly';
+export const ESCOPO_DRIVE = 'https://www.googleapis.com/auth/drive.readonly';
 
 const CLIENT_EMAIL = process.env.GOOGLE_SA_CLIENT_EMAIL || '';
 const ADMIN_SUBJECT = process.env.GOOGLE_ADMIN_SUBJECT || '';
@@ -40,25 +45,28 @@ function exigirConfig() {
   }
 }
 
-// { token, expiraEm } — expiraEm em ms (epoch), já com a folga descontada.
-let _cache = { token: null, expiraEm: 0 };
+// escopo -> { token, expiraEm } — expiraEm em ms (epoch), já com a folga descontada.
+const _cache = new Map();
 
 // Descarta o token em cache. O cliente chama isto ao levar 401: o token
 // pode ter expirado em voo (ou o admin impersonado perdeu o privilégio).
-export function invalidarToken() {
-  _cache = { token: null, expiraEm: 0 };
+// Sem argumento limpa todos os escopos.
+export function invalidarToken(escopo = null) {
+  if (escopo) _cache.delete(escopo);
+  else _cache.clear();
 }
 
-export async function getAccessToken() {
+export async function getAccessToken(escopo = ESCOPO_REPORTS) {
   exigirConfig();
-  if (_cache.token && Date.now() < _cache.expiraEm) return _cache.token;
+  const emCache = _cache.get(escopo);
+  if (emCache && Date.now() < emCache.expiraEm) return emCache.token;
 
   const agora = Math.floor(Date.now() / 1000);
   const assertion = jwt.sign(
     {
       iss: CLIENT_EMAIL,
       sub: ADMIN_SUBJECT,   // quem a conta de serviço "vira" no domínio
-      scope: ESCOPO,
+      scope: escopo,
       aud: TOKEN_URL,
       iat: agora,
       exp: agora + 3600     // o máximo aceito pelo Google
@@ -91,6 +99,6 @@ export async function getAccessToken() {
   }
 
   const validade = Number(data.expires_in) || 3600;
-  _cache = { token: data.access_token, expiraEm: Date.now() + (validade - 60) * 1000 };
-  return _cache.token;
+  _cache.set(escopo, { token: data.access_token, expiraEm: Date.now() + (validade - 60) * 1000 });
+  return data.access_token;
 }
