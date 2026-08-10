@@ -111,6 +111,13 @@
     .btn-primary:active, .btn-success:active {
       background: var(--ink-2) !important; border-color: var(--ink-2) !important; color: #fff !important;
     }
+    /* O :disabled do Bootstrap tem especificidade maior que a regra acima e
+       traria de volta o azul da paleta padrão (aparece no "Salvando..." de
+       qualquer botão). A opacidade dele já sinaliza o estado sozinha. */
+    .btn-primary:disabled, .btn-primary.disabled,
+    .btn-success:disabled, .btn-success.disabled {
+      background: var(--ink); border-color: var(--ink); color: #fff;
+    }
     .btn-outline-primary, .btn-outline-secondary {
       color: var(--ink); border-color: #cfcfcf;
     }
@@ -413,6 +420,26 @@
     .badge-status {
       display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .5px;
       padding: .35em .7em; border-radius: 6px;
+    }
+    /* Cápsulas do "Importar da Locaweb": o HTML de uma página do painel tem
+       1-2 MB, e jogar isso num textarea trava a tela. Cada página colada vira
+       uma cápsula com rótulo e tamanho — o conteúdo fica só em memória. */
+    .capsula-pagina {
+      display: inline-flex; align-items: center; gap: .45rem;
+      font-size: .8rem; padding: .35em .75em; border-radius: 999px;
+      border: 1px solid var(--line); background: var(--bg-soft);
+    }
+    .capsula-pagina.erro { color: #c0392b; background: #fdecea; border-color: #f1aeb5; }
+    .capsula-pagina .btn-capsula-x {
+      border: 0; background: none; padding: 0; line-height: 1; color: inherit;
+      opacity: 0; transition: opacity .15s;
+    }
+    .capsula-pagina:hover .btn-capsula-x,
+    .capsula-pagina .btn-capsula-x:focus-visible { opacity: .65; }
+    .capsula-pagina .btn-capsula-x:hover { opacity: 1; }
+    /* Sem mouse não existe hover: no celular o x fica sempre visível. */
+    @media (hover: none) {
+      .capsula-pagina .btn-capsula-x { opacity: .65; }
     }
     /* animação de entrada dos modais */
     .modal.fade .modal-dialog { transition: none; }
@@ -1849,6 +1876,10 @@
     html[data-theme="dark"] .btn-success:hover,
     html[data-theme="dark"] .btn-success:focus,
     html[data-theme="dark"] .btn-success:active,
+    html[data-theme="dark"] .btn-primary:disabled,
+    html[data-theme="dark"] .btn-primary.disabled,
+    html[data-theme="dark"] .btn-success:disabled,
+    html[data-theme="dark"] .btn-success.disabled,
     html[data-theme="dark"] .btn-outline-primary:hover,
     html[data-theme="dark"] .btn-outline-secondary:hover,
     html[data-theme="dark"] .col-filter-ativo .col-filter-icon,
@@ -3695,10 +3726,6 @@
         <div class="modal-body">
           <div id="alertImportarEmails"></div>
 
-          <p class="small mb-2">
-            São <strong>duas páginas</strong> do painel, e uma completa a outra — importe as duas,
-            uma de cada vez, em qualquer ordem. O sistema reconhece sozinho qual você colou.
-          </p>
           <ul class="small mb-3 ps-3">
             <li><strong>Grupos</strong> — os grupos e quem recebe cada um.</li>
             <li><strong>Caixas postais</strong> — o nome de cada caixa e quais estão desativadas.</li>
@@ -3706,34 +3733,28 @@
 
           <ol class="ps-3 mb-3 small">
             <li class="mb-2">
-              Abra uma delas no painel (você já precisa estar logado lá):<br>
-              <a href="https://painel-email.locaweb.com.br/domains/intecsbr.org/groups?per_page=200"
-                 target="_blank" rel="noopener">painel-email.locaweb.com.br › grupos <i class="ph ph-arrow-square-out"></i></a><br>
-              <a href="https://painel-email.locaweb.com.br/domains/intecsbr.org/mailboxes?per_page=200"
-                 target="_blank" rel="noopener">painel-email.locaweb.com.br › caixas postais <i class="ph ph-arrow-square-out"></i></a>
+              Abra cada página no painel:
+              <div class="d-flex gap-2 flex-wrap mt-1">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-painel="groups">
+                  <i class="ph ph-arrow-square-out"></i> Abrir grupos
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-painel="mailboxes">
+                  <i class="ph ph-arrow-square-out"></i> Abrir caixas postais
+                </button>
+              </div>
             </li>
             <li class="mb-2">
-              Nessa página, clique no favorito abaixo (arraste uma vez para a barra de favoritos)
-              — ele copia o conteúdo da página:<br>
-              <a class="btn btn-outline-secondary btn-sm mt-1" id="bookmarkletEmails"
-                 href="javascript:(()=>{navigator.clipboard.writeText(document.documentElement.outerHTML).then(()=>alert('Conteudo copiado — cole no Gestao TI.'),()=>alert('Nao foi possivel copiar.'))})()"
-                 onclick="return false;" title="Arraste para a barra de favoritos">
-                <i class="ph ph-bookmark-simple"></i> Copiar e-mails da Locaweb
-              </a>
-              <span class="text-muted d-block mt-1">
-                Sem barra de favoritos? Salve a página (Ctrl+S) e use o botão de arquivo abaixo.
-              </span>
+              Já na página, tecle <strong>Ctrl+U</strong> (código-fonte), depois
+              <strong>Ctrl+A</strong> e <strong>Ctrl+C</strong>.
             </li>
-            <li>Cole aqui e importe — depois repita com a outra página.</li>
+            <li>Cole aqui embaixo. Repita com a outra página e importe as duas juntas.</li>
           </ol>
 
-          <div class="mb-2 d-flex align-items-center gap-2 flex-wrap">
-            <input type="file" class="form-control form-control-sm" id="impEmailsArquivo" accept=".html,.htm,text/html" style="max-width:280px;">
-            <span class="text-muted small">ou cole no campo abaixo</span>
-          </div>
-          <textarea class="form-control" id="impEmailsConteudo" rows="6"
-            placeholder="Cole aqui o conteúdo copiado do painel (grupos ou caixas postais)..." spellcheck="false"></textarea>
-          <div class="form-text" id="impEmailsTamanho"></div>
+          <!-- Cada página colada vira uma cápsula: o HTML tem 1-2 MB e não cabe
+               na tela — o que importa é qual página entrou e se veio inteira. -->
+          <div class="d-flex gap-2 flex-wrap mb-2 d-none" id="impEmailsCapsulas"></div>
+          <textarea class="form-control" id="impEmailsConteudo" rows="3"
+            placeholder="Clique aqui e cole a página (Ctrl+V)" spellcheck="false"></textarea>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-primary" id="btnConfirmarImportarEmails">
