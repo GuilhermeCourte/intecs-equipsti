@@ -6704,6 +6704,11 @@ let _modalEmail = null;
 let _modalImportarEmails = null;
 let _modalMembrosEmail = null;
 let _membrosAbertos = [];   // integrantes do grupo aberto no modal (base da busca)
+// Páginas do painel prontas para importar: { tipo, conteudo, tamanho, erro }.
+// O HTML fica aqui e não no DOM — cada página tem 1-2 MB.
+let _impEmailsPaginas = [];
+// Quais páginas já entraram nesta sessão do modal, para cobrar a que falta.
+let _impEmailsFeitas = new Set();
 // `oculto` do registro aberto no modal: quando o botão está travado (endereço
 // já fora do buscador por decisão do painel), é este valor que volta no salvar.
 let _emailOcultoOriginal = false;
@@ -6920,39 +6925,158 @@ function abrirMembrosEmail(id) {
   _modalMembrosEmail.show();
 }
 
+const PAINEL_LOCAWEB = 'https://painel-email.locaweb.com.br/domains/intecsbr.org';
+const IMP_PAGINAS = { GRUPOS: 'Grupos', CAIXAS: 'Caixas postais' };
+
+// Aba, não popup: o Ctrl+U de dentro de um popup abre o código-fonte numa aba
+// da janela principal (popup não recebe abas), e o fluxo pularia de janela no
+// meio. Sem o terceiro argumento o Chrome abre em aba, e o código-fonte nasce
+// ao lado. O nome mantém a reutilização: o segundo botão volta na mesma aba já
+// logada, sem passar pelo login e pelo captcha de novo.
+//
+// Abrir a página final basta — sem sessão, o painel redireciona para o CAS e
+// volta para cá depois.
+function abrirPainelLocaweb(pagina) {
+  window.open(PAINEL_LOCAWEB + '/' + pagina + '?per_page=200', 'painelLocaweb');
+}
+
+// Rótulo da cápsula, pelos mesmos marcos que o parser do servidor usa
+// (server/locaweb/parser.js). Quem decide de verdade continua sendo o servidor:
+// isto aqui só mostra o que foi colado antes de importar.
+function tipoDaPaginaLocaweb(html) {
+  if (html.includes('window.groups[')) return 'GRUPOS';
+  if (html.includes('check_for_action') && html.includes('Editar e-mail')) return 'CAIXAS';
+  return null;
+}
+
+function tamanhoLegivel(n) {
+  return n < 1024 * 1024 ? Math.round(n / 1024) + ' KB' : (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+// Colar a mesma página de novo substitui a anterior: vale a última cópia, e
+// duas cápsulas iguais só gerariam a mesma importação duas vezes.
+function adicionarPaginaImportar(conteudo) {
+  const texto = String(conteudo || '');
+  if (!trim(texto)) return;
+  const tipo = tipoDaPaginaLocaweb(texto);
+  const item = { tipo, conteudo: texto, tamanho: texto.length, erro: '' };
+  const i = tipo ? _impEmailsPaginas.findIndex((p) => p.tipo === tipo) : -1;
+  if (i >= 0) _impEmailsPaginas[i] = item; else _impEmailsPaginas.push(item);
+  // Conteúdo irreconhecível não é dado, é só o aviso de que a colagem não
+  // serviu: sai sozinho em 5s. O x continua ali para quem quiser antes disso.
+  if (!tipo) setTimeout(() => removerPaginaImportar(item), 5000);
+  renderCapsulasImportar();
+}
+
+// Remove pelo próprio objeto, não pelo índice: entre agendar e disparar, o x
+// ou a reabertura do modal já podem ter mexido na lista.
+function removerPaginaImportar(item) {
+  const i = _impEmailsPaginas.indexOf(item);
+  if (i < 0) return;
+  _impEmailsPaginas.splice(i, 1);
+  renderCapsulasImportar();
+}
+
+function renderCapsulasImportar() {
+  const cont = $('impEmailsCapsulas');
+  cont.classList.toggle('d-none', !_impEmailsPaginas.length);
+  cont.innerHTML = _impEmailsPaginas.map((p, i) => {
+    const problema = p.erro || !p.tipo;
+    // O erro do servidor pode ser longo: vai inteiro no title, cortado na cápsula.
+    return '<span class="capsula-pagina' + (problema ? ' erro' : '') + '"'
+      + (p.erro ? ' title="' + escapeHtml(p.erro) + '"' : '') + '>'
+      + '<i class="ph ' + (problema ? 'ph-warning' : 'ph-file-code') + '"></i>'
+      // Sem tipo não há o que informar além do aviso: o tamanho de uma colagem
+      // que não serve só ocuparia espaço.
+      + escapeHtml(p.tipo
+        ? IMP_PAGINAS[p.tipo] + ' · ' + (p.erro || tamanhoLegivel(p.tamanho))
+        : 'Não reconhecido')
+      + '<button type="button" class="btn-capsula-x" data-capsula="' + i + '" '
+      + 'aria-label="Remover"><i class="ph ph-x"></i></button></span>';
+  }).join('');
+  // Cápsula com erro continua importável: o botão só some quando não há
+  // nenhuma página reconhecida para enviar.
+  $('btnConfirmarImportarEmails').disabled = !_impEmailsPaginas.some((p) => p.tipo);
+}
+
+// Com uma das duas páginas já importada, o botão da que falta vira o destaque:
+// metade do catálogo é meia informação — nome e "Desativada" só vêm da página
+// de caixas, grupos e integrantes só vêm da de grupos.
+function destacarPaginaFaltando(falta) {
+  $('modalImportarEmails').querySelectorAll('[data-painel]').forEach((b) => {
+    const eh = (b.getAttribute('data-painel') === 'groups' ? 'GRUPOS' : 'CAIXAS') === falta;
+    b.classList.toggle('btn-primary', eh);
+    b.classList.toggle('btn-outline-secondary', !eh);
+  });
+}
+
 function abrirImportarEmails() {
   $('alertImportarEmails').innerHTML = '';
   $('impEmailsConteudo').value = '';
-  $('impEmailsArquivo').value = '';
-  $('impEmailsTamanho').textContent = '';
+  _impEmailsPaginas = [];
+  _impEmailsFeitas = new Set();
+  renderCapsulasImportar();
+  destacarPaginaFaltando(null);
   _modalImportarEmails = _modalImportarEmails || new bootstrap.Modal($('modalImportarEmails'));
   _modalImportarEmails.show();
 }
 
+// O resumo diz qual das duas páginas foi lida — é como a pessoa confere que
+// trouxe a que pretendia.
+function resumoImportacao(r) {
+  const oQue = r.pagina === 'CAIXAS'
+    ? 'Caixas postais: ' + r.caixas + ' caixas (' + r.comNome + ' com nome, ' + r.desativadas + ' desativadas)'
+    : 'Grupos: ' + r.grupos + ' grupos e ' + r.caixas + ' caixas';
+  return oQue + ' de ' + r.dominio + ' · ' + r.novos + ' novos, '
+    + r.atualizados + ' atualizados, ' + r.inativados + ' inativados.';
+}
+
 async function confirmarImportarEmails() {
-  const conteudo = $('impEmailsConteudo').value;
-  if (!trim(conteudo)) {
-    showAlert('alertImportarEmails', 'warning', 'Cole o conteúdo da página de grupos da Locaweb.');
+  const pendentes = _impEmailsPaginas.filter((p) => p.tipo);
+  if (!pendentes.length) {
+    showAlert('alertImportarEmails', 'warning',
+      'Cole a página de grupos ou a de caixas postais do painel.');
     return;
   }
+
   const restaurarBtn = btnSalvando($('btnConfirmarImportarEmails'), 'Importando...');
-  try {
-    const r = await api('POST', '/api/emails/importar', { conteudo });
-    _modalImportarEmails.hide();
-    await carregarEmails();
-    // O resumo diz qual das duas páginas foi lida — é como a pessoa confere
-    // que colou a que pretendia.
-    const oQue = r.pagina === 'CAIXAS'
-      ? 'Caixas postais: ' + r.caixas + ' caixas (' + r.comNome + ' com nome, ' + r.desativadas + ' desativadas)'
-      : 'Grupos: ' + r.grupos + ' grupos e ' + r.caixas + ' caixas';
-    showAlert('alertEmails', 'success',
-      oQue + ' de ' + r.dominio + ' · ' + r.novos + ' novos, '
-      + r.atualizados + ' atualizados, ' + r.inativados + ' inativados.');
-  } catch (err) {
-    showAlert('alertImportarEmails', 'danger', 'Erro: ' + err.message);
-  } finally {
-    restaurarBtn();
+  const resumos = [];
+  // Uma página de cada vez, e a falha de uma não derruba as outras: para o
+  // servidor cada página é uma importação independente.
+  for (const p of pendentes) {
+    p.erro = '';
+    try {
+      const r = await api('POST', '/api/emails/importar', { conteudo: p.conteudo });
+      _impEmailsFeitas.add(r.pagina);
+      resumos.push(resumoImportacao(r));
+      _impEmailsPaginas.splice(_impEmailsPaginas.indexOf(p), 1);
+    } catch (err) {
+      p.erro = err.message;
+    }
   }
+  renderCapsulasImportar();
+  restaurarBtn();
+  if (resumos.length) await carregarEmails();
+
+  // Só uma das duas importada ainda é serviço pela metade; com duas ou nenhuma,
+  // nenhum botão fica em destaque.
+  const falta = _impEmailsFeitas.size === 1
+    ? ['GRUPOS', 'CAIXAS'].find((t) => !_impEmailsFeitas.has(t))
+    : null;
+  destacarPaginaFaltando(falta);
+
+  // Fechar com cápsula sobrando esconderia o problema — o modal sai da frente
+  // só quando não restou nada para resolver.
+  if (!_impEmailsPaginas.length && !falta) {
+    _modalImportarEmails.hide();
+    showAlert('alertEmails', 'success', resumos.join(' '));
+    return;
+  }
+  const pendencia = _impEmailsPaginas.length
+    ? 'Nem tudo foi importado — o motivo está na cápsula.'
+    : 'Falta a página de ' + IMP_PAGINAS[falta].toLowerCase() + '.';
+  showAlert('alertImportarEmails', _impEmailsPaginas.length ? 'danger' : 'info',
+    [...resumos, pendencia].join(' '));
 }
 
 function configurarEmails() {
@@ -6975,24 +7099,28 @@ function configurarEmails() {
   $('formEmail').addEventListener('submit', salvarEmail);
   $('btnConfirmarImportarEmails').addEventListener('click', confirmarImportarEmails);
 
-  // O bookmarklet precisa continuar arrastável (href javascript:), então o
-  // clique dentro do modal não deve executá-lo — só explicar o que fazer.
-  $('bookmarkletEmails').addEventListener('click', (ev) => {
-    ev.preventDefault();
-    showAlert('alertImportarEmails', 'info',
-      'Arraste este botão para a barra de favoritos do navegador e clique nele quando estiver na página de grupos da Locaweb.');
+  $('modalImportarEmails').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-painel]');
+    if (btn) abrirPainelLocaweb(btn.getAttribute('data-painel'));
   });
 
-  $('impEmailsArquivo').addEventListener('change', async (ev) => {
-    const arquivo = ev.target.files && ev.target.files[0];
-    if (!arquivo) return;
-    $('impEmailsConteudo').value = await arquivo.text();
-    $('impEmailsTamanho').textContent = 'Arquivo carregado: ' + arquivo.name;
+  $('impEmailsCapsulas').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-capsula]');
+    if (!btn) return;
+    removerPaginaImportar(_impEmailsPaginas[Number(btn.getAttribute('data-capsula'))]);
   });
-  $('impEmailsConteudo').addEventListener('input', () => {
-    const n = $('impEmailsConteudo').value.length;
-    $('impEmailsTamanho').textContent = n ? n.toLocaleString('pt-BR') + ' caracteres colados' : '';
+
+  $('impEmailsConteudo').addEventListener('paste', (ev) => {
+    const texto = ev.clipboardData && ev.clipboardData.getData('text');
+    if (!trim(texto || '')) return;
+    // Deixar o textarea receber 1-2 MB de HTML trava a tela enquanto renderiza,
+    // e ninguém lê isso: o conteúdo fica em memória e vira cápsula.
+    ev.preventDefault();
+    adicionarPaginaImportar(texto);
   });
+  // O campo é só alvo de colagem — digitar ali não vira importação, então não
+  // deixa texto para trás fingindo que sim.
+  $('impEmailsConteudo').addEventListener('input', (ev) => { ev.target.value = ''; });
 
   $('emTbody').addEventListener('click', (ev) => {
     const tr = ev.target.closest('tr[data-email-id]');
