@@ -5554,7 +5554,7 @@ function configurarNovoChamado() {
       const [assuntos, unidades, pats] = await Promise.all([
         api('GET', '/api/chamados/assuntos'),
         api('GET', '/api/chamados/unidades'),
-        api('GET', '/api/pats')
+        api('GET', '/api/chamados/pats')
       ]);
 
       if (cAssunto) {
