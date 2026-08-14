@@ -2706,6 +2706,14 @@ app.get('/api/chamados/unidades', exigirAuth, (req, res) => {
   res.json(CHAMADO_UNIDADES);
 });
 
+// Todos os patrimônios cadastrados (não só os que já passaram por empréstimo) —
+// para o select de equipamento do "Novo Chamado" MSA.
+app.get('/api/chamados/pats', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
+  const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_registros
+    WHERE pat IS NOT NULL AND LTRIM(RTRIM(pat)) <> '' ORDER BY pat`);
+  res.json(r.recordset.map((row) => row.pat));
+}));
+
 app.get('/api/chamados/:chave', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const chave = trim(req.params.chave);
 
