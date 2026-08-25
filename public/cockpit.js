@@ -786,12 +786,16 @@ let _avisoLigado = true;
 
 const permissaoAviso = () => ('Notification' in window ? Notification.permission : 'denied');
 
+// Mesmos PNGs do push (public/icons/notif/), pra queda/volta virem coloridas
+// (vermelho/verde) no balão do Windows também, não só no ícone do app.
+const ICONE_AVISO = { caiu: 'icons/notif/conexao-off-192.png', voltou: 'icons/notif/conexao-on-192.png' };
+
 function avisar(evento, titulo, corpo) {
   if (!_avisoLigado || permissaoAviso() !== 'granted') return;
   try {
     new Notification(titulo, {
       body: corpo,
-      icon: 'icons/icon-192.png',
+      icon: ICONE_AVISO[evento] || 'icons/icon-192.png',
       // Uma tag por evento: a queda de agora substitui a de cinco minutos
       // atrás em vez de empilhar balão em cima de balão numa tela de parede.
       tag: 'cockpit-' + evento,
@@ -902,8 +906,8 @@ function detectarQuedas(unidades) {
     else if (u.status === 'UP' && anterior === 'DOWN') voltou.push(u.monitor || u.unidade);
   }
   // Queda tem prioridade: é o que exige ação.
-  if (caiu.length) alertar('caiu', caiu.length > 1 ? 'Unidades fora do ar' : 'Unidade fora do ar', caiu.join(', '));
-  else if (voltou.length) alertar('voltou', voltou.length > 1 ? 'Unidades de volta' : 'Unidade de volta', voltou.join(', '));
+  if (caiu.length) alertar('caiu', caiu.length > 1 ? 'Unidades Offline' : 'Unidade Offline', caiu.join(', '));
+  else if (voltou.length) alertar('voltou', voltou.length > 1 ? 'Unidades Online' : 'Unidade Online', voltou.join(', '));
 }
 
 // Um listener só para a tela inteira: cada linha diz para onde vai no

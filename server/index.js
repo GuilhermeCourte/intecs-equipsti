@@ -14,7 +14,7 @@ import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
 import { notificar, notificarTeste, notificarSolicitante, notificarEmailLote, emailValido } from './notificacoes.js';
-import { chavePublica, salvarSubscription, removerSubscription } from './push.js';
+import { chavePublica, salvarSubscription, removerSubscription, enviarPush } from './push.js';
 import { inscrever } from './realtime.js';
 import { registrarLog, listarLogs, MODULOS_LOG, NIVEIS_SEGURANCA } from './logs.js';
 import { emailParaEquipe, rotular } from './emailChamado.js';
@@ -1228,10 +1228,12 @@ app.delete('/api/senhas/:id', exigirAuth, exigirPermissao('aba_senhas'), wrap(as
 }));
 
 // ===================== CONEXÕES (UptimeRobot) =====================
-// Somente leitura do monitoramento: o painel da sub-aba "Conexão" casa cada
-// UNIDADE cadastrada em Opções com um monitor do UptimeRobot. Nenhum aviso é
-// enviado daqui — os alertas por e-mail continuam sendo do painel do próprio
-// UptimeRobot. Mesma permissão da aba Internet, onde o painel vive.
+// Painel de monitoramento é só leitura: o painel da sub-aba "Conexão" casa cada
+// UNIDADE cadastrada em Opções com um monitor do UptimeRobot. Nenhum e-mail ou
+// sininho sai daqui — os alertas por e-mail continuam sendo do painel do
+// próprio UptimeRobot. Mesma permissão da aba Internet, onde o painel vive.
+// A única exceção é o push de queda/volta (verificarQuedasInternet, mais
+// abaixo): TECNICO/MASTER pediram receber isso mesmo com o app fechado.
 
 // Unidades visíveis + o monitor vinculado a cada uma.
 // SEDE e MATRIZ ficam de fora: são escritórios, não lojas com link monitorado.
@@ -1262,6 +1264,67 @@ app.get('/api/conexoes', exigirAuth, exigirPermissao('aba_internet'), wrap(async
       return { unidade: u.valor, monitorId: m.id, monitor: m.nome, status: m.status, desde: m.desde };
     })
   });
+}));
+
+// Push de queda/volta das unidades — independe de alguém estar com o /cockpit
+// aberto (aquele é só som + notificação local do navegador, não chega com o
+// app fechado). Roda no processo, não por usuário logado, então o estado
+// anterior é uma variável do módulo: só DOWN alarma (INSTAVEL é "seems down",
+// ainda confirmando — mesma régua do cockpit) e só na transição, um push por
+// ciclo. Primeira execução após o boot só semeia a baseline, não é notícia.
+let _statusUnidadesPush = null; // Map<unidade, status> do ciclo anterior; null = ainda não rodou
+
+async function verificarQuedasInternet() {
+  const unidades = await unidadesComMonitor();
+  const monitores = await uptimeRobot.listarMonitores();
+  const porId = new Map(monitores.map((m) => [String(m.id), m]));
+  const atuais = unidades.map((u) => {
+    const m = u.monitorId == null ? null : porId.get(String(u.monitorId));
+    return { unidade: u.valor, monitor: m?.nome || null, status: m?.status || 'SEM_MONITOR' };
+  });
+
+  const antes = _statusUnidadesPush;
+  _statusUnidadesPush = new Map(atuais.map((u) => [u.unidade, u.status]));
+  if (!antes) return;
+
+  const caiu = [], voltou = [];
+  for (const u of atuais) {
+    const anterior = antes.get(u.unidade);
+    if (u.status === 'DOWN' && anterior !== 'DOWN') caiu.push(u.monitor || u.unidade);
+    else if (u.status === 'UP' && anterior === 'DOWN') voltou.push(u.monitor || u.unidade);
+  }
+  if (!caiu.length && !voltou.length) return;
+
+  const r = await query(`SELECT id FROM dbo.EQUIPSTI_usuarios WHERE ativo = 1 AND role IN ('TECNICO', 'MASTER')`);
+  const ids = r.recordset.map((u) => u.id);
+  if (!ids.length) return;
+
+  if (caiu.length) {
+    await enviarPush(ids, {
+      titulo: caiu.length > 1 ? 'Unidades Offline' : 'Unidade Offline',
+      corpo: caiu.join(', '),
+      tipo: 'CONEXAO_OFF'
+    });
+  } else {
+    await enviarPush(ids, {
+      titulo: voltou.length > 1 ? 'Unidades Online' : 'Unidade Online',
+      corpo: voltou.join(', '),
+      tipo: 'CONEXAO_ON'
+    });
+  }
+}
+
+// Testa como fica o push de queda/volta sem esperar uma unidade cair de
+// verdade — manda só pro próprio usuário (mesma régua do teste geral do
+// sininho em /api/notifications/test), com o mesmo título/ícone que sai na
+// operação real. 800ms entre os dois pra não colidir a tag do service worker
+// (que usa Date.now()) e sumir com a primeira notificação.
+app.post('/api/conexoes/testar-push', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  const uid = Number(req.user.sub);
+  const off = await enviarPush([uid], { titulo: 'Unidade Offline', corpo: 'Unidade Teste', tipo: 'CONEXAO_OFF' });
+  await new Promise((r) => setTimeout(r, 800));
+  const on = await enviarPush([uid], { titulo: 'Unidade Online', corpo: 'Unidade Teste', tipo: 'CONEXAO_ON' });
+  res.json({ ok: true, pushDispositivos: Math.max(off, on) });
 }));
 
 // Uptime de 30 dias das unidades já vinculadas (a lista de barrinhas embaixo
@@ -3964,3 +4027,9 @@ if (googleDrive.configurado()) {
   setTimeout(sincronizarDrive, 60_000);
   setInterval(sincronizarDrive, 6 * 60 * 60 * 1000);
 }
+
+// Push de conexão caída/de volta: mesmo intervalo do auto-refresh do /cockpit
+// (60s) e do cache de listarMonitores() em uptimerobot/service.js, então isto
+// não soma chamada nova à API do UptimeRobot na maioria dos ciclos.
+setInterval(() => verificarQuedasInternet()
+  .catch((e) => console.error('Conexões (push queda/volta):', e.message)), 60_000);

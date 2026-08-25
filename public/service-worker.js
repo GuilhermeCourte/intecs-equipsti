@@ -62,7 +62,9 @@ const ICONES_TIPO = {
   EMPRESTIMO: 'emprestimo',
   CHAMADO: 'chamado',
   CALENDARIO: 'calendario',
-  TESTE: 'teste'
+  TESTE: 'teste',
+  CONEXAO_ON: 'conexao-on',
+  CONEXAO_OFF: 'conexao-off'
 };
 
 // Push real (Web Push/VAPID) — chega mesmo com o app fechado. Payload é o
