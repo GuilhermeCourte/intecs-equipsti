@@ -8249,27 +8249,6 @@ function initNotificacoes() {
       }
     });
   }
-
-  // Testa só o push de unidade offline/online (aba Internet › Conexão), sem
-  // esperar uma queda de verdade — manda os dois, um logo após o outro, só
-  // pro próprio usuário.
-  const btnTestarConexao = $('btnTestarPushConexao');
-  if (btnTestarConexao) {
-    btnTestarConexao.addEventListener('click', async () => {
-      const restaurar = btnSalvando(btnTestarConexao, 'Testando...');
-      try {
-        const r = await api('POST', '/api/conexoes/testar-push', {});
-        showAlert('', r.pushDispositivos > 0 ? 'success' : 'warning',
-          r.pushDispositivos > 0
-            ? `Push enviado para ${r.pushDispositivos} dispositivo(s) — offline primeiro, online 0,8s depois.`
-            : 'Nenhum dispositivo inscrito neste usuário (clique em "Ativar notificações neste dispositivo" no sininho primeiro).');
-      } catch (err) {
-        showAlert('', 'danger', err.message);
-      } finally {
-        restaurar();
-      }
-    });
-  }
 }
 
 async function entrarNoApp(email, restaurarAba = false) {
