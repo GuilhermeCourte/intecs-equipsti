@@ -1301,14 +1301,14 @@ async function verificarQuedasInternet() {
 
   if (caiu.length) {
     await enviarPush(ids, {
-      titulo: caiu.length > 1 ? 'Unidades Offline' : 'Unidade Offline',
-      corpo: caiu.join(', '),
+      titulo: 'Offline',
+      corpo: (caiu.length > 1 ? 'Unidades ' : 'Unidade ') + caiu.join(', '),
       tipo: 'CONEXAO_OFF'
     });
   } else {
     await enviarPush(ids, {
-      titulo: voltou.length > 1 ? 'Unidades Online' : 'Unidade Online',
-      corpo: voltou.join(', '),
+      titulo: 'Online',
+      corpo: (voltou.length > 1 ? 'Unidades ' : 'Unidade ') + voltou.join(', '),
       tipo: 'CONEXAO_ON'
     });
   }
@@ -1321,9 +1321,9 @@ async function verificarQuedasInternet() {
 // (que usa Date.now()) e sumir com a primeira notificação.
 app.post('/api/conexoes/testar-push', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   const uid = Number(req.user.sub);
-  const off = await enviarPush([uid], { titulo: 'Unidade Offline', corpo: 'Unidade Teste', tipo: 'CONEXAO_OFF' });
+  const off = await enviarPush([uid], { titulo: 'Offline', corpo: 'Unidade Teste', tipo: 'CONEXAO_OFF' });
   await new Promise((r) => setTimeout(r, 800));
-  const on = await enviarPush([uid], { titulo: 'Unidade Online', corpo: 'Unidade Teste', tipo: 'CONEXAO_ON' });
+  const on = await enviarPush([uid], { titulo: 'Online', corpo: 'Unidade Teste', tipo: 'CONEXAO_ON' });
   res.json({ ok: true, pushDispositivos: Math.max(off, on) });
 }));
 
