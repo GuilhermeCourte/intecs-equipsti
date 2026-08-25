@@ -906,8 +906,8 @@ function detectarQuedas(unidades) {
     else if (u.status === 'UP' && anterior === 'DOWN') voltou.push(u.monitor || u.unidade);
   }
   // Queda tem prioridade: é o que exige ação.
-  if (caiu.length) alertar('caiu', caiu.length > 1 ? 'Unidades Offline' : 'Unidade Offline', caiu.join(', '));
-  else if (voltou.length) alertar('voltou', voltou.length > 1 ? 'Unidades Online' : 'Unidade Online', voltou.join(', '));
+  if (caiu.length) alertar('caiu', 'Offline', (caiu.length > 1 ? 'Unidades ' : 'Unidade ') + caiu.join(', '));
+  else if (voltou.length) alertar('voltou', 'Online', (voltou.length > 1 ? 'Unidades ' : 'Unidade ') + voltou.join(', '));
 }
 
 // Um listener só para a tela inteira: cada linha diz para onde vai no
