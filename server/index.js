@@ -2866,6 +2866,8 @@ app.post('/api/chamados/:chave/interacao', exigirAuth, exigirPermissao('aba_cham
   res.status(201).json(result.data);
 }));
 
+const EUROSA_CODUSUARIO = '12290';
+
 app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
   const codCatalogo   = trim(req.body.codCatalogo   || '');
   const assuntoText   = trim(req.body.assuntoText   || '');
