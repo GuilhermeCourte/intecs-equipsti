@@ -2922,7 +2922,7 @@ app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(asyn
       '12310': localTrabalho,
       '12311': endereco,
       '19024': unidade,
-      '20742': '0'
+      '20742': patChamado || '0'
     }
   };
 
