@@ -8657,7 +8657,7 @@ function atualizarStatusMsa() {
 
 async function carregarPatsBackup(selected) {
   try {
-    const pats = await api('GET', '/api/pats');
+    const pats = await api('GET', '/api/pats/emprestados');
     fillSelect('im_bkp_pat', Array.isArray(pats) ? pats : [], selected || '');
   } catch { fillSelect('im_bkp_pat', [], selected || ''); }
 }

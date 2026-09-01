@@ -1947,9 +1947,17 @@ app.post('/api/emails/importar', exigirAuth, exigirPermissao('aba_emails'), wrap
 }));
 
 // ===================== PATs (origem dos empréstimos) =====================
-// Só lista PATs que já passaram pela aba Empréstimos (EQUIPSTI_emprestimos).
-// Isso obriga o cadastro correto do empréstimo antes de usá-lo como backup no INTECS vs MSA.
+// Todos os PATs já cadastrados em Registros (usado no form de Novo Empréstimo).
 app.get('/api/pats', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
+  const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_registros
+    WHERE pat IS NOT NULL AND LTRIM(RTRIM(pat)) <> '' ORDER BY pat`);
+  res.json(r.recordset.map((row) => row.pat));
+}));
+
+// Só os PATs que já passaram pela aba Empréstimos (EQUIPSTI_emprestimos).
+// Usado no select de backup do INTECS vs MSA: obriga o cadastro correto do
+// empréstimo antes de usar o PAT como backup.
+app.get('/api/pats/emprestados', exigirAuth, exigirPermissao('aba_emprestimos'), wrap(async (req, res) => {
   const r = await query(`SELECT DISTINCT pat FROM dbo.EQUIPSTI_emprestimos
     WHERE pat IS NOT NULL AND LTRIM(RTRIM(pat)) <> '' ORDER BY pat`);
   res.json(r.recordset.map((row) => row.pat));
