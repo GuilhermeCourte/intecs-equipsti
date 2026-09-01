@@ -65,7 +65,11 @@ export async function enviarPush(usuarioIds, { titulo, corpo, url, tipo }) {
       try {
         await webPush.sendNotification(
           { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
-          payload
+          payload,
+          // urgency 'high' pede pro FCM entregar mesmo com o aparelho em Doze —
+          // sem isso, push de madrugada (ex.: unidade caindo às 00h53) pode ficar
+          // represado até o próximo momento de manutenção do Android.
+          { urgency: 'high' }
         );
       } catch (e) {
         if (e.statusCode === 404 || e.statusCode === 410) {

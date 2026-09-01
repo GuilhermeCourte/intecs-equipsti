@@ -1307,7 +1307,8 @@ async function verificarQuedasInternet() {
       corpo: (caiu.length > 1 ? 'Unidades ' : 'Unidade ') + caiu.join(', '),
       tipo: 'CONEXAO_OFF'
     });
-  } else {
+  }
+  if (voltou.length) {
     await enviarPush(ids, {
       titulo: 'Online',
       corpo: (voltou.length > 1 ? 'Unidades ' : 'Unidade ') + voltou.join(', '),

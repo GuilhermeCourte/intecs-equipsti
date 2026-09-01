@@ -1,6 +1,6 @@
 // Service Worker — estratégia network-first para conteúdo da própria origem
 // (mantém o app sempre atualizado) com fallback para cache quando offline.
-const CACHE = 'inv-cache-v15';
+const CACHE = 'inv-cache-v16';
 const SHELL = [
   './',
   './index.html',
@@ -9,7 +9,20 @@ const SHELL = [
   // O cockpit fica ligado numa tela o dia inteiro: precisa sobreviver a uma
   // queda de rede mostrando o último estado, e não a tela de offline.
   './cockpit.html',
-  './cockpit.js'
+  './cockpit.js',
+  // Ícones de push precisam estar no cache ANTES do push chegar: o navegador
+  // busca o ícone durante showNotification(), e um push que chega com o
+  // aparelho saindo do modo Doze (rede ainda instável) pode falhar essa busca
+  // e cair no avatar padrão (letra) em vez do ícone colorido do evento.
+  './icons/icon-192.png?v=4',
+  './icons/badge-96.png?v=2',
+  './icons/notif/registro-192.png?v=1',
+  './icons/notif/emprestimo-192.png?v=1',
+  './icons/notif/chamado-192.png?v=1',
+  './icons/notif/calendario-192.png?v=1',
+  './icons/notif/teste-192.png?v=1',
+  './icons/notif/conexao-on-192.png?v=1',
+  './icons/notif/conexao-off-192.png?v=1'
 ];
 
 self.addEventListener('install', (event) => {
