@@ -633,6 +633,10 @@
 
     /* ---------- Busca de tabela (lupa: filtra qualquer coluna) ---------- */
     .busca-tabela { width: 160px; max-width: 100%; flex-wrap: nowrap; }
+    /* input-group-sm deixa a fonte em 14px; abaixo de 16px o iOS dá zoom
+       automático ao focar, e com o pinch-zoom travado (touch-action acima)
+       não dá pra desfazer esse zoom até fechar e abrir o app de novo. */
+    .busca-tabela .form-control { font-size: 16px; }
     /* Sem o "x" nativo do input de busca — limpar é pelo funil ao lado */
     .busca-tabela input[type="search"]::-webkit-search-cancel-button,
     .busca-tabela input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
