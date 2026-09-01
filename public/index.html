@@ -1097,12 +1097,19 @@
     }
 
     /* Força o dropdown de PAT/NS no form de empréstimo a abrir sempre para baixo */
-    #pane-emprestimos .choices.is-flipped .choices__list--dropdown,
-    #pane-emprestimos .choices.is-flipped .choices__list[aria-expanded] {
+    /* #modalEmprestimo (não #pane-emprestimos): o modal fica fora da tab-pane no DOM */
+    #modalEmprestimo .choices.is-flipped .choices__list--dropdown,
+    #modalEmprestimo .choices.is-flipped .choices__list[aria-expanded] {
       top: 100% !important; bottom: auto !important;
     }
-    #pane-emprestimos .choices.is-flipped .choices__inner {
+    #modalEmprestimo .choices.is-flipped .choices__inner {
       border-radius: 10px !important;
+    }
+
+    /* Limita o dropdown de PAT no form de empréstimo a ~3 itens visíveis */
+    #modalEmprestimo .choices__list--dropdown .choices__list,
+    #modalEmprestimo .choices__list[aria-expanded] .choices__list {
+      max-height: 159px; overflow-y: auto;
     }
 
     /* "+ Adicionar nova opção..." não participa do filtro de busca */
