@@ -4233,7 +4233,7 @@ function configurarAuth() {
   $('btnSair').addEventListener('click', sairDoApp);
 
   // ---- Biometria (celular) ----
-  $('btnEntrarBio')?.addEventListener('click', entrarComBiometria);
+  $('btnEntrarBio')?.addEventListener('click', () => entrarComBiometria());
   $('btnAtivarBio')?.addEventListener('click', ativarBiometria);
 }
 
@@ -4261,13 +4261,15 @@ async function ehCelular() {
 function mostrarBioOpcao() { $('bioOpcao').classList.remove('hidden'); }
 function ocultarBioOpcao() { $('bioOpcao').classList.add('hidden'); }
 
-// Na abertura: se for celular e este aparelho já tem biometria, mostra a opção.
+// Na abertura: se for celular e este aparelho já tem biometria, mostra a opção
+// e já dispara o prompt de biometria sozinho, sem esperar o usuário clicar.
 // Precisa do credential_id real: a credencial é non-resident/discoverable
 // (authenticatorSelection.residentKey: 'discouraged'), então sem o ID exato
 // o navegador não acha o que autenticar e "Entrar com biometria" nunca funciona.
 async function prepararTelaLogin() {
   if (localStorage.getItem('biometria_cred_id') && await ehCelular()) {
     mostrarBioOpcao();
+    entrarComBiometria(true);
   }
 }
 
@@ -4337,7 +4339,11 @@ async function ativarBiometria() {
 }
 
 // Entra usando a biometria do aparelho.
-async function entrarComBiometria() {
+// automatico=true: chamada sozinha ao abrir o app (prepararTelaLogin), sem
+// clique do usuário. Nesse caso, cancelar/negar o prompt é esperado (o
+// usuário pode preferir digitar a senha) e não deve assustar com um alerta;
+// o formulário de e-mail/senha continua ali embaixo, intacto.
+async function entrarComBiometria(automatico = false) {
   const btn = $('btnEntrarBio');
   btn.disabled = true;
   try {
@@ -4350,21 +4356,19 @@ async function entrarComBiometria() {
     localStorage.setItem('biometria_email', data.email);
     await entrarNoApp(data.email, true);
   } catch (err) {
-    let msg;
-    if (err?.name === 'NotAllowedError') {
-      msg = 'Autenticação cancelada.';
-    } else if (err?.status === 404) {
+    if (err?.status === 404) {
       // Servidor não reconhece essa credencial: era uma credencial órfã
       // (ver ativarBiometria). Limpa os marcadores locais para não insistir
       // num botão que sempre vai falhar; o usuário precisa cadastrar de novo.
       localStorage.removeItem('biometria_cred_id');
       localStorage.removeItem('biometria_disponivel');
       ocultarBioOpcao();
-      msg = 'Essa biometria não está mais cadastrada aqui. Entre com e-mail e senha e ative a biometria de novo.';
-    } else {
-      msg = err.message || 'Falha na biometria. Use e-mail e senha.';
+      showAlert('alertAuth', 'danger', 'Essa biometria não está mais cadastrada aqui. Entre com e-mail e senha e ative a biometria de novo.');
+    } else if (!automatico) {
+      const msg = err?.name === 'NotAllowedError'
+        ? 'Autenticação cancelada.' : (err.message || 'Falha na biometria. Use e-mail e senha.');
+      showAlert('alertAuth', 'danger', msg);
     }
-    showAlert('alertAuth', 'danger', msg);
   } finally {
     btn.disabled = false;
   }
