@@ -394,7 +394,7 @@ app.post('/api/biometric/auth/verify', limitePorIp, wrap(async (req, res) => {
     { cid: S(credId) }
   );
   const cred = r.recordset[0];
-  if (!cred) return res.status(401).json({ error: 'Biometria não cadastrada neste sistema.' });
+  if (!cred) return res.status(404).json({ error: 'Biometria não cadastrada neste sistema.' });
   if (!cred.ativo) return res.status(403).json({ error: 'Usuário inativo. Contate o administrador.' });
 
   const { newCounter } = await verificarAutenticacao(flowId, response, cred);

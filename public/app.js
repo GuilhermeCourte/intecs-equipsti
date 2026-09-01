@@ -26,7 +26,11 @@ async function api(method, path, body) {
   }
   if (res.status === 401 && TOKEN) { sairDoApp(); throw new Error('Sessão expirada. Entre novamente.'); }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || ('Erro ' + res.status));
+  if (!res.ok) {
+    const err = new Error(data.error || ('Erro ' + res.status));
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -4294,12 +4298,27 @@ async function ativarBiometria() {
     showAlert('alertAuth', 'success', 'Biometria ativada! Use-a no próximo acesso.');
   } catch (err) {
     if (err?.name === 'InvalidStateError') {
-      // Este aparelho (ou o provedor de senhas dele, ex. Google) já tem a
-      // credencial cadastrada; não temos o credential_id, mas já podemos
-      // parar de convidar e liberar o botão "Entrar com biometria".
-      localStorage.setItem('biometria_disponivel', '1');
-      localStorage.setItem('biometria_email', window._bioEmail || '');
-      showAlert('alertBiometria', 'success', 'Este aparelho já tem biometria cadastrada. Use "Entrar com biometria" da próxima vez.');
+      // O aparelho recusa criar outra credencial porque já guarda uma para
+      // este site — mas isso pode ser (a) a credencial que está salva no
+      // nosso banco (login por biometria vai funcionar), ou (b) uma
+      // credencial órfã de um cadastro anterior que nunca chegou a ser
+      // gravado no servidor (login vai dar "não cadastrada"). Só sabemos
+      // qual é consultando o servidor.
+      let jaRegistradoNoServidor = false;
+      try {
+        const status = await api('GET', '/api/biometric/status');
+        jaRegistradoNoServidor = !!status.registrado;
+      } catch { /* sem confirmação do servidor, trata como órfã (caminho mais seguro) */ }
+
+      if (jaRegistradoNoServidor) {
+        localStorage.setItem('biometria_disponivel', '1');
+        localStorage.setItem('biometria_email', window._bioEmail || '');
+        showAlert('alertBiometria', 'success', 'Este aparelho já tem biometria cadastrada. Use "Entrar com biometria" da próxima vez.');
+      } else {
+        showAlert('alertBiometria', 'danger',
+          'Este aparelho já tem uma biometria salva para este site de uma tentativa anterior que não foi concluída. ' +
+          'Remova-a em Gerenciador de senhas/Passkeys do celular (Chrome ou Conta Google) e tente cadastrar de novo.');
+      }
     } else {
       const msg = err?.name === 'NotAllowedError'
         ? 'Cadastro cancelado.' : (err.message || 'Não foi possível ativar a biometria.');
@@ -4324,8 +4343,20 @@ async function entrarComBiometria() {
     localStorage.setItem('biometria_email', data.email);
     await entrarNoApp(data.email, true);
   } catch (err) {
-    const msg = err?.name === 'NotAllowedError'
-      ? 'Autenticação cancelada.' : (err.message || 'Falha na biometria. Use e-mail e senha.');
+    let msg;
+    if (err?.name === 'NotAllowedError') {
+      msg = 'Autenticação cancelada.';
+    } else if (err?.status === 404) {
+      // Servidor não reconhece essa credencial: era uma credencial órfã
+      // (ver ativarBiometria). Limpa os marcadores locais para não insistir
+      // num botão que sempre vai falhar; o usuário precisa cadastrar de novo.
+      localStorage.removeItem('biometria_cred_id');
+      localStorage.removeItem('biometria_disponivel');
+      ocultarBioOpcao();
+      msg = 'Essa biometria não está mais cadastrada aqui. Entre com e-mail e senha e ative a biometria de novo.';
+    } else {
+      msg = err.message || 'Falha na biometria. Use e-mail e senha.';
+    }
     showAlert('alertAuth', 'danger', msg);
   } finally {
     btn.disabled = false;
