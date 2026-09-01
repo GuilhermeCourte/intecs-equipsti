@@ -9,14 +9,21 @@ const API = '';
 let TOKEN = localStorage.getItem('token') || '';
 
 async function api(method, path, body) {
-  const res = await fetch(API + path, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {})
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {})
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch {
+    const err = new Error('Sem conexão com o servidor. Verifique sua internet e tente novamente.');
+    err.isNetworkError = true;
+    throw err;
+  }
   if (res.status === 401 && TOKEN) { sairDoApp(); throw new Error('Sessão expirada. Entre novamente.'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || ('Erro ' + res.status));
@@ -4252,7 +4259,7 @@ function ocultarBioOpcao() { $('bioOpcao').classList.add('hidden'); }
 
 // Na abertura: se for celular e este aparelho já tem biometria, mostra a opção.
 async function prepararTelaLogin() {
-  if (localStorage.getItem('biometria_cred_id') && await ehCelular()) {
+  if ((localStorage.getItem('biometria_cred_id') || localStorage.getItem('biometria_disponivel')) && await ehCelular()) {
     mostrarBioOpcao();
   }
 }
@@ -4264,7 +4271,9 @@ async function talvezConvidarBiometria(email) {
     // Vinculamos a biometria a ESTE aparelho (credencial guardada localmente).
     // Sem o marcador local, oferecemos o cadastro mesmo que o servidor tenha
     // uma credencial antiga (ex.: sincronizada no Google) de outro fluxo.
-    if (localStorage.getItem('biometria_cred_id')) return;
+    // 'biometria_disponivel' cobre o caso em que o cadastro falhou com
+    // InvalidStateError (autenticador já registrado) e não temos o credential_id.
+    if (localStorage.getItem('biometria_cred_id') || localStorage.getItem('biometria_disponivel')) return;
     window._bioEmail = email;
     bootstrap.Modal.getOrCreateInstance($('modalBiometria')).show();
   } catch { /* silencioso */ }
@@ -4284,9 +4293,18 @@ async function ativarBiometria() {
     bootstrap.Modal.getOrCreateInstance($('modalBiometria')).hide();
     showAlert('alertAuth', 'success', 'Biometria ativada! Use-a no próximo acesso.');
   } catch (err) {
-    const msg = err?.name === 'NotAllowedError'
-      ? 'Cadastro cancelado.' : (err.message || 'Não foi possível ativar a biometria.');
-    showAlert('alertBiometria', 'danger', msg);
+    if (err?.name === 'InvalidStateError') {
+      // Este aparelho (ou o provedor de senhas dele, ex. Google) já tem a
+      // credencial cadastrada; não temos o credential_id, mas já podemos
+      // parar de convidar e liberar o botão "Entrar com biometria".
+      localStorage.setItem('biometria_disponivel', '1');
+      localStorage.setItem('biometria_email', window._bioEmail || '');
+      showAlert('alertBiometria', 'success', 'Este aparelho já tem biometria cadastrada. Use "Entrar com biometria" da próxima vez.');
+    } else {
+      const msg = err?.name === 'NotAllowedError'
+        ? 'Cadastro cancelado.' : (err.message || 'Não foi possível ativar a biometria.');
+      showAlert('alertBiometria', 'danger', msg);
+    }
   } finally {
     btn.disabled = false;
   }
@@ -9256,14 +9274,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Sessão persistida: valida o token salvo.
+  // Em celular, uma falha de rede (comum ao abrir o app com conexão instável) não
+  // pode ser tratada como sessão inválida — senão o token válido é descartado à toa.
   if (TOKEN) {
-    try {
-      const me = await api('GET', '/api/auth/me');
-      await entrarNoApp(me.email, true);
-    } catch {
-      sairDoApp();
-      prepararTelaLogin();
+    let me;
+    for (let tentativa = 1; tentativa <= 3 && !me; tentativa++) {
+      try {
+        me = await api('GET', '/api/auth/me');
+      } catch (err) {
+        if (!err.isNetworkError || tentativa === 3) {
+          if (!err.isNetworkError) sairDoApp();
+          prepararTelaLogin();
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 1200));
+      }
     }
+    if (me) await entrarNoApp(me.email, true);
   } else {
     prepararTelaLogin();
   }
