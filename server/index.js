@@ -333,10 +333,12 @@ const credsDoUsuario = async (usuarioId) => {
   return r.recordset;
 };
 
-// Há biometria cadastrada para o usuário logado?
+// Há biometria cadastrada para o usuário logado? Devolve os credential_id
+// (não é segredo — já circula nas respostas do próprio login biométrico)
+// para o cliente conseguir apontar o aparelho certo sem repetir o cadastro.
 app.get('/api/biometric/status', exigirAuth, wrap(async (req, res) => {
   const creds = await credsDoUsuario(Number(req.user.sub));
-  res.json({ registrado: creds.length > 0 });
+  res.json({ registrado: creds.length > 0, credenciais: creds.map((c) => c.credential_id) });
 }));
 
 // Inicia o cadastro: gera as opções de registro.

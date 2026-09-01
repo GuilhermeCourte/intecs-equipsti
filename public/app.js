@@ -4262,8 +4262,11 @@ function mostrarBioOpcao() { $('bioOpcao').classList.remove('hidden'); }
 function ocultarBioOpcao() { $('bioOpcao').classList.add('hidden'); }
 
 // Na abertura: se for celular e este aparelho já tem biometria, mostra a opção.
+// Precisa do credential_id real: a credencial é non-resident/discoverable
+// (authenticatorSelection.residentKey: 'discouraged'), então sem o ID exato
+// o navegador não acha o que autenticar e "Entrar com biometria" nunca funciona.
 async function prepararTelaLogin() {
-  if ((localStorage.getItem('biometria_cred_id') || localStorage.getItem('biometria_disponivel')) && await ehCelular()) {
+  if (localStorage.getItem('biometria_cred_id') && await ehCelular()) {
     mostrarBioOpcao();
   }
 }
@@ -4275,9 +4278,7 @@ async function talvezConvidarBiometria(email) {
     // Vinculamos a biometria a ESTE aparelho (credencial guardada localmente).
     // Sem o marcador local, oferecemos o cadastro mesmo que o servidor tenha
     // uma credencial antiga (ex.: sincronizada no Google) de outro fluxo.
-    // 'biometria_disponivel' cobre o caso em que o cadastro falhou com
-    // InvalidStateError (autenticador já registrado) e não temos o credential_id.
-    if (localStorage.getItem('biometria_cred_id') || localStorage.getItem('biometria_disponivel')) return;
+    if (localStorage.getItem('biometria_cred_id')) return;
     window._bioEmail = email;
     bootstrap.Modal.getOrCreateInstance($('modalBiometria')).show();
   } catch { /* silencioso */ }
@@ -4300,20 +4301,26 @@ async function ativarBiometria() {
     if (err?.name === 'InvalidStateError') {
       // O aparelho recusa criar outra credencial porque já guarda uma para
       // este site — mas isso pode ser (a) a credencial que está salva no
-      // nosso banco (login por biometria vai funcionar), ou (b) uma
+      // nosso banco (login por biometria vai funcionar, se soubermos o
+      // credential_id exato — a credencial não é discoverable), ou (b) uma
       // credencial órfã de um cadastro anterior que nunca chegou a ser
       // gravado no servidor (login vai dar "não cadastrada"). Só sabemos
       // qual é consultando o servidor.
-      let jaRegistradoNoServidor = false;
+      let credenciais = [];
       try {
         const status = await api('GET', '/api/biometric/status');
-        jaRegistradoNoServidor = !!status.registrado;
+        credenciais = status.credenciais || [];
       } catch { /* sem confirmação do servidor, trata como órfã (caminho mais seguro) */ }
 
-      if (jaRegistradoNoServidor) {
-        localStorage.setItem('biometria_disponivel', '1');
+      if (credenciais.length === 1) {
         localStorage.setItem('biometria_email', window._bioEmail || '');
+        localStorage.setItem('biometria_cred_id', credenciais[0]);
         showAlert('alertBiometria', 'success', 'Este aparelho já tem biometria cadastrada. Use "Entrar com biometria" da próxima vez.');
+      } else if (credenciais.length > 1) {
+        // Não dá pra saber qual das credenciais da conta é a deste aparelho.
+        showAlert('alertBiometria', 'danger',
+          'Esta conta já tem mais de uma biometria cadastrada e não é possível saber qual é a deste aparelho. ' +
+          'Remova todas em Gerenciador de senhas/Passkeys do celular e cadastre de novo.');
       } else {
         showAlert('alertBiometria', 'danger',
           'Este aparelho já tem uma biometria salva para este site de uma tentativa anterior que não foi concluída. ' +
