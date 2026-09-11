@@ -265,12 +265,22 @@ export async function notificar({ tipo, acao, titulo, mensagem, link, refId, ato
   }
 }
 
+// Deixa links clicáveis num texto já escapado para HTML (a observação do
+// evento pode trazer uma URL — sem isto ela chega como texto puro no e-mail).
+const LINK_RE = /(https?:\/\/[^\s<]+)/g;
+function linkify(escapedHtml) {
+  return escapedHtml.replace(LINK_RE, (url) => {
+    const [, href, fechamento] = url.match(/^(.*?)([.,;:!?)\]]*)$/);
+    return `<a href="${href}" style="color:#2b6cb0;text-decoration:underline;">${href}</a>${fechamento}`;
+  });
+}
+
 // Bloco visual de um item dentro do e-mail em lote (título + mensagem).
 function renderBlocosHtml(blocos) {
   return blocos.map((b, i) => `
     <div style="padding:12px 0;${i < blocos.length - 1 ? 'border-bottom:1px solid #f0f0f0;' : ''}">
       <div style="font-size:15px;font-weight:700;color:#2b2b2b;margin-bottom:4px;">${esc(b.titulo)}</div>
-      <div style="font-size:14px;line-height:1.5;color:#3a3a3a;white-space:pre-line;">${esc(b.mensagem)}</div>
+      <div style="font-size:14px;line-height:1.5;color:#3a3a3a;white-space:pre-line;">${linkify(esc(b.mensagem))}</div>
     </div>`).join('');
 }
 
