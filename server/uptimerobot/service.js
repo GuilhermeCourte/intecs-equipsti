@@ -38,13 +38,13 @@ function normalizar(m) {
   };
 }
 
-// Cache leve em memória: o painel auto-atualiza a cada 60s e pode estar
+// Cache leve em memória: o painel auto-atualiza a cada 20s e pode estar
 // aberto em várias telas ao mesmo tempo, mas o plano free da API só
 // permite 10 req/min. Mesmo padrão de listarScriptsFavoritos().
 let _cache = { ts: 0, data: null };
 
 export async function listarMonitores() {
-  if (_cache.data && Date.now() - _cache.ts < 60_000) return _cache.data;
+  if (_cache.data && Date.now() - _cache.ts < 20_000) return _cache.data;
   const monitores = (await client.getMonitors())
     .map(normalizar)
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
