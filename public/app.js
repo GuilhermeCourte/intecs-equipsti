@@ -1228,12 +1228,13 @@ async function salvarVinculo() {
   }
 }
 
-// Auto-refresh de 60s enquanto a sub-aba Conexão estiver aberta. Para quando
-// sai da sub-aba/aba e pula o ciclo com a janela em segundo plano — o plano
-// free do UptimeRobot só permite 10 req/min.
+// Auto-refresh de 20s enquanto a sub-aba Conexão estiver aberta (mesmo TTL do
+// cache de listarMonitores() no servidor). Para quando sai da sub-aba/aba e
+// pula o ciclo com a janela em segundo plano — o plano free do UptimeRobot só
+// permite 10 req/min.
 function iniciarAutoRefreshConexoes() {
   pararAutoRefreshConexoes();
-  _cxTimer = setInterval(() => { if (!document.hidden) carregarConexoes(); }, 60000);
+  _cxTimer = setInterval(() => { if (!document.hidden) carregarConexoes(); }, 20000);
 }
 
 function pararAutoRefreshConexoes() {

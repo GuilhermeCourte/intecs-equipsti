@@ -4041,8 +4041,8 @@ if (googleDrive.configurado()) {
   setInterval(sincronizarDrive, 6 * 60 * 60 * 1000);
 }
 
-// Push de conexão caída/de volta: mesmo intervalo do auto-refresh do /cockpit
-// (60s) e do cache de listarMonitores() em uptimerobot/service.js, então isto
-// não soma chamada nova à API do UptimeRobot na maioria dos ciclos.
+// Push de conexão caída/de volta: mesmo intervalo do cache de
+// listarMonitores() em uptimerobot/service.js (20s), então isto não soma
+// chamada nova à API do UptimeRobot na maioria dos ciclos.
 setInterval(() => verificarQuedasInternet()
-  .catch((e) => console.error('Conexões (push queda/volta):', e.message)), 60_000);
+  .catch((e) => console.error('Conexões (push queda/volta):', e.message)), 20_000);
