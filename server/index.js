@@ -1403,6 +1403,105 @@ app.put('/api/conexoes/vinculo', exigirAuth, exigirPermissao('aba_internet'), wr
   res.json({ ok: true });
 }));
 
+// ===================== SERVIÇOS (Downdetector) =====================
+// Catálogo de serviços que a operação acompanha no Downdetector. Alimenta a
+// sub-aba Internet › Serviços e a tela pública /status.
+//
+// O servidor NUNCA consulta o Downdetector: o site responde 403
+// (cf-mitigated: challenge) a qualquer cliente que não seja um navegador — em
+// todas as rotas, inclusive robots.txt e o RSS —, e o acesso programático
+// deles é plano Enterprise. Quem abre o link é o navegador de quem lê a tela,
+// e é lá que o status aparece. Daí não haver coleta, job nem coluna de estado.
+//
+// A rota de LEITURA é aberta (sem exigirAuth): são só nomes e links públicos,
+// e a /status precisa abrir sem login. Fechado é o cadastro, na mesma
+// permissão da aba Internet.
+
+// Cota folgada: é leitura de tabela, mas a rota é aberta.
+const limiteStatusPublico = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Muitas requisições. Aguarde um instante.' }
+});
+
+const DOWNDETECTOR_BASE = 'https://downdetector.com.br/fora-do-ar/';
+
+// "Banco do Brasil" → "banco-do-brasil". Palpite de slug para preencher o
+// campo; quem confirma é a pessoa, abrindo o link — não temos como validar
+// isso do servidor.
+function sugerirSlug(nome) {
+  return String(nome || '').trim().toLowerCase()
+    .normalize('NFD').replace(/\p{M}/gu, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Aceita o slug puro ou a URL inteira colada do Downdetector.
+function lerSlug(valor) {
+  const cru = trim(valor);
+  if (!cru) return '';
+  const daUrl = cru.match(/downdetector\.[^/]+\/(?:fora-do-ar|status)\/([^/?#]+)/i);
+  return daUrl ? daUrl[1] : sugerirSlug(cru);
+}
+
+app.get('/api/status/servicos', limiteStatusPublico, wrap(async (req, res) => {
+  const r = await query(`SELECT id, nome, downdetector_slug AS slug
+    FROM dbo.EQUIPSTI_servicos_externos ORDER BY nome`);
+  res.json({
+    servicos: r.recordset.map((s) => ({
+      id: s.id,
+      nome: s.nome,
+      slug: s.slug,
+      downdetectorUrl: DOWNDETECTOR_BASE + s.slug + '/'
+    }))
+  });
+}));
+
+app.post('/api/servicos-externos', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  const nome = trim(req.body.nome);
+  // Sem slug informado, deriva do nome — que é o caso comum ("Cielo" → "cielo").
+  const slug = lerSlug(req.body.downdetectorSlug) || sugerirSlug(nome);
+  if (!nome) return res.status(400).json({ error: 'Informe o nome do serviço.' });
+  if (!slug) return res.status(400).json({ error: 'Informe o endereço no Downdetector.' });
+
+  const jaTem = (await query(
+    'SELECT id FROM dbo.EQUIPSTI_servicos_externos WHERE nome = @nome', { nome: S(nome) })).recordset[0];
+  if (jaTem) return res.status(409).json({ error: 'Já existe um serviço com esse nome.' });
+
+  const ins = await query(`INSERT INTO dbo.EQUIPSTI_servicos_externos
+    (nome, downdetector_slug, criado_por, atualizado_por)
+    OUTPUT INSERTED.id
+    VALUES (@nome, @slug, @criadoPor, @criadoPor)`,
+    { nome: S(nome), slug: S(slug), criadoPor: S(req.user.email) });
+
+  await registrarLog({
+    modulo: 'SERVICOS', entidadeId: String(ins.recordset[0].id), entidadeRotulo: nome,
+    acao: 'CRIADO', valorNovo: DOWNDETECTOR_BASE + slug + '/',
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.status(201).json({ ok: true });
+}));
+
+app.delete('/api/servicos-externos/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Serviço inválido.' });
+
+  const prev = (await query(
+    'SELECT nome, downdetector_slug AS slug FROM dbo.EQUIPSTI_servicos_externos WHERE id = @id',
+    { id: { type: sql.Int, value: id } })).recordset[0];
+  if (!prev) return res.status(404).json({ error: 'Serviço não encontrado.' });
+
+  await query('DELETE FROM dbo.EQUIPSTI_servicos_externos WHERE id = @id',
+    { id: { type: sql.Int, value: id } });
+  await registrarLog({
+    modulo: 'SERVICOS', entidadeId: String(id), entidadeRotulo: prev.nome,
+    acao: 'EXCLUIDO', valorAnterior: DOWNDETECTOR_BASE + prev.slug + '/',
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.json({ ok: true });
+}));
+
 // ===================== VPS (Hostinger, só leitura) =====================
 app.get('/api/vps', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
   try {
@@ -3962,6 +4061,9 @@ app.get('/chamados', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'chamados.
 // Painel de parede: tela cheia, sem interação, aberto em aba própria pelo
 // dashboard. Sem gate aqui — os blocos herdam a permissão de cada endpoint.
 app.get('/cockpit', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cockpit.html')));
+// Status dos serviços externos: aberta de propósito, para qualquer um da
+// operação consultar sem login. Só leitura — o cadastro fica na aba Internet.
+app.get('/status', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'status.html')));
 // Buscador do catálogo de e-mails: como /chamados, a rota é aberta e quem
 // exige login é o conteúdo (GET /api/emails).
 app.get('/emails', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'emails.html')));
@@ -4046,3 +4148,4 @@ if (googleDrive.configurado()) {
 // chamada nova à API do UptimeRobot na maioria dos ciclos.
 setInterval(() => verificarQuedasInternet()
   .catch((e) => console.error('Conexões (push queda/volta):', e.message)), 20_000);
+

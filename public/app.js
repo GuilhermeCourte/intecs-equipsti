@@ -1258,6 +1258,159 @@ function configurarConexoes() {
 }
 
 // ============================================================
+//  Serviços (Internet › Serviços)
+//
+//  Catálogo dos serviços que a operação acompanha no Downdetector.
+//  Cada card é um atalho: quem abre o link é o navegador de quem está
+//  lendo, e é lá que o status aparece. O servidor não consulta o
+//  Downdetector — o site responde 403 a qualquer cliente que não seja
+//  navegador (ver o comentário da seção em server/index.js).
+//
+//  A tela pública /status desenha o mesmo card; o gêmeo mora em
+//  public/status.js e precisa andar junto (o projeto não compartilha
+//  JS entre as páginas).
+// ============================================================
+let modalServico = null;
+let SERVICOS = [];
+
+async function carregarServicos() {
+  const grid = $('gridServicos');
+  try {
+    const r = await api('GET', '/api/status/servicos');
+    SERVICOS = r.servicos || [];
+    renderServicos();
+  } catch (err) {
+    grid.innerHTML = '<div class="text-danger">Erro: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function cardServico(s) {
+  return '<div class="sv-card" data-id="' + s.id + '">' +
+    '<button type="button" class="btn btn-link btn-sm text-muted p-1 btn-excluir-servico" title="Remover serviço">' +
+      '<i class="ph ph-trash"></i></button>' +
+    '<a class="sv-abrir" href="' + escapeHtml(s.downdetectorUrl) + '" target="_blank" rel="noopener">' +
+      '<span class="sv-nome">' + escapeHtml(s.nome) + '</span>' +
+      '<span class="sv-slug">' + escapeHtml(s.slug) + '</span>' +
+      '<span class="sv-cta"><i class="ph ph-arrow-square-out"></i> Ver no Downdetector</span>' +
+    '</a></div>';
+}
+
+function renderServicos() {
+  const grid = $('gridServicos');
+  if (!SERVICOS.length) {
+    grid.innerHTML = '<div class="text-muted">Nenhum serviço cadastrado. Use o botão Novo.</div>';
+    return;
+  }
+  const termo = buscaNorm($('servicosBusca').value.trim());
+  const lista = SERVICOS.filter((s) => !termo ||
+    buscaNorm((s.nome || '') + ' ' + (s.slug || '')).includes(termo));
+  grid.innerHTML = lista.length
+    ? lista.map(cardServico).join('')
+    : '<div class="text-muted">Nenhum serviço encontrado.</div>';
+}
+
+// ---------- Cadastro ----------
+
+// Aviso embutido no corpo do modal. Não dá para usar showAlert() aqui: ele é
+// um modal de mensagem, e abrir modal por cima do formulário tapa o botão
+// Salvar. showAlert continua valendo para o erro de salvar, que é terminal.
+function avisoServico(tipo, msg) {
+  $('alertServicoModal').innerHTML = msg
+    ? '<div class="alert alert-' + tipo + ' py-2 px-3 mb-3">' + escapeHtml(msg) + '</div>'
+    : '';
+}
+
+function slugDeServico(bruto) {
+  const daUrl = String(bruto).match(/downdetector\.[^/]+\/(?:fora-do-ar|status)\/([^/?#]+)/i);
+  return daUrl ? daUrl[1]
+    : buscaNorm(bruto).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function abrirServico() {
+  const form = $('formServico');
+  form.reset();
+  form.classList.remove('was-validated');
+  delete $('sv_slug').dataset.tocado;
+  avisoServico('', '');
+  modalServico.show();
+}
+
+// Sugere o endereço enquanto a pessoa digita o nome, mas para de mexer assim
+// que ela editar o campo à mão.
+function sugerirSlugServico() {
+  if ($('sv_slug').dataset.tocado === '1') return;
+  $('sv_slug').value = slugDeServico($('sv_nome').value.trim());
+}
+
+// O endereço não tem como ser validado pelo servidor (403 de Cloudflare), então
+// a conferência é visual: abre lá e a pessoa olha se caiu na empresa certa.
+function abrirNoDowndetector() {
+  const bruto = $('sv_slug').value.trim() || $('sv_nome').value.trim();
+  if (!bruto) { avisoServico('warning', 'Informe o nome ou o endereço.'); return; }
+  const slug = slugDeServico(bruto);
+  $('sv_slug').value = slug;
+  $('sv_slug').dataset.tocado = '1';
+  avisoServico('info', 'Abri numa aba nova. Se não for a empresa certa, ajuste o endereço.');
+  window.open('https://downdetector.com.br/fora-do-ar/' + slug + '/', '_blank', 'noopener');
+}
+
+async function salvarServico() {
+  const form = $('formServico');
+  if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+  const restaurar = btnSalvando($('btnSalvarServico'));
+  try {
+    await api('POST', '/api/servicos-externos', {
+      nome: $('sv_nome').value.trim(),
+      downdetectorSlug: $('sv_slug').value.trim() || null
+    });
+    modalServico.hide();
+    await carregarServicos();
+    showAlert('alertServicos', 'success', 'Serviço adicionado.');
+  } catch (err) {
+    avisoServico('danger', 'Erro: ' + err.message);
+  } finally { restaurar(); }
+}
+
+async function excluirServico(id) {
+  const s = SERVICOS.find((x) => String(x.id) === String(id));
+  if (!await uiConfirm('Remover "' + (s ? s.nome : id) + '" do painel?')) return;
+  try {
+    await api('DELETE', '/api/servicos-externos/' + id);
+    await carregarServicos();
+    showAlert('alertServicos', 'success', 'Serviço removido.');
+  } catch (err) {
+    showAlert('alertServicos', 'danger', 'Erro: ' + err.message);
+  }
+}
+
+function configurarServicos() {
+  modalServico = new bootstrap.Modal($('modalServico'));
+  $('btnNovoServico').addEventListener('click', abrirServico);
+  $('btnSalvarServico').addEventListener('click', salvarServico);
+  $('btnAbrirDowndetector').addEventListener('click', abrirNoDowndetector);
+  $('sv_nome').addEventListener('input', sugerirSlugServico);
+  $('sv_slug').addEventListener('input', () => { $('sv_slug').dataset.tocado = '1'; });
+
+  $('servicosBusca').addEventListener('input', renderServicos);
+  $('btnLimparFiltrosServicos').addEventListener('click', () => {
+    $('servicosBusca').value = '';
+    renderServicos();
+  });
+  $('btnAtualizarServicos').addEventListener('click', carregarServicos);
+
+  $('gridServicos').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-excluir-servico');
+    if (btn) excluirServico(btn.closest('.sv-card').dataset.id);
+  });
+
+  // Sem auto-refresh: a lista só muda quando alguém cadastra ou remove.
+  $('sub-tab-servicos').addEventListener('shown.bs.tab', () => {
+    trocarDescInternet('internetDescServicos');
+    carregarServicos();
+  });
+}
+
+// ============================================================
 //  VPS (monitoramento só leitura da Hostinger)
 // ============================================================
 const VPS_ESTADO_BADGE = { ok: 'badge-ativo', erro: 'badge-inativo', transicao: 'badge-emprestado' };
@@ -8458,7 +8611,7 @@ function trocarDescChamados(idAtivo) {
 }
 
 function trocarDescInternet(idAtivo) {
-  ['internetDescConexao', 'internetDescProvedores'].forEach((id) => {
+  ['internetDescConexao', 'internetDescProvedores', 'internetDescServicos'].forEach((id) => {
     $(id).classList.toggle('d-none', id !== idAtivo);
   });
 }
@@ -9008,6 +9161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarConexaoRemota();
   configurarEmails();
   configurarConexoes();
+  configurarServicos();
   configurarUtils();
   configurarVps();
   configurarMenuMobile();
@@ -9135,12 +9289,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   new IntersectionObserver((e) => { if (e[0].isIntersecting) loadLogsModulo(false); },
     { root: $('lmScroll'), threshold: 0.1 }).observe($('lmSentinel'));
 
-  // Aba Internet: sub-aba padrão é Conexão; Provedores carrega ao abrir a sua.
+  // Aba Internet: sub-aba padrão é Conexão; as outras carregam ao abrir a sua.
   // (o shown.bs.tab da sub-aba não dispara quando ela já está ativa)
   $('tab-internet').addEventListener('shown.bs.tab', () => {
     if ($('sub-tab-provedores').classList.contains('active')) {
       trocarDescInternet('internetDescProvedores');
       carregarInternet();
+    } else if ($('sub-tab-servicos').classList.contains('active')) {
+      trocarDescInternet('internetDescServicos');
+      carregarServicos();
     } else {
       trocarDescInternet('internetDescConexao');
       carregarPainelConexoes();

@@ -887,6 +887,45 @@
       .conexao-card .cx-info { font-size: .8rem; }
     }
 
+    /* ---------- Serviços (Internet › Serviços e a tela /status) ---------- */
+    /* Cada card é um atalho para o Downdetector, não um indicador: o servidor
+       não consulta aquele site, então não há estado nosso para colorir. O card
+       inteiro é clicável — o alvo de toque precisa ser grande no celular. */
+    .sv-grid {
+      display: grid; gap: 1rem; margin-top: 1rem;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    @media (max-width: 991.98px) { .sv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 575.98px) { .sv-grid { grid-template-columns: 1fr; gap: .75rem; } }
+    .sv-card {
+      position: relative; background: var(--bg); border: 1px solid var(--line);
+      border-radius: var(--radius); min-width: 0; transition: border-color .15s ease;
+    }
+    .sv-card:hover { border-color: var(--ink); }
+    .sv-abrir {
+      display: flex; flex-direction: column; gap: .15rem;
+      padding: 1.25rem; text-decoration: none; color: inherit; min-width: 0;
+    }
+    .sv-nome {
+      font-weight: 600; font-size: 1.15rem; color: var(--ink);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      padding-right: 1.5rem; /* espaço da lixeira */
+    }
+    .sv-slug {
+      color: var(--muted); font-size: .85rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sv-cta { color: var(--muted); font-size: .85rem; margin-top: .6rem; }
+    .sv-card:hover .sv-cta { color: var(--ink); }
+    /* Lixeira só no hover — no toque não existe hover, então fica visível. */
+    .sv-card .btn-excluir-servico {
+      position: absolute; top: .4rem; right: .4rem; z-index: 1;
+      opacity: 0; transition: opacity .15s ease;
+    }
+    .sv-card:hover .btn-excluir-servico,
+    .sv-card .btn-excluir-servico:focus-visible { opacity: 1; }
+    @media (hover: none) { .sv-card .btn-excluir-servico { opacity: .5; } }
+
     /* ---------- Uptime (lista de barrinhas, abaixo dos cards) ---------- */
     .uptime-lista {
       background: var(--bg); border: 1px solid var(--line);
@@ -2852,7 +2891,8 @@
             <h2 class="pane-titulo-mobile"><i class="ph ph-wifi-high"></i> Internet</h2>
             <p class="text-muted mb-2" id="internetDescConexao" style="font-size:.95rem;">Status de conexão das unidades.</p>
             <p class="text-muted mb-2 d-none" id="internetDescProvedores" style="font-size:.95rem;">Contratos de internet das unidades.</p>
-            <!-- Sub-abas: Conexão (status ao vivo) / Provedores (contratos) -->
+            <p class="text-muted mb-2 d-none" id="internetDescServicos" style="font-size:.95rem;">Lista que alimenta a pagina <a href="/status" target="_blank" rel="noopener">/status</a></p>
+            <!-- Sub-abas: Conexão (status ao vivo) / Provedores (contratos) / Serviços (fornecedores) -->
             <ul class="nav sub-tabs" role="tablist">
               <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="sub-tab-conexao" data-bs-toggle="pill"
@@ -2864,6 +2904,12 @@
                 <button class="nav-link" id="sub-tab-provedores" data-bs-toggle="pill"
                   data-bs-target="#sub-provedores" type="button" role="tab">
                   <i class="ph ph-wifi-high"></i> Provedores
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="sub-tab-servicos" data-bs-toggle="pill"
+                  data-bs-target="#sub-servicos" type="button" role="tab">
+                  <i class="ph ph-pulse"></i> Serviços
                 </button>
               </li>
             </ul>
@@ -2929,6 +2975,34 @@
                       <tr><td colspan="5" class="text-muted">Carregando...</td></tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              <!-- SUB-ABA: SERVIÇOS EXTERNOS -->
+              <div class="tab-pane fade" id="sub-servicos" role="tabpanel">
+                <div class="d-flex justify-content-end mb-3">
+                  <button type="button" class="btn btn-primary btn-sm" id="btnNovoServico">
+                    <i class="ph ph-plus"></i> Novo
+                  </button>
+                </div>
+                <div id="alertServicos"></div>
+                <div class="d-flex align-items-center gap-1 justify-content-end mb-1">
+                  <div class="input-group input-group-sm busca-tabela">
+                    <span class="input-group-text"><i class="ph ph-magnifying-glass"></i></span>
+                    <input type="search" class="form-control" id="servicosBusca" placeholder="Buscar..." title="Buscar por nome ou componente">
+                  </div>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnLimparFiltrosServicos" title="Limpar filtros">
+                    <i class="ph ph-funnel-x fs-5"></i>
+                  </button>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarServicos" title="Atualizar">
+                    <i class="ph ph-arrow-clockwise fs-5"></i>
+                  </button>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="SERVICOS" title="Ver logs deste módulo">
+                    <i class="material-icons ic-logs fs-5">travel_explore</i>
+                  </button>
+                </div>
+                <div class="sv-grid" id="gridServicos">
+                  <div class="text-muted">Carregando...</div>
                 </div>
               </div>
 
@@ -4131,6 +4205,46 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-primary" id="btnSalvarVinculo"><i class="ph ph-check"></i> Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL NOVO SERVIÇO ===================== -->
+  <!-- Só nome + endereço no Downdetector. Não dá para validar o endereço pelo
+       servidor (o downdetector.com.br responde 403 a qualquer cliente que não
+       seja navegador), então a conferência é visual: o botão "Abrir" carrega a
+       página numa aba nova e a pessoa vê se caiu na empresa certa. -->
+  <div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="modalServico" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-pulse me-2"></i>Novo serviço</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertServicoModal"></div>
+          <form id="formServico" class="needs-validation row g-3" novalidate>
+            <div class="col-12">
+              <label class="form-label" for="sv_nome">NOME *</label>
+              <input type="text" class="form-control" id="sv_nome" required placeholder="Cielo">
+              <div class="form-text">Como aparece no card.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="sv_slug">ENDEREÇO NO DOWNDETECTOR *</label>
+              <div class="input-group">
+                <span class="input-group-text d-none d-sm-inline">downdetector.com.br/fora-do-ar/</span>
+                <input type="text" class="form-control" id="sv_slug" required placeholder="cielo">
+                <button class="btn btn-outline-secondary" type="button" id="btnAbrirDowndetector" title="Abrir para conferir">
+                  <i class="ph ph-arrow-square-out"></i> Abrir
+                </button>
+              </div>
+              <div class="form-text">Preenchido a partir do nome. Pode colar a URL inteira. Clique em "Abrir" para conferir.</div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="btnSalvarServico"><i class="ph ph-check"></i> Salvar</button>
         </div>
       </div>
     </div>

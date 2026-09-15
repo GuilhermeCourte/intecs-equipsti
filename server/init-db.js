@@ -128,6 +128,27 @@ CREATE TABLE dbo.EQUIPSTI_internet (
   atualizado_por   NVARCHAR(255) NULL
 );
 
+-- Serviços acompanhados no Downdetector (aba Internet › Serviços e a tela
+-- pública /status). É só um catálogo de atalhos: o servidor NUNCA consulta o
+-- Downdetector — o site responde 403 (cf-mitigated: challenge) a qualquer
+-- cliente que não seja um navegador, em todas as rotas, inclusive robots.txt.
+-- Quem abre o link é o navegador de quem está lendo a tela, e é lá que o
+-- status aparece. Por isso não há coluna de estado nem coleta agendada.
+IF OBJECT_ID('dbo.EQUIPSTI_servicos_externos', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_servicos_externos (
+  id                INT IDENTITY(1,1) PRIMARY KEY,
+  nome              NVARCHAR(120) NOT NULL,
+  downdetector_slug NVARCHAR(120) NOT NULL,
+  criado_em         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em     DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  criado_por        NVARCHAR(255) NULL,
+  atualizado_por    NVARCHAR(255) NULL
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_EQUIPSTI_servicos_externos_nome')
+  CREATE UNIQUE INDEX UX_EQUIPSTI_servicos_externos_nome
+    ON dbo.EQUIPSTI_servicos_externos (nome);
+
 -- Pessoas com acesso às portas (controladoras Intelbras Digiprox SA 203 MF).
 -- senha_cifrada: AES-256-GCM, formato "iv:tag:ciphertext" em base64 (server/cripto.js).
 IF OBJECT_ID('dbo.EQUIPSTI_senhas_portas', 'U') IS NULL
