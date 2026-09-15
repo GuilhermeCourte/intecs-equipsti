@@ -22,6 +22,9 @@ import { query, sql } from './db.js';
 export const MODULOS_LOG = [
   'REGISTROS', 'EMPRESTIMOS', 'CHAMADOS_INTECS', 'CHAMADOS_MSA',
   'CONEXAO_REMOTA', 'INTERNET', 'SENHAS', 'CALENDARIO', 'EMAILS', 'OPCOES', 'USUARIOS',
+  // SERVICOS: só o cadastro de serviços externos monitorados. A coleta de
+  // status é automática e não vira log, mesma régua das conexões das lojas.
+  'SERVICOS',
   // ACESSO é o único módulo que não registra ação de gente logada: são as
   // tentativas de login bloqueadas por excesso de erro (ver server/index.js).
   'ACESSO'

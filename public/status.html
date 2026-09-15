@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b2b2b">
+  <meta name="robots" content="noindex">
+  <title>Serviços no Downdetector · Gestão TI</title>
+  <link rel="icon" type="image/png" href="favicon_intecs.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <style>
+    /* ============================================================
+       Serviços no Downdetector — tela pública, sem login.
+       Catálogo de atalhos: cada card abre o Downdetector do serviço.
+       Não mostramos estado porque o servidor não consulta aquele site.
+
+       Mesma paleta do index.html, mas CSS próprio: as páginas
+       standalone deste projeto (cockpit, chamados, emails, utils) não
+       compartilham folha de estilo, e abrir exceção aqui obrigaria a
+       mexer no carregamento de todas.
+       ============================================================ */
+    :root {
+      --ink:     #2b2b2b;
+      --muted:   #9a9a9a;
+      --line:    #e4e4e4;
+      --bg:      #ffffff;
+      --bg-soft: #f4f4f5;
+      --radius:  16px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg-soft); color: var(--ink);
+      font-family: Poppins, system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    header { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.75rem; }
+    h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 .25rem; }
+    .sub { color: var(--muted); font-size: .92rem; margin: 0; max-width: 46ch; }
+    .topo-dir { margin-left: auto; }
+
+    .busca {
+      display: flex; align-items: center; gap: .45rem;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 999px; padding: .4rem .85rem; width: 190px; max-width: 100%;
+    }
+    .busca i { color: var(--muted); }
+    /* 16px para o iOS não dar zoom ao focar o campo. */
+    .busca input { border: none; outline: none; background: none; width: 100%; font: inherit; font-size: 16px; }
+    .busca input::-webkit-search-cancel-button { display: none; }
+
+    .sv-grid { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    @media (max-width: 991.98px) { .sv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 575.98px) { .sv-grid { grid-template-columns: 1fr; } }
+
+    /* O card inteiro é o link: alvo de toque grande no celular. */
+    .sv-card {
+      display: flex; flex-direction: column; gap: .15rem;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 1.25rem;
+      text-decoration: none; color: inherit; min-width: 0;
+      transition: border-color .15s ease;
+    }
+    .sv-card:hover { border-color: var(--ink); }
+    .sv-nome {
+      font-weight: 600; font-size: 1.15rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sv-slug { color: var(--muted); font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sv-cta { color: var(--muted); font-size: .85rem; margin-top: .6rem; }
+    .sv-card:hover .sv-cta { color: var(--ink); }
+    .vazio, .erro { color: var(--muted); grid-column: 1 / -1; }
+    .erro { color: #b02a37; }
+    footer { margin-top: 2.5rem; color: var(--muted); font-size: .82rem; text-align: center; }
+
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #f2f2f5; --muted: #8b8b96; --line: #2a2a31; --bg: #16161b; --bg-soft: #0f0f13; }
+      .erro { color: #ff8a95; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Serviços no Downdetector</h1>
+        <p class="sub">Os fornecedores que a operação acompanha. Clique para ver as falhas relatadas agora.</p>
+      </div>
+      <div class="topo-dir">
+        <label class="busca">
+          <i class="ph ph-magnifying-glass"></i>
+          <input type="search" id="busca" placeholder="Buscar..." aria-label="Buscar serviço">
+        </label>
+      </div>
+    </header>
+
+    <div class="sv-grid" id="grid"></div>
+
+    <footer>Os gráficos de falhas ficam no Downdetector — cada card abre a página do serviço.</footer>
+  </div>
+  <script src="status.js"></script>
+</body>
+</html>

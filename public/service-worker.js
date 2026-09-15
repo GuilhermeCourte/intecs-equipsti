@@ -1,6 +1,6 @@
 // Service Worker — estratégia network-first para conteúdo da própria origem
 // (mantém o app sempre atualizado) com fallback para cache quando offline.
-const CACHE = 'inv-cache-v16';
+const CACHE = 'inv-cache-v17';
 const SHELL = [
   './',
   './index.html',
@@ -10,6 +10,10 @@ const SHELL = [
   // queda de rede mostrando o último estado, e não a tela de offline.
   './cockpit.html',
   './cockpit.js',
+  // Tela pública de status: quem abre costuma abrir justamente quando algo
+  // está estranho na rede, então precisa carregar mesmo com a conexão ruim.
+  './status.html',
+  './status.js',
   // Ícones de push precisam estar no cache ANTES do push chegar: o navegador
   // busca o ícone durante showNotification(), e um push que chega com o
   // aparelho saindo do modo Doze (rede ainda instável) pode falhar essa busca
