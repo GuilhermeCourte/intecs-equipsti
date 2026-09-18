@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { query, sql } from './db.js';
 import { gerarToken, exigirAuth } from './auth.js';
 import { opcoesRegistro, verificarRegistro, opcoesAutenticacao, verificarAutenticacao } from './webauthn.js';
-import { notificar, notificarTeste, notificarSolicitante, notificarEmailLote, emailValido } from './notificacoes.js';
+import { notificar, notificarSolicitante, notificarEmailLote, emailValido } from './notificacoes.js';
 import { chavePublica, salvarSubscription, removerSubscription, enviarPush } from './push.js';
 import { inscrever } from './realtime.js';
 import { registrarLog, listarLogs, MODULOS_LOG, NIVEIS_SEGURANCA } from './logs.js';
@@ -258,13 +258,6 @@ app.put('/api/notifications/:id/read', exigirAuth, wrap(async (req, res) => {
   await query(`UPDATE dbo.EQUIPSTI_notificacoes SET lido = 1 WHERE id = @id AND usuario_id = @uid`,
     { id: Number(req.params.id), uid: Number(req.user.sub) });
   res.json({ ok: true });
-}));
-
-// Gera uma notificação de TESTE para o próprio usuário (sininho + e-mail),
-// para validar os dois canais. emailEnviado=false indica SMTP não configurado.
-app.post('/api/notifications/test', exigirAuth, wrap(async (req, res) => {
-  const r = await notificarTeste({ id: req.user.sub, email: req.user.email });
-  res.json({ ok: true, ...r });
 }));
 
 // Chave pública VAPID, para o cliente chamar PushManager.subscribe(). Não é
@@ -1320,8 +1313,8 @@ async function verificarQuedasInternet() {
 }
 
 // Testa como fica o push de queda/volta sem esperar uma unidade cair de
-// verdade — manda só pro próprio usuário (mesma régua do teste geral do
-// sininho em /api/notifications/test), com o mesmo título/ícone que sai na
+// verdade — manda só pro próprio usuário (mesma régua do
+// antigo teste geral do sininho), com o mesmo título/ícone que sai na
 // operação real. 800ms entre os dois pra não colidir a tag do service worker
 // (que usa Date.now()) e sumir com a primeira notificação.
 app.post('/api/conexoes/testar-push', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
