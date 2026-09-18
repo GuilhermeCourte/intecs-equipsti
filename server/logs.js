@@ -25,6 +25,9 @@ export const MODULOS_LOG = [
   // SERVICOS: só o cadastro de serviços externos monitorados. A coleta de
   // status é automática e não vira log, mesma régua das conexões das lojas.
   'SERVICOS',
+  // SERVERLESS: só a seleção de quais projetos Vercel aparecem na sub-aba
+  // VPS › Serverless. Status/deploy vêm ao vivo da API e não viram log.
+  'SERVERLESS',
   // ACESSO é o único módulo que não registra ação de gente logada: são as
   // tentativas de login bloqueadas por excesso de erro (ver server/index.js).
   'ACESSO'

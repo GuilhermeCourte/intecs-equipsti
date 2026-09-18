@@ -39,7 +39,7 @@ export const ROTULOS = {
   aba_internet: 'Internet',
   aba_emails: 'E-mails',
   aba_senhas: 'Senhas',
-  aba_vps: 'VPS',
+  aba_vps: 'Hospedagem',
   aba_calendario: 'Calendário',
   aba_gerenciar: 'Opções',
   aba_usuarios: 'Usuários',
