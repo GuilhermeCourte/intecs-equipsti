@@ -945,6 +945,40 @@
       }
     }
 
+    /* Lápis/lixeira dos cards da sub-aba VPS › Serverless: mesmo mecanismo
+       acima (hover no PC, sempre visível no toque), só que sem posição
+       absoluta — aqui os ícones já têm espaço próprio ao lado do badge. */
+    .serverless-card .btn-editar-serverless, .serverless-card .btn-excluir-serverless {
+      opacity: 0; pointer-events: none; transition: opacity .15s ease;
+    }
+    .serverless-card:hover .btn-editar-serverless, .serverless-card:hover .btn-excluir-serverless,
+    .serverless-card .btn-editar-serverless:focus-visible, .serverless-card .btn-excluir-serverless:focus-visible {
+      opacity: 1; pointer-events: auto;
+    }
+    @media (hover: none) {
+      .serverless-card .btn-editar-serverless, .serverless-card .btn-excluir-serverless {
+        opacity: 1; pointer-events: auto;
+      }
+    }
+
+    /* Favicon do projeto (ou placeholder) ao lado do nome, no card Serverless.
+       --line/--muted já trocam sozinhos entre claro/escuro (mesmo truque do
+       fundo do .skel), então o quadradinho não precisa de cor própria. */
+    .serverless-favicon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto;
+      background: var(--line); color: var(--muted); overflow: hidden;
+    }
+    .serverless-favicon img { width: 100%; height: 100%; object-fit: contain; }
+    .serverless-favicon .ph { font-size: 1rem; }
+
+    /* Nome ocupa todo espaço livre do cabeçalho e só quebra se não couber —
+       sem isto, o texto (item de flex anônimo) encolhe antes da hora e quebra
+       cedo demais mesmo sobrando espaço ao lado. */
+    .serverless-card .dash-panel-title { flex: 1 1 auto; min-width: 0; }
+    .serverless-card .serverless-nome { flex: 1 1 auto; min-width: 0; }
+    .serverless-card .dash-panel-head > .d-flex { flex: 0 0 auto; }
+
     /* ---------- Uptime (lista de barrinhas, abaixo dos cards) ---------- */
     .uptime-lista {
       background: var(--bg); border: 1px solid var(--line);
@@ -2235,7 +2269,7 @@
               <button type="button" class="mm-item" data-tab="tab-emails"><i class="ph ph-at"></i> E-mails</button>
               <button type="button" class="mm-item" data-tab="tab-senhas"><i class="ph ph-key"></i> Senhas</button>
               <button type="button" class="mm-item" data-tab="tab-utils"><i class="ph ph-download-simple"></i> Utilitários</button>
-              <button type="button" class="mm-item" data-tab="tab-vps"><i class="ph ph-hard-drives"></i> VPS</button>
+              <button type="button" class="mm-item" data-tab="tab-vps"><i class="ph ph-hard-drives"></i> Hospedagem</button>
             </div>
           </div>
 
@@ -2327,7 +2361,7 @@
               <li>
                 <button class="dropdown-item" id="tab-vps" data-bs-toggle="tab"
                   data-bs-target="#pane-vps" type="button" role="tab">
-                  <i class="ph ph-hard-drives"></i> VPS
+                  <i class="ph ph-hard-drives"></i> Hospedagem
                 </button>
               </li>
             </ul>
@@ -3178,21 +3212,64 @@
             </div>
           </div>
 
-          <!-- ABA VPS (monitoramento read-only do Hostinger) -->
+          <!-- ABA VPS: monitoramento read-only do Hostinger + Serverless (Vercel) -->
           <div class="tab-pane fade" id="pane-vps" role="tabpanel">
-            <h2 class="pane-titulo-mobile"><i class="ph ph-hard-drives"></i> VPS</h2>
-            <p class="text-muted mb-2" style="font-size:.95rem;">Métricas da VPS.</p>
-            <div class="d-flex align-items-center gap-2 justify-content-end mb-2">
-              <span class="text-muted small me-auto" id="vpsAtualizadoEm"></span>
-              <a href="https://hpanel.hostinger.com/vps" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
-                <i class="ph ph-arrow-square-out"></i> Abrir hPanel
-              </a>
-              <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarVps" title="Atualizar">
-                <i class="ph ph-arrow-clockwise fs-5"></i>
-              </button>
-            </div>
-            <div id="vpsCards" class="row g-3">
-              <div class="text-muted">Carregando...</div>
+            <h2 class="pane-titulo-mobile"><i class="ph ph-hard-drives"></i> Hospedagem</h2>
+            <!-- Sub-abas: VPS (Hostinger) / Serverless (Vercel, fora da VPS) -->
+            <ul class="nav sub-tabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="sub-tab-vpshost" data-bs-toggle="pill"
+                  data-bs-target="#sub-vpshost" type="button" role="tab">
+                  <i class="ph ph-hard-drives"></i> VPS
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="sub-tab-serverless" data-bs-toggle="pill"
+                  data-bs-target="#sub-serverless" type="button" role="tab">
+                  <i class="ph ph-cloud"></i> Serverless
+                </button>
+              </li>
+            </ul>
+
+            <div class="tab-content">
+
+              <!-- SUB-ABA: VPS (Hostinger) -->
+              <div class="tab-pane fade show active" id="sub-vpshost" role="tabpanel">
+                <p class="text-muted mb-2" style="font-size:.95rem;">Métricas da VPS.</p>
+                <div class="d-flex align-items-center gap-2 justify-content-end mb-2">
+                  <span class="text-muted small me-auto" id="vpsAtualizadoEm"></span>
+                  <a href="https://hpanel.hostinger.com/vps" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
+                    <i class="ph ph-arrow-square-out"></i> Abrir hPanel
+                  </a>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarVps" title="Atualizar">
+                    <i class="ph ph-arrow-clockwise fs-5"></i>
+                  </button>
+                </div>
+                <div id="vpsCards" class="row g-3">
+                  <div class="text-muted">Carregando...</div>
+                </div>
+              </div>
+
+              <!-- SUB-ABA: SERVERLESS (projetos Vercel fora da VPS) -->
+              <div class="tab-pane fade" id="sub-serverless" role="tabpanel">
+                <p class="text-muted mb-2" style="font-size:.95rem;">Serviços hospedados fora da VPS.</p>
+                <div id="alertServerless"></div>
+                <div class="d-flex align-items-center gap-2 justify-content-end mb-2">
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnEscolherServerless" title="Escolher projetos">
+                    <i class="ph ph-gear fs-5"></i>
+                  </button>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1" id="btnAtualizarServerless" title="Atualizar">
+                    <i class="ph ph-arrow-clockwise fs-5"></i>
+                  </button>
+                  <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="SERVERLESS" title="Ver logs deste módulo">
+                    <i class="material-icons ic-logs fs-5">travel_explore</i>
+                  </button>
+                </div>
+                <div id="serverlessLista" class="row g-3">
+                  <div class="text-muted">Carregando...</div>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -3847,6 +3924,30 @@
         </div>
         <div class="modal-body scroll-suave">
           <div id="membrosModalLista" class="d-flex flex-column gap-1"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL ESCOLHER PROJETOS SERVERLESS ===================== -->
+  <!-- Lista todos os projetos das 2 contas Vercel configuradas; a seleção decide
+       o que aparece na sub-aba VPS › Serverless. Sem indicar de qual conta é
+       cada projeto — é só um catálogo pra marcar/desmarcar. -->
+  <div class="modal fade" id="modalServerlessProjetos" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-cloud me-2"></i>Escolher projetos</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="alertServerlessModal"></div>
+          <div id="serverlessModalLista" class="d-flex flex-column gap-1">
+            <div class="text-muted">Carregando...</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="btnSalvarServerlessSelecao"><i class="ph ph-check"></i> Salvar</button>
         </div>
       </div>
     </div>

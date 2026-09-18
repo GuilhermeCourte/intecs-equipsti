@@ -2160,6 +2160,182 @@ function configurarVps() {
 }
 
 // ============================================================
+//  VPS › Serverless: projetos hospedados fora da VPS (Vercel, 2 contas
+//  pessoais). Só leitura — o usuário escolhe quais projetos aparecem
+//  pela engrenagem; a tela nunca distingue de qual conta é cada um.
+// ============================================================
+let modalServerless = null;
+let SERVERLESS_ITENS = [];
+const CONTAS_VERCEL_LABEL = { 1: 'conta 1', 2: 'conta 2' };
+// Rótulos em pt-BR, mesmo vocabulário do VPS_ESTADO_LABEL (READY é o mesmo
+// "Online" da VPS — o resto segue o padrão de estado transitório/erro dela).
+const SERVERLESS_STATUS_LABEL = {
+  READY: 'Online', ERROR: 'Erro', CANCELED: 'Cancelado',
+  BUILDING: 'Publicando', QUEUED: 'Na fila', INITIALIZING: 'Iniciando'
+};
+
+// Domínio raiz (sem subdomínio) a partir do host do Link. Lista pequena de
+// sufixos de 2 níveis mais comuns — sem lib nova, cobre os casos do projeto.
+const SUFIXOS_DOMINIO_COMPOSTOS = ['com.br', 'org.br', 'net.br', 'gov.br', 'edu.br'];
+function dominioRaiz(link) {
+  if (!link) return '';
+  const host = String(link).replace(/^[a-z]+:\/\//i, '').split('/')[0];
+  const partes = host.split('.');
+  if (partes.length <= 2) return host;
+  const ultimosDois = partes.slice(-2).join('.');
+  return SUFIXOS_DOMINIO_COMPOSTOS.includes(ultimosDois) ? partes.slice(-3).join('.') : ultimosDois;
+}
+
+function avisoContasServerless(contasFaltando) {
+  if (!contasFaltando || !contasFaltando.length) return '';
+  const nomes = contasFaltando.map((c) => CONTAS_VERCEL_LABEL[c] || c).join(' e ');
+  return `Token da Vercel não configurado no .env para: ${escapeHtml(nomes)}. ` +
+    `Projetos dessa(s) conta(s) não aparecem até o token ser adicionado.`;
+}
+
+function renderServerlessCard(item) {
+  const badge = VPS_ESTADO_BADGE[item.statusCor] || 'badge-emprestado';
+  const statusTexto = SERVERLESS_STATUS_LABEL[item.status] || (item.erro ? 'Erro' : (item.status || '—'));
+  const data = item.deployEm
+    ? new Date(item.deployEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '—';
+  const link = item.dominio
+    ? `<a href="https://${escapeHtml(item.dominio)}" target="_blank" rel="noopener">${escapeHtml(item.dominio)}</a>`
+    : '—';
+  const dominioRaizTexto = item.dominio ? dominioRaiz(item.dominio) : '—';
+  // Sem favicon (API da Vercel não expõe logo): tenta o favicon do próprio
+  // site; se a imagem falhar ao carregar, troca pro ícone genérico no lugar.
+  const favicon = item.favicon
+    ? `<img src="${escapeHtml(item.favicon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><i class="ph ph-cloud" style="display:none"></i>`
+    : `<i class="ph ph-cloud"></i>`;
+  return `
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="dash-panel mb-0 serverless-card" data-id="${item.id}">
+        <div class="dash-panel-head">
+          <div class="dash-panel-title"><span class="serverless-favicon">${favicon}</span><span class="serverless-nome">${escapeHtml(item.nome)}</span></div>
+          <div class="d-flex align-items-center gap-1">
+            <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-editar-serverless" title="Editar nome exibido">
+              <i class="ph ph-pencil-simple"></i></button>
+            <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-excluir-serverless" title="Remover da lista">
+              <i class="ph ph-trash"></i></button>
+            <span class="badge-status ${badge}">${escapeHtml(statusTexto)}</span>
+          </div>
+        </div>
+        <div class="p-3 small">
+          <div class="mb-1"><span class="text-muted">Link</span><br>${link}</div>
+          <div class="mb-1"><span class="text-muted">Domínio</span><br>${escapeHtml(dominioRaizTexto)}</div>
+          <div><span class="text-muted">Último deploy</span><br>${data}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function carregarServerless() {
+  const grid = $('serverlessLista');
+  $('alertServerless').innerHTML = '';
+  grid.innerHTML = '<div class="text-muted">Carregando...</div>';
+  try {
+    const r = await api('GET', '/api/vps/serverless');
+    SERVERLESS_ITENS = r.itens;
+    const aviso = avisoContasServerless(r.contasFaltando);
+    if (aviso) showAlert('alertServerless', 'warning', aviso);
+    if (!r.itens.length) {
+      grid.innerHTML = '<div class="text-muted">Nenhum projeto selecionado. Use o ícone <i class="ph ph-gear"></i> para escolher.</div>';
+    } else {
+      grid.innerHTML = r.itens.map(renderServerlessCard).join('');
+    }
+  } catch (err) {
+    grid.innerHTML = '';
+    showAlert('alertServerless', 'danger', 'Erro ao carregar: ' + err.message);
+  }
+}
+
+async function editarNomeServerless(id) {
+  const item = SERVERLESS_ITENS.find((x) => String(x.id) === String(id));
+  if (!item) return;
+  const novo = await uiPrompt(
+    'Nome exibido (vazio = usa o nome do projeto na Vercel):',
+    { title: 'Editar nome', value: item.nomeExibicao || '' }
+  );
+  if (novo === null) return; // cancelado
+  try {
+    await api('PUT', '/api/vps/serverless/' + id + '/nome', { nomeExibicao: novo.trim() || null });
+    await carregarServerless();
+  } catch (err) {
+    showAlert('alertServerless', 'danger', 'Erro ao salvar nome: ' + err.message);
+  }
+}
+
+async function removerServerless(id) {
+  const item = SERVERLESS_ITENS.find((x) => String(x.id) === String(id));
+  if (!item) return;
+  if (!await uiConfirm('Remover "' + item.nome + '" da lista? O projeto continua na Vercel e pode ser marcado de novo pela engrenagem.')) return;
+  try {
+    await api('DELETE', '/api/vps/serverless/' + id);
+    await carregarServerless();
+  } catch (err) {
+    showAlert('alertServerless', 'danger', 'Erro ao remover: ' + err.message);
+  }
+}
+
+function renderServerlessCheckbox(p, selecionadosPorChave) {
+  const id = 'sv_' + p.conta + '_' + p.projectId;
+  const sel = selecionadosPorChave.get(p.conta + ':' + p.projectId);
+  const apelido = sel && sel.nomeExibicao ? ` <span class="text-muted small">(${escapeHtml(sel.nomeExibicao)})</span>` : '';
+  return `
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="${id}" data-conta="${escapeHtml(p.conta)}" data-project-id="${escapeHtml(p.projectId)}" ${sel ? 'checked' : ''}>
+      <label class="form-check-label" for="${id}">${escapeHtml(p.nome)}${apelido}</label>
+    </div>`;
+}
+
+async function abrirModalServerlessProjetos() {
+  if (!modalServerless) modalServerless = new bootstrap.Modal($('modalServerlessProjetos'));
+  $('alertServerlessModal').innerHTML = '';
+  $('serverlessModalLista').innerHTML = '<div class="text-muted">Carregando...</div>';
+  modalServerless.show();
+  try {
+    const r = await api('GET', '/api/vps/serverless/catalogo');
+    const aviso = avisoContasServerless(r.contasFaltando);
+    if (aviso) showAlert('alertServerlessModal', 'warning', aviso);
+    if (!r.projetos.length) {
+      $('serverlessModalLista').innerHTML = '<div class="text-muted">Nenhum projeto encontrado nas contas configuradas.</div>';
+      return;
+    }
+    const selecionadosPorChave = new Map(r.selecionados.map((s) => [s.conta + ':' + s.projectId, s]));
+    $('serverlessModalLista').innerHTML = r.projetos.map((p) => renderServerlessCheckbox(p, selecionadosPorChave)).join('');
+  } catch (err) {
+    $('serverlessModalLista').innerHTML = '';
+    showAlert('alertServerlessModal', 'danger', 'Erro ao carregar catálogo: ' + err.message);
+  }
+}
+
+async function salvarServerlessSelecao() {
+  const selecionados = Array.from($('serverlessModalLista').querySelectorAll('.form-check-input:checked'))
+    .map((el) => ({ conta: el.dataset.conta, projectId: el.dataset.projectId }));
+  try {
+    await api('PUT', '/api/vps/serverless/selecao', { selecionados });
+    modalServerless.hide();
+    carregarServerless();
+  } catch (err) {
+    showAlert('alertServerlessModal', 'danger', 'Erro ao salvar: ' + err.message);
+  }
+}
+
+function configurarServerless() {
+  $('sub-tab-serverless').addEventListener('shown.bs.tab', carregarServerless);
+  $('btnAtualizarServerless').addEventListener('click', carregarServerless);
+  $('btnEscolherServerless').addEventListener('click', abrirModalServerlessProjetos);
+  $('btnSalvarServerlessSelecao').addEventListener('click', salvarServerlessSelecao);
+  $('serverlessLista').addEventListener('click', (e) => {
+    const painel = e.target.closest('.dash-panel[data-id]');
+    if (!painel) return;
+    if (e.target.closest('.btn-editar-serverless')) editarNomeServerless(painel.dataset.id);
+    else if (e.target.closest('.btn-excluir-serverless')) removerServerless(painel.dataset.id);
+  });
+}
+
+// ============================================================
 //  Calendário (vencimentos de licenças, contratos e afins)
 // ============================================================
 let modalCalendario = null;
@@ -9227,6 +9403,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   configurarUtils();
   configurarVps();
+  configurarServerless();
   configurarMenuMobile();
   configurarDropdownsAbas();
   configurarCalendario();

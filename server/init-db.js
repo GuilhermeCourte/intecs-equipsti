@@ -149,6 +149,23 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_EQUIPSTI_servicos_exte
   CREATE UNIQUE INDEX UX_EQUIPSTI_servicos_externos_nome
     ON dbo.EQUIPSTI_servicos_externos (nome);
 
+-- Projetos Vercel escolhidos pra aparecer na sub-aba VPS › Serverless (2 contas
+-- pessoais, tokens API_VERCEL_1/API_VERCEL_2 no .env). Guarda só o vínculo —
+-- nome, status e domínio vêm ao vivo da API da Vercel a cada carga da tela.
+IF OBJECT_ID('dbo.EQUIPSTI_vercel_projetos', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_vercel_projetos (
+  id         INT IDENTITY(1,1) PRIMARY KEY,
+  conta      NVARCHAR(20)  NOT NULL,   -- '1' | '2' — qual token usar
+  project_id NVARCHAR(100) NOT NULL,   -- id do projeto na Vercel (prj_...)
+  criado_em  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  criado_por NVARCHAR(255) NULL,
+  CONSTRAINT UQ_EQUIPSTI_vercel_projetos UNIQUE (conta, project_id)
+);
+
+-- Apelido local (não mexe em nada na Vercel); vazio/NULL = usa o nome do projeto na Vercel.
+IF COL_LENGTH('dbo.EQUIPSTI_vercel_projetos', 'nome_exibicao') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_vercel_projetos ADD nome_exibicao NVARCHAR(255) NULL;
+
 -- Pessoas com acesso às portas (controladoras Intelbras Digiprox SA 203 MF).
 -- senha_cifrada: AES-256-GCM, formato "iv:tag:ciphertext" em base64 (server/cripto.js).
 IF OBJECT_ID('dbo.EQUIPSTI_senhas_portas', 'U') IS NULL

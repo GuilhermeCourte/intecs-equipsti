@@ -22,6 +22,8 @@ import * as deviceService from './tacticalrmm/deviceService.js';
 import * as deviceIntecsRepo from './tacticalrmm/deviceRepository.js';
 import * as uptimeRobot from './uptimerobot/service.js';
 import * as hostinger from './hostinger/service.js';
+import * as vercelService from './vercel/service.js';
+import * as vercelClient from './vercel/client.js';
 import * as googleDrive from './googleworkspace/service.js';
 import * as driveArquivos from './googleworkspace/driveArquivos.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
@@ -1584,6 +1586,128 @@ app.get('/api/vps/:id/docker', exigirAuth, exigirPermissao('aba_vps'), wrap(asyn
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+}));
+
+// ============= VPS (sub-aba Serverless): projetos Vercel, só leitura =============
+// Contas pessoais (sem teamId), tokens API_VERCEL_1/API_VERCEL_2 no .env. Quais
+// projetos aparecem é escolhido pelo usuário (EQUIPSTI_vercel_projetos) — a API
+// da Vercel só é chamada para os projetos já selecionados, não pra todos.
+
+app.get('/api/vps/serverless', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  const contasFaltando = ['1', '2'].filter((c) => !vercelClient.contasConfiguradas().includes(c));
+  const selecionados = (await query(
+    'SELECT id, conta, project_id AS projectId, nome_exibicao AS nomeExibicao FROM dbo.EQUIPSTI_vercel_projetos'
+  )).recordset;
+  const utilizaveis = selecionados.filter((s) => !contasFaltando.includes(s.conta));
+  try {
+    res.json({ contasFaltando, itens: await vercelService.statusProjetos(utilizaveis) });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}));
+
+// Catálogo completo (todos os projetos das contas configuradas) + seleção
+// atual, para montar o modal "Escolher projetos".
+app.get('/api/vps/serverless/catalogo', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  const contasFaltando = ['1', '2'].filter((c) => !vercelClient.contasConfiguradas().includes(c));
+  const selecionados = (await query(
+    'SELECT conta, project_id AS projectId, nome_exibicao AS nomeExibicao FROM dbo.EQUIPSTI_vercel_projetos'
+  )).recordset;
+  try {
+    res.json({ contasFaltando, projetos: await vercelService.catalogo(), selecionados });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}));
+
+// Salva a seleção do modal. Diff em vez de DELETE+INSERT geral: quem continua
+// marcado mantém a linha (e o apelido); só entra/sai quem mudou — e cada
+// entrada/saída grava seu próprio log (CRIADO/EXCLUIDO), igual a marcar/tirar
+// pelos ícones do card. entidadeRotulo é sempre "nome oficial (apelido)" —
+// ver vercelService.rotuloProjeto — nunca o projectId/conta.
+app.put('/api/vps/serverless/selecao', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  const lista = Array.isArray(req.body.selecionados) ? req.body.selecionados : [];
+  const novos = lista
+    .filter((s) => s && s.conta && s.projectId)
+    .map((s) => ({ conta: String(s.conta).slice(0, 20), projectId: String(s.projectId).slice(0, 100) }));
+
+  const atuais = (await query('SELECT id, conta, project_id AS projectId, nome_exibicao AS nomeExibicao FROM dbo.EQUIPSTI_vercel_projetos')).recordset;
+  const chave = (s) => `${s.conta}:${s.projectId}`;
+  const atuaisPorChave = new Map(atuais.map((s) => [chave(s), s]));
+  const novasChaves = new Set(novos.map(chave));
+
+  const remover = atuais.filter((s) => !novasChaves.has(chave(s)));
+  const adicionar = novos.filter((s) => !atuaisPorChave.has(chave(s)));
+
+  for (const s of remover) {
+    await query('DELETE FROM dbo.EQUIPSTI_vercel_projetos WHERE id = @id', { id: s.id });
+    const oficial = await vercelService.nomeVercelDe(s.conta, s.projectId).catch(() => s.projectId);
+    await registrarLog({
+      modulo: 'SERVERLESS', acao: 'EXCLUIDO', entidadeId: s.id,
+      entidadeRotulo: vercelService.rotuloProjeto(oficial, s.nomeExibicao),
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  for (const s of adicionar) {
+    const ins = await query(
+      `INSERT INTO dbo.EQUIPSTI_vercel_projetos (conta, project_id, criado_por)
+       OUTPUT INSERTED.id VALUES (@conta, @projectId, @criadoPor)`,
+      { conta: S(s.conta), projectId: S(s.projectId), criadoPor: S(req.user.email) }
+    );
+    const novoId = ins.recordset[0].id;
+    const oficial = await vercelService.nomeVercelDe(s.conta, s.projectId).catch(() => s.projectId);
+    await registrarLog({
+      modulo: 'SERVERLESS', acao: 'CRIADO', entidadeId: novoId,
+      entidadeRotulo: vercelService.rotuloProjeto(oficial, null),
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+
+  res.json({ ok: true });
+}));
+
+// Apelido local exibido no lugar do nome da Vercel. Não chama a API da
+// Vercel pra gravar — só busca o nome real quando precisa dele pro log
+// (fallback de quem nunca teve apelido).
+app.put('/api/vps/serverless/:id/nome', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const atual = (await query(
+    'SELECT conta, project_id AS projectId, nome_exibicao AS nomeExibicao FROM dbo.EQUIPSTI_vercel_projetos WHERE id = @id', { id }
+  )).recordset[0];
+  if (!atual) return res.status(404).json({ error: 'Projeto não encontrado na lista.' });
+
+  const novoNome = trim(req.body.nomeExibicao) || null;
+  await query('UPDATE dbo.EQUIPSTI_vercel_projetos SET nome_exibicao = @nome WHERE id = @id', { nome: S(novoNome), id });
+
+  const oficial = await vercelService.nomeVercelDe(atual.conta, atual.projectId).catch(() => atual.projectId);
+  const nomeAntigo = atual.nomeExibicao || oficial;
+  const nomeNovo = novoNome || oficial;
+  await registrarLog({
+    modulo: 'SERVERLESS', acao: 'ATUALIZADO', campo: 'NOME_EXIBICAO',
+    entidadeId: id, entidadeRotulo: vercelService.rotuloProjeto(oficial, novoNome),
+    valorAnterior: nomeAntigo, valorNovo: nomeNovo,
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.json({ ok: true });
+}));
+
+// Tira o projeto da lista (a linha some daqui; o projeto continua na Vercel e
+// pode ser marcado de novo pela engrenagem).
+app.delete('/api/vps/serverless/:id', exigirAuth, exigirPermissao('aba_vps'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const atual = (await query(
+    'SELECT conta, project_id AS projectId, nome_exibicao AS nomeExibicao FROM dbo.EQUIPSTI_vercel_projetos WHERE id = @id', { id }
+  )).recordset[0];
+  if (!atual) return res.status(404).json({ error: 'Projeto não encontrado na lista.' });
+
+  await query('DELETE FROM dbo.EQUIPSTI_vercel_projetos WHERE id = @id', { id });
+  const oficial = await vercelService.nomeVercelDe(atual.conta, atual.projectId).catch(() => atual.projectId);
+  await registrarLog({
+    modulo: 'SERVERLESS', acao: 'EXCLUIDO',
+    entidadeId: id, entidadeRotulo: vercelService.rotuloProjeto(oficial, atual.nomeExibicao),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.json({ ok: true });
 }));
 
 // ===================== Calendário (vencimentos) =====================
