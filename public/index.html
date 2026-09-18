@@ -855,6 +855,7 @@
     .conexao-card {
       position: relative; background: var(--bg); border: 1px solid var(--line);
       border-radius: var(--radius); padding: 1.35rem 1.25rem; min-width: 0;
+      touch-action: manipulation; /* sem isso o toque duplo (revelar) dispara o zoom do iOS */
     }
     .conexao-card .cx-nome {
       font-weight: 600; font-size: 1.2rem; color: var(--ink);
@@ -871,13 +872,20 @@
     .cx-INSTAVEL .conexao-dot { background: #ff8c42; box-shadow: 0 0 0 4px rgba(255,140,66,.15); }
     /* PAUSADO, DESCONHECIDO e SEM_MONITOR ficam com o cinza padrão. */
     .cx-SEM_MONITOR { border-style: dashed; }
-    /* Engrenagem só no hover — no toque não existe hover, então fica fixa. */
+    /* Engrenagem só no hover. No toque não existe hover: fica escondida até o
+       toque DUPLO no card revelar (.tocado) — o toque simples faz a ação normal
+       do card, sem atraso; ver configurarConexoes() em app.js. pointer-events
+       some junto com a opacidade pra um toque não acertar o botão invisível. */
     .conexao-card .btn-vincular {
       position: absolute; top: .4rem; right: .4rem;
-      opacity: 0; transition: opacity .15s ease;
+      opacity: 0; pointer-events: none; transition: opacity .15s ease;
     }
-    .conexao-card:hover .btn-vincular, .conexao-card .btn-vincular:focus-visible { opacity: 1; }
-    @media (hover: none) { .conexao-card .btn-vincular { opacity: .5; } }
+    .conexao-card:hover .btn-vincular, .conexao-card .btn-vincular:focus-visible {
+      opacity: 1; pointer-events: auto;
+    }
+    @media (hover: none) {
+      .conexao-card.tocado .btn-vincular { opacity: 1; pointer-events: auto; }
+    }
     /* Dois cards por linha + o nome do monitor por extenso ("M'boi Mirim") não
        cabem a 1.2rem: encolhe a fonte em vez de cortar o nome. Precisa vir
        depois das regras acima — mesma especificidade, quem vem por último ganha. */
@@ -900,6 +908,7 @@
     .sv-card {
       position: relative; background: var(--bg); border: 1px solid var(--line);
       border-radius: var(--radius); min-width: 0; transition: border-color .15s ease;
+      touch-action: manipulation; /* sem isso o toque duplo (revelar) dispara o zoom do iOS */
     }
     .sv-card:hover { border-color: var(--ink); }
     .sv-abrir {
@@ -909,7 +918,7 @@
     .sv-nome {
       font-weight: 600; font-size: 1.15rem; color: var(--ink);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      padding-right: 1.5rem; /* espaço da lixeira */
+      padding-right: 3rem; /* espaço da lixeira + editar */
     }
     .sv-slug {
       color: var(--muted); font-size: .85rem;
@@ -917,14 +926,24 @@
     }
     .sv-cta { color: var(--muted); font-size: .85rem; margin-top: .6rem; }
     .sv-card:hover .sv-cta { color: var(--ink); }
-    /* Lixeira só no hover — no toque não existe hover, então fica visível. */
-    .sv-card .btn-excluir-servico {
-      position: absolute; top: .4rem; right: .4rem; z-index: 1;
-      opacity: 0; transition: opacity .15s ease;
+    /* Lixeira/editar só no hover no desktop. No toque (hover: none) ficam
+       sempre visíveis — o card inteiro continua navegando no toque simples,
+       então os ícones não podem depender de um gesto especial pra aparecer. */
+    .sv-card .btn-excluir-servico, .sv-card .btn-editar-servico {
+      position: absolute; top: .4rem; z-index: 1;
+      opacity: 0; pointer-events: none; transition: opacity .15s ease;
     }
-    .sv-card:hover .btn-excluir-servico,
-    .sv-card .btn-excluir-servico:focus-visible { opacity: 1; }
-    @media (hover: none) { .sv-card .btn-excluir-servico { opacity: .5; } }
+    .sv-card .btn-excluir-servico { right: .4rem; }
+    .sv-card .btn-editar-servico { right: 2.1rem; }
+    .sv-card:hover .btn-excluir-servico, .sv-card:hover .btn-editar-servico,
+    .sv-card .btn-excluir-servico:focus-visible, .sv-card .btn-editar-servico:focus-visible {
+      opacity: 1; pointer-events: auto;
+    }
+    @media (hover: none) {
+      .sv-card .btn-excluir-servico, .sv-card .btn-editar-servico {
+        opacity: 1; pointer-events: auto;
+      }
+    }
 
     /* ---------- Uptime (lista de barrinhas, abaixo dos cards) ---------- */
     .uptime-lista {
@@ -4219,12 +4238,13 @@
     <div class="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title"><i class="ph ph-pulse me-2"></i>Novo serviço</h5>
+          <h5 class="modal-title"><i class="ph ph-pulse me-2"></i><span id="svModalTitle">Novo serviço</span></h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <div id="alertServicoModal"></div>
           <form id="formServico" class="needs-validation row g-3" novalidate>
+            <input type="hidden" id="sv_id">
             <div class="col-12">
               <label class="form-label" for="sv_nome">NOME *</label>
               <input type="text" class="form-control" id="sv_nome" required placeholder="Cielo">

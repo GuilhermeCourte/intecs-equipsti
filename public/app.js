@@ -1241,12 +1241,39 @@ function pararAutoRefreshConexoes() {
   if (_cxTimer) { clearInterval(_cxTimer); _cxTimer = null; }
 }
 
+// Distingue toque simples de toque duplo num mesmo elemento sem atrasar o
+// simples: ele segue seu curso normal (ação padrão do card) e a função só
+// devolve true quando um segundo toque chega a menos de `limiteMs` do
+// primeiro, no mesmo elemento — é esse retorno que revela os ícones.
+// Janela curta de propósito (pedido do usuário): não pode parecer travado.
+function criarDetectorToqueDuplo(limiteMs = 250) {
+  let alvo = null;
+  let quando = 0;
+  return (elemento) => {
+    const agora = Date.now();
+    const duplo = elemento === alvo && (agora - quando) < limiteMs;
+    if (duplo) { alvo = null; quando = 0; return true; }
+    alvo = elemento; quando = agora;
+    return false;
+  };
+}
+
 function configurarConexoes() {
   modalVincular = new bootstrap.Modal($('modalVincularMonitor'));
   $('btnSalvarVinculo').addEventListener('click', salvarVinculo);
+  const toqueDuploConexao = criarDetectorToqueDuplo();
   $('gridConexoes').addEventListener('click', (e) => {
     const btn = e.target.closest('.btn-vincular');
-    if (btn) abrirVincular(btn.closest('.conexao-card').dataset.unidade);
+    if (btn) { abrirVincular(btn.closest('.conexao-card').dataset.unidade); return; }
+    // Sem mouse (touch: none), a engrenagem só existe escondida — revela no
+    // toque DUPLO. O toque simples não faz nada aqui (o card não tem ação
+    // própria), então não precisa de preventDefault; ver cardServico abaixo
+    // pro caso em que o toque simples navega.
+    const card = e.target.closest('.conexao-card');
+    if (card && matchMedia('(hover: none)').matches && toqueDuploConexao(card)) {
+      document.querySelectorAll('.conexao-card.tocado').forEach((c) => c.classList.remove('tocado'));
+      card.classList.add('tocado');
+    }
   });
   $('sub-tab-conexao').addEventListener('shown.bs.tab', () => {
     trocarDescInternet('internetDescConexao');
@@ -1288,6 +1315,8 @@ function cardServico(s) {
   return '<div class="sv-card" data-id="' + s.id + '">' +
     '<button type="button" class="btn btn-link btn-sm text-muted p-1 btn-excluir-servico" title="Remover serviço">' +
       '<i class="ph ph-trash"></i></button>' +
+    '<button type="button" class="btn btn-link btn-sm text-muted p-1 btn-editar-servico" title="Editar serviço">' +
+      '<i class="ph ph-pencil-simple"></i></button>' +
     '<a class="sv-abrir" href="' + escapeHtml(s.downdetectorUrl) + '" target="_blank" rel="noopener">' +
       '<span class="sv-nome">' + escapeHtml(s.nome) + '</span>' +
       '<span class="sv-slug">' + escapeHtml(s.slug) + '</span>' +
@@ -1330,7 +1359,25 @@ function abrirServico() {
   const form = $('formServico');
   form.reset();
   form.classList.remove('was-validated');
+  $('sv_id').value = '';
+  $('svModalTitle').textContent = 'Novo serviço';
   delete $('sv_slug').dataset.tocado;
+  avisoServico('', '');
+  modalServico.show();
+}
+
+function editarServico(id) {
+  const s = SERVICOS.find((x) => String(x.id) === String(id));
+  if (!s) return;
+  const form = $('formServico');
+  form.reset();
+  form.classList.remove('was-validated');
+  $('sv_id').value = s.id;
+  $('svModalTitle').textContent = 'Editar serviço';
+  $('sv_nome').value = s.nome;
+  $('sv_slug').value = s.slug;
+  // Slug já veio preenchido: sugerirSlugServico() não deve sobrescrever ao editar o nome.
+  $('sv_slug').dataset.tocado = '1';
   avisoServico('', '');
   modalServico.show();
 }
@@ -1358,14 +1405,17 @@ async function salvarServico() {
   const form = $('formServico');
   if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
   const restaurar = btnSalvando($('btnSalvarServico'));
+  const id = $('sv_id').value;
+  const corpo = {
+    nome: $('sv_nome').value.trim(),
+    downdetectorSlug: $('sv_slug').value.trim() || null
+  };
   try {
-    await api('POST', '/api/servicos-externos', {
-      nome: $('sv_nome').value.trim(),
-      downdetectorSlug: $('sv_slug').value.trim() || null
-    });
+    if (id) await api('PUT', '/api/servicos-externos/' + id, corpo);
+    else await api('POST', '/api/servicos-externos', corpo);
     modalServico.hide();
     await carregarServicos();
-    showAlert('alertServicos', 'success', 'Serviço adicionado.');
+    showAlert('alertServicos', 'success', id ? 'Serviço atualizado.' : 'Serviço adicionado.');
   } catch (err) {
     avisoServico('danger', 'Erro: ' + err.message);
   } finally { restaurar(); }
@@ -1398,9 +1448,15 @@ function configurarServicos() {
   });
   $('btnAtualizarServicos').addEventListener('click', carregarServicos);
 
+  // No toque, a lixeira/editar já ficam sempre visíveis via CSS (hover: none)
+  // e têm z-index acima do link — o clique nelas nunca chega a navegar.
+  // Sobra só decidir a ação: ícone aciona a sua, o resto do card navega
+  // normalmente (é um <a>, não precisa de JS pra isso).
   $('gridServicos').addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-excluir-servico');
-    if (btn) excluirServico(btn.closest('.sv-card').dataset.id);
+    const btnExcluir = e.target.closest('.btn-excluir-servico');
+    if (btnExcluir) { excluirServico(btnExcluir.closest('.sv-card').dataset.id); return; }
+    const btnEditar = e.target.closest('.btn-editar-servico');
+    if (btnEditar) { editarServico(btnEditar.closest('.sv-card').dataset.id); return; }
   });
 
   // Sem auto-refresh: a lista só muda quando alguém cadastra ou remove.
@@ -9162,6 +9218,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   configurarEmails();
   configurarConexoes();
   configurarServicos();
+  // Toque fora de um card de Conexão/Serviços fecha o que estiver revelado
+  // (.tocado) — sem isso o ícone ficaria aberto até o próximo toque em outro card.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.conexao-card, .sv-card')) return;
+    document.querySelectorAll('.conexao-card.tocado, .sv-card.tocado')
+      .forEach((c) => c.classList.remove('tocado'));
+  });
   configurarUtils();
   configurarVps();
   configurarMenuMobile();

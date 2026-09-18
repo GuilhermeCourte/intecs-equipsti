@@ -1483,6 +1483,46 @@ app.post('/api/servicos-externos', exigirAuth, exigirPermissao('aba_internet'), 
   res.status(201).json({ ok: true });
 }));
 
+app.put('/api/servicos-externos/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Serviço inválido.' });
+
+  const nome = trim(req.body.nome);
+  const slug = lerSlug(req.body.downdetectorSlug) || sugerirSlug(nome);
+  if (!nome) return res.status(400).json({ error: 'Informe o nome do serviço.' });
+  if (!slug) return res.status(400).json({ error: 'Informe o endereço no Downdetector.' });
+
+  const antes = (await query(
+    'SELECT nome, downdetector_slug AS slug FROM dbo.EQUIPSTI_servicos_externos WHERE id = @id',
+    { id: { type: sql.Int, value: id } })).recordset[0];
+  if (!antes) return res.status(404).json({ error: 'Serviço não encontrado.' });
+
+  const jaTem = (await query(
+    'SELECT id FROM dbo.EQUIPSTI_servicos_externos WHERE nome = @nome AND id <> @id',
+    { nome: S(nome), id: { type: sql.Int, value: id } })).recordset[0];
+  if (jaTem) return res.status(409).json({ error: 'Já existe um serviço com esse nome.' });
+
+  await query(`UPDATE dbo.EQUIPSTI_servicos_externos
+    SET nome = @nome, downdetector_slug = @slug, atualizado_por = @atualizadoPor
+    WHERE id = @id`,
+    { nome: S(nome), slug: S(slug), atualizadoPor: S(req.user.email), id: { type: sql.Int, value: id } });
+
+  if (logMudou(antes.nome, nome)) {
+    await registrarLog({
+      modulo: 'SERVICOS', entidadeId: String(id), entidadeRotulo: nome, acao: 'ATUALIZADO', campo: 'NOME',
+      valorAnterior: antes.nome, valorNovo: nome, usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  if (logMudou(antes.slug, slug)) {
+    await registrarLog({
+      modulo: 'SERVICOS', entidadeId: String(id), entidadeRotulo: nome, acao: 'ATUALIZADO', campo: 'LINK',
+      valorAnterior: DOWNDETECTOR_BASE + antes.slug + '/', valorNovo: DOWNDETECTOR_BASE + slug + '/',
+      usuario: req.user.email, usuarioId: req.user.sub
+    });
+  }
+  res.json({ ok: true });
+}));
+
 app.delete('/api/servicos-externos/:id', exigirAuth, exigirPermissao('aba_internet'), wrap(async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Serviço inválido.' });
@@ -2327,6 +2367,13 @@ const CAMPOS_CHAMADO = [
   ['observacao', 'Observação'],
 ];
 
+// Converte 'YYYY-MM-DD' para o padrão brasileiro dd/mm/aaaa usado no resto do
+// sistema. Usado nas notificações de "Chamado atualizado" (e-mail e sininho).
+function formatarDataBr(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
 // Converte o status do chamado no eurosa (St) para os buckets da aba INTECS vs
 // MSA. Retorna null quando não há status (rows criadas manualmente seguem o
 // cálculo por datas no cliente).
@@ -2514,12 +2561,17 @@ app.put('/api/intecs-msa/:id', exigirAuth, exigirPermissao('aba_chamados'), wrap
     { ...paramsIntecsMsa(d), id, atualizado_por: S(req.user.email) });
   if (upd.rowsAffected[0] === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
 
+  const CAMPOS_DATA_CHAMADO = new Set(['data_retirada_equip', 'data_entrega_equip']);
   const mudancasCh = [];
   if (antes) {
     for (const [key, label] of CAMPOS_CHAMADO) {
       const de = String(antes[key] ?? '');
       const para = String(d[key] ?? '');
-      if (de !== para) mudancasCh.push({ campo: label, de, para });
+      if (de !== para) {
+        mudancasCh.push(CAMPOS_DATA_CHAMADO.has(key)
+          ? { campo: label, de: formatarDataBr(de), para: formatarDataBr(para) }
+          : { campo: label, de, para });
+      }
     }
   }
 
@@ -3008,7 +3060,10 @@ app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(asyn
   const partes = [];
   if (linhasEquip.length) partes.push(linhasEquip.join('<br>'));
   if (descricao)          partes.push(descricao);
-  const descricaoHtml = partes.map(p => '<p>' + p + '</p>').join('');
+  // A MSA remove as tags <p> sem inserir separador, então um </p><p> vira uma
+  // colagem sem espaço; usamos <br><br> (mesmo mecanismo do cabeçalho) para
+  // garantir a linha em branco entre o cabeçalho e a observação.
+  const descricaoHtml = partes.length ? '<p>' + partes.join('<br><br>') + '</p>' : '';
 
   if (!descricaoHtml) return res.status(400).json({ error: 'Informe o patrimônio ou uma observação.' });
 
@@ -3032,7 +3087,7 @@ app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(asyn
       '12310': localTrabalho,
       '12311': endereco,
       '19024': unidade,
-      '20742': '0'
+      '20742': patChamado || '0'
     }
   };
 
