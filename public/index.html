@@ -864,6 +864,10 @@
         width: 178px;
         justify-content: flex-end;
       }
+      #ciEqBotoes .btn-cr {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after { content: "Terminal"; }
       #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after { content: "Arquivos"; }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after,
@@ -880,9 +884,26 @@
         max-width: 6rem;
         margin-left: .35rem;
       }
+      /* Rótulo do Conectar: some/reaparece encolhendo (não com display:none,
+         que é instantâneo) e SEM quebrar linha — e reaparecer tem atraso de
+         .2s (o tempo que o Terminal/Arquivos levam pra fechar). Sem esse
+         atraso, ao passar o mouse de um botão pro outro passando pelo vão
+         entre eles (nem um nem outro em :hover por um instante), o Conectar
+         reaparecia NA HORA enquanto o outro botão ainda estava fechando —
+         nesse instante os três juntos não cabiam nos 178px reservados e,
+         como o rótulo não tinha nowrap, "Conectar" quebrava em 2 linhas e
+         o grupo inteiro crescia de altura por uma fração de segundo. */
+      #ciEqBotoes .btn-cr[data-cr-tipo="control"] .btn-cr-label {
+        display: inline-block;
+        max-width: 6rem;
+        overflow: hidden;
+        vertical-align: middle;
+        transition: max-width .2s ease .2s;
+      }
       #ciEqBotoes:has(.btn-cr[data-cr-tipo="terminal"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label,
       #ciEqBotoes:has(.btn-cr[data-cr-tipo="file"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label {
-        display: none;
+        max-width: 0;
+        transition: max-width 0s ease 0s;
       }
     }
 

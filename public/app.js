@@ -6484,11 +6484,24 @@ function renderMaquinaDoChamado(resumo) {
   const atribuidoAMim = _chamadoIntecsDetalhe?.responsavel_id === _ciPerfil?.id;
   const tituloControl = atribuidoAMim ? 'Assumir o controle da tela' : 'Atribua o chamado a você para conectar';
   const ehLinux = crEhLinux(maquina);
+  // Terminal/Arquivos agora "abrem" o próprio nome dentro do botão no hover
+  // (CSS) — o tooltip nativo (title) ficaria repetindo a mesma palavra à
+  // toa. Ele só continua quando o botão está desabilitado (Linux) ou quando
+  // falta se atribuir o chamado (só o Conectar depende disso) — são os dois
+  // casos em que o texto explica por que o clique não vai fazer o esperado.
+  // Só mexe no valor passado pra crBtn NESTE call site — a função em si e a
+  // aba Conexão Remota continuam gerando o title de sempre, sem alteração.
+  const tituloControlFinal = ehLinux ? CR_TITULO_LINUX : (atribuidoAMim ? '' : tituloControl);
+  // Ícone sem rótulo visível perde o title como nome acessível — repõe via
+  // aria-label (não dispara tooltip nativo) só pra não regredir leitor de tela.
+  const comNomeAcessivel = (html, rotulo) => html.replace('<button ', `<button aria-label="${escapeHtml(rotulo)}" `);
   const botoes = podeAtenderCI() && agentId
     ? '<div class="d-flex gap-1">'
-      + crBtn(agentId, 'control', ehLinux ? CR_TITULO_LINUX : tituloControl, 'ph-monitor-play', 'Conectar', !ehLinux)
-      + crBtn(agentId, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true)
-      + crBtn(agentId, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', !ehLinux)
+      + crBtn(agentId, 'control', tituloControlFinal, 'ph-monitor-play', 'Conectar', !ehLinux)
+      + comNomeAcessivel(crBtn(agentId, 'terminal', '', 'ph-terminal-window', '', true), 'Terminal remoto')
+      + (ehLinux
+        ? crBtn(agentId, 'file', CR_TITULO_LINUX, 'ph-folder-open', '', false)
+        : comNomeAcessivel(crBtn(agentId, 'file', '', 'ph-folder-open', '', true), 'Arquivos remotos'))
       + '</div>'
     : '';
   const aviso = botoes && !atribuidoAMim
