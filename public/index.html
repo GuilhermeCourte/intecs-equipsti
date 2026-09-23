@@ -844,21 +844,47 @@
     .sub-tabs .nav-link:hover { color: var(--ink); }
     .sub-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
 
+    /* ---------- Botão de conexão que abre o nome no hover (compartilhado) ---------- */
+    /* Usado no rodapé do chamado (#ciEqBotoes: Terminal/Arquivos) e na lista
+       da Conexão Remota (.cr-acoes: Conectar/Terminal/Arquivos, os três).
+       O ícone vira ícone+nome DENTRO do próprio botão, no hover, sem tooltip
+       nativo (o JS já esvazia o title dos habilitados — ver crBtn nos dois
+       call sites). Só com mouse de verdade, pra não travar um toque
+       "expandido". O nome vem de content fixo por data-cr-tipo (não de
+       attr(title), que fica vazio quando habilitado — ver T29/T32). */
+    @media (hover: hover) and (pointer: fine) {
+      .btn-cr-abre-nome {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .btn-cr-abre-nome[data-cr-tipo="control"]::after { content: "Conectar"; }
+      .btn-cr-abre-nome[data-cr-tipo="terminal"]::after { content: "Terminal"; }
+      .btn-cr-abre-nome[data-cr-tipo="file"]::after { content: "Arquivos"; }
+      .btn-cr-abre-nome::after {
+        display: inline-block;
+        max-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        vertical-align: middle;
+        transition: max-width .2s ease, margin-left .2s ease;
+      }
+      .btn-cr-abre-nome:hover::after {
+        max-width: 6rem;
+        margin-left: .35rem;
+      }
+    }
+
     /* ---------- Grupo Conexão no rodapé do chamado (Intecs) ---------- */
-    /* Terminal/Arquivos "abrem" de volta DENTRO do próprio botão (o efeito
-       original da T24 — ícone vira ícone+texto), com o rótulo curto da T29
-       (Terminal/Arquivos; o title continua intocado, "Terminal remoto" /
-       "Arquivos remotos", que é compartilhado com outras telas). O Conectar
-       recolhe pro ícone enquanto isso. Só com mouse de verdade, pra não
-       travar um toque em "expandido".
+    /* Terminal/Arquivos usam .btn-cr-abre-nome (acima). O Conectar é
+       diferente aqui: tem rótulo SEMPRE visível ("Conectar" fixo, não abre
+       no hover) que precisa recolher pra dar lugar ao Terminal/Arquivos
+       abrindo — por isso não usa a classe compartilhada.
        #ciEqBotoes tem largura FIXA (178px — medi os 3 estados possíveis com
        Playwright: repouso 177,5px, hover Terminal 176,4px, hover Arquivos
        176,1px; uso o maior + margem) e os botões ficam alinhados à direita
        dentro dela — por isso a largura do grupo nunca muda com o hover, o
        .modal-footer nunca precisa quebrar linha (era essa quebra que soltava
-       o botão de baixo do cursor e causava o loop de piscar da T24/T28). O
-       efeito de abrir continua, só que interno a essa largura reservada,
-       sem afetar o resto do rodapé. */
+       o botão de baixo do cursor e causava o loop de piscar da T24/T28). */
     @media (hover: hover) and (pointer: fine) {
       #ciEqBotoes {
         width: 178px;
@@ -867,22 +893,6 @@
       #ciEqBotoes .btn-cr {
         white-space: nowrap;
         flex-shrink: 0;
-      }
-      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after { content: "Terminal"; }
-      #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after { content: "Arquivos"; }
-      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after,
-      #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after {
-        display: inline-block;
-        max-width: 0;
-        overflow: hidden;
-        white-space: nowrap;
-        vertical-align: middle;
-        transition: max-width .2s ease, margin-left .2s ease;
-      }
-      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]:hover::after,
-      #ciEqBotoes .btn-cr[data-cr-tipo="file"]:hover::after {
-        max-width: 6rem;
-        margin-left: .35rem;
       }
       /* Rótulo do Conectar: some/reaparece encolhendo (não com display:none,
          que é instantâneo) e SEM quebrar linha — e reaparecer tem atraso de
@@ -904,6 +914,38 @@
       #ciEqBotoes:has(.btn-cr[data-cr-tipo="file"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label {
         max-width: 0;
         transition: max-width 0s ease 0s;
+      }
+    }
+
+    /* ---------- Ações da lista de Conexão Remota (fora do chamado) ---------- */
+    /* Os três (Conectar/Terminal/Arquivos) usam .btn-cr-abre-nome — aqui
+       nenhum tem rótulo permanente, então não precisa da lógica de recolher
+       do Conectar acima. Só reserva largura (mesma ideia do #ciEqBotoes) a
+       partir de 768px: medi a coluna Ações hoje com folga de sobra em
+       1366px (~161px), mas em 390px ela já não tem folga NENHUMA (104px de
+       conteúdo em 104px disponíveis) e a tabela JÁ rola horizontalmente
+       nessa largura hoje, sem relação com esta mudança — reservar mais
+       espaço lá pioraria esse scroll pré-existente. Abaixo de 768px o
+       comportamento fica como já era: só ícone, tooltip nativo de sempre. */
+    @media (hover: hover) and (pointer: fine) and (min-width: 768px) {
+      .cr-acoes {
+        width: 178px;
+        justify-content: flex-end !important;
+      }
+      .cr-acoes .btn-cr {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+    }
+    /* Abaixo de 768px cancela o "abre o nome" especificamente na tabela (sem
+       a largura reservada acima, a mesma classe compartilhada voltaria a
+       crescer sem espaço e reabriria o bug do T28/T31). O JS também não
+       esvazia o title nesse caso (mesma régua de largura), então o botão
+       fica exatamente como era antes desta task. */
+    @media (max-width: 767.98px) {
+      .cr-acoes .btn-cr-abre-nome::after {
+        content: none;
+        display: none;
       }
     }
 

@@ -6492,16 +6492,13 @@ function renderMaquinaDoChamado(resumo) {
   // Só mexe no valor passado pra crBtn NESTE call site — a função em si e a
   // aba Conexão Remota continuam gerando o title de sempre, sem alteração.
   const tituloControlFinal = ehLinux ? CR_TITULO_LINUX : (atribuidoAMim ? '' : tituloControl);
-  // Ícone sem rótulo visível perde o title como nome acessível — repõe via
-  // aria-label (não dispara tooltip nativo) só pra não regredir leitor de tela.
-  const comNomeAcessivel = (html, rotulo) => html.replace('<button ', `<button aria-label="${escapeHtml(rotulo)}" `);
   const botoes = podeAtenderCI() && agentId
     ? '<div class="d-flex gap-1">'
       + crBtn(agentId, 'control', tituloControlFinal, 'ph-monitor-play', 'Conectar', !ehLinux)
-      + comNomeAcessivel(crBtn(agentId, 'terminal', '', 'ph-terminal-window', '', true), 'Terminal remoto')
+      + comNomeAcessivel(crBtn(agentId, 'terminal', '', 'ph-terminal-window', '', true, 'btn-cr-abre-nome'), 'Terminal remoto')
       + (ehLinux
         ? crBtn(agentId, 'file', CR_TITULO_LINUX, 'ph-folder-open', '', false)
-        : comNomeAcessivel(crBtn(agentId, 'file', '', 'ph-folder-open', '', true), 'Arquivos remotos'))
+        : comNomeAcessivel(crBtn(agentId, 'file', '', 'ph-folder-open', '', true, 'btn-cr-abre-nome'), 'Arquivos remotos'))
       + '</div>'
     : '';
   const aviso = botoes && !atribuidoAMim
@@ -7211,6 +7208,11 @@ const crBtn = (agentId, tipo, titulo, icone, rotulo, habilitado, extra = '', peq
   + ` data-agent-id="${escapeHtml(agentId)}" data-cr-tipo="${tipo}" title="${titulo}"${habilitado ? '' : ' disabled'}>`
   + `<i class="ph ${icone}"></i>${rotulo ? ` <span class="btn-cr-label">${rotulo}</span>` : ''}</button>`;
 
+// Ícone de crBtn sem rótulo visível perde o title como nome acessível quando
+// o title é esvaziado (botão habilitado com o nome abrindo no hover, ver
+// .btn-cr-abre-nome) — repõe via aria-label, que não dispara tooltip nativo.
+const comNomeAcessivel = (html, rotulo) => html.replace('<button ', `<button aria-label="${escapeHtml(rotulo)}" `);
+
 // Agente Linux não tem MeshCentral: só o Terminal (Remote Background do RMM)
 // funciona — Conectar/Arquivos ficam desabilitados (mesmo visual de máquina
 // desligada) e a estrela de scripts favoritos some.
@@ -7248,14 +7250,32 @@ function renderConexaoRemota() {
     .filter((a) => !termo || buscaNorm((a.hostname || '') + ' ' + (a.logged_username || '') + ' ' + (a.site_name || '')).includes(termo))
     .sort((a, b) => String(a.hostname || '').localeCompare(String(b.hostname || '')));
 
+  // A coluna Ações só tem folga pra reservar espaço do "abre o nome" a partir
+  // de 768px — abaixo disso a tabela já rola horizontalmente hoje sem
+  // relação com isto, e reservar mais espaço pioraria esse scroll. Então o
+  // JS (title/aria-label) segue a MESMA régua da media query do CSS — do
+  // contrário o botão ficaria sem title E sem o nome abrindo no celular.
+  // Único limite conhecido: redimensionar a janela cruzando 768px sem outro
+  // motivo de re-render deixa o title desatualizado até a próxima renderização.
+  const abreNomeNoHover = window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 768px)').matches;
   $('crTbody').innerHTML = lista.map((a) => {
     const online = !!a.status_online;
     const ehLinux = crEhLinux(a);
     const acoes = podeConectar
-      ? '<div class="d-flex gap-1 justify-content-end">'
-        + crBtn(a.tactical_agent_id, 'control', ehLinux ? CR_TITULO_LINUX : 'Assumir o controle da tela', 'ph-monitor-play', '', !ehLinux)
-        + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true)
-        + crBtn(a.tactical_agent_id, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', !ehLinux)
+      ? '<div class="d-flex gap-1 justify-content-end cr-acoes">'
+        + (ehLinux
+          ? crBtn(a.tactical_agent_id, 'control', CR_TITULO_LINUX, 'ph-monitor-play', '', false)
+          : abreNomeNoHover
+            ? comNomeAcessivel(crBtn(a.tactical_agent_id, 'control', '', 'ph-monitor-play', '', true, 'btn-cr-abre-nome'), 'Assumir o controle da tela')
+            : crBtn(a.tactical_agent_id, 'control', 'Assumir o controle da tela', 'ph-monitor-play', '', true))
+        + (abreNomeNoHover
+          ? comNomeAcessivel(crBtn(a.tactical_agent_id, 'terminal', '', 'ph-terminal-window', '', true, 'btn-cr-abre-nome'), 'Terminal remoto')
+          : crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true))
+        + (ehLinux
+          ? crBtn(a.tactical_agent_id, 'file', CR_TITULO_LINUX, 'ph-folder-open', '', false)
+          : abreNomeNoHover
+            ? comNomeAcessivel(crBtn(a.tactical_agent_id, 'file', '', 'ph-folder-open', '', true, 'btn-cr-abre-nome'), 'Arquivos remotos')
+            : crBtn(a.tactical_agent_id, 'file', 'Arquivos remotos', 'ph-folder-open', '', true))
         + '</div>'
       : '';
     return '<tr data-agent-id="' + escapeHtml(a.tactical_agent_id) + '" style="cursor:pointer">'
