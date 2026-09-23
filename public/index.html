@@ -930,6 +930,14 @@
     @media (hover: hover) and (pointer: fine) and (min-width: 768px) {
       .cr-acoes {
         width: 178px;
+        /* .cr-acoes não é filho de um pai flex (é filho direto da <td>), então
+           justify-content só alinha o que está DENTRO dela — não empurra ela
+           mesma pra direita da célula. margin-left:auto é o que faz isso
+           (equivalente ao papel do .modal-footer no rodapé do chamado, que
+           empurra o #ciEqBotoes porque ELE é flex). Sem isso a folga dos
+           178px sobrava à DIREITA dos botões em vez de ficar (invisível)
+           à esquerda deles. */
+        margin-left: auto;
         justify-content: flex-end !important;
       }
       .cr-acoes .btn-cr {
