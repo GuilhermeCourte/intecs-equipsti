@@ -6225,7 +6225,13 @@ async function carregarPrioridadesEStatusIntecs() {
   _ciStatusConfig.forEach((s) => { if (!CI_STATUS_LABEL[s.nome]) CI_STATUS_LABEL[s.nome] = s.nome; });
 
   const itensPrioridade = _ciPrioridadesConfig.map((p) => ({ value: p.nome, label: CI_PRIORIDADE_LABEL[p.nome] || p.nome }));
-  const itensStatus = _ciStatusConfig.map((s) => ({ value: s.nome, label: CI_STATUS_LABEL[s.nome] || s.nome }));
+  // O select de status do modal não oferece mais os status de fechamento —
+  // esses viram um botão Encerrar à parte (fora do escopo desta mudança).
+  // CI_STATUS_CONCLUIDOS continua intacto: outras telas (badge, filtro da
+  // tabela) seguem enxergando todos os status normalmente.
+  const itensStatus = _ciStatusConfig
+    .filter((s) => !CI_STATUS_CONCLUIDOS.includes(s.nome))
+    .map((s) => ({ value: s.nome, label: CI_STATUS_LABEL[s.nome] || s.nome }));
 
   const setSelectPlano = (id, itens, comPlaceholder) => {
     $(id).innerHTML = (comPlaceholder ? `<option value="">${comPlaceholder}</option>` : '') +
@@ -6433,7 +6439,18 @@ async function abrirChamadoIntecsDetalhe(id) {
     const data = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id));
     _chamadoIntecsDetalhe = data;
     $('ciDetalheTitle').textContent = `#${data.id} — ${data.titulo}`;
-    $('ciDetStatus').value = data.status;
+    // O select não tem mais as opções de fechamento (Resolvido/Fechado/
+    // Cancelado — viram um botão Encerrar à parte). Um chamado que já esteja
+    // num desses estados precisa continuar mostrando o status certo, então
+    // injeta uma option avulsa pra esse valor quando ele não está na lista
+    // (removendo a injetada do chamado anterior, pra não acumular).
+    const selStatus = $('ciDetStatus');
+    selStatus.querySelectorAll('option[data-injetada]').forEach((o) => o.remove());
+    if (!Array.from(selStatus.options).some((o) => o.value === data.status)) {
+      selStatus.insertAdjacentHTML('beforeend',
+        `<option data-injetada="1" value="${escapeHtml(data.status)}">${escapeHtml(CI_STATUS_LABEL[data.status] || data.status)}</option>`);
+    }
+    selStatus.value = data.status;
     $('ciDetPrioridade').value = data.prioridade;
     $('ciDetResponsavel').value = data.responsavel_id || '';
     const sla = slaInfo(data);

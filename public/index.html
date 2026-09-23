@@ -5247,7 +5247,12 @@
           <div class="px-3 pb-2" id="ciDetEquipamento"></div>
           <ul class="nav sub-tabs" role="tablist">
             <li class="nav-item" role="presentation">
-              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#ci-comentarios" type="button" role="tab">
+              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#ci-resumo" type="button" role="tab">
+                <i class="ph ph-info"></i> Resumo
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#ci-comentarios" type="button" role="tab">
                 <i class="ph ph-chat-circle-text"></i> Comentários
               </button>
             </li>
@@ -5258,7 +5263,39 @@
             </li>
           </ul>
           <div class="tab-content p-3">
-            <div class="tab-pane fade show active" id="ci-comentarios" role="tabpanel">
+            <div class="tab-pane fade show active" id="ci-resumo" role="tabpanel">
+              <div class="row g-2 align-items-end">
+                <div class="col-6 col-md-auto">
+                  <label class="form-label small mb-1">Status</label>
+                  <select class="form-select form-select-sm" id="ciDetStatus">
+                    <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
+                    <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
+                    <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-auto">
+                  <label class="form-label small mb-1">Prioridade</label>
+                  <select class="form-select form-select-sm" id="ciDetPrioridade">
+                    <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
+                    <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-auto">
+                  <label class="form-label small mb-1">Responsável</label>
+                  <div class="d-flex gap-1">
+                    <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
+                      <i class="ph ph-user-plus"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label small mb-1">SLA</label>
+                  <div id="ciDetSlaBadge" class="small"></div>
+                </div>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="ci-comentarios" role="tabpanel">
               <div id="ciComentariosLista" class="mb-3"></div>
               <div class="d-flex gap-2">
                 <textarea class="form-control" id="ciNovoComentario" rows="2" placeholder="Escreva um comentário..."></textarea>
@@ -5271,37 +5308,6 @@
           </div>
         </div>
         <div class="modal-footer">
-          <div class="d-flex flex-wrap gap-2 align-items-end me-auto">
-            <div>
-              <label class="form-label small mb-1">Status</label>
-              <select class="form-select form-select-sm" id="ciDetStatus">
-                <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
-                <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
-                <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
-                <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label small mb-1">Prioridade</label>
-              <select class="form-select form-select-sm" id="ciDetPrioridade">
-                <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
-                <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label small mb-1">Responsável</label>
-              <div class="d-flex gap-1">
-                <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
-                  <i class="ph ph-user-plus"></i>
-                </button>
-              </div>
-            </div>
-            <div>
-              <label class="form-label small mb-1">SLA</label>
-              <div id="ciDetSlaBadge" class="small"></div>
-            </div>
-          </div>
           <div>
             <label class="form-label small mb-1">Conexão</label>
             <div id="ciEqBotoes" class="d-flex gap-1"></div>
