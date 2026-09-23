@@ -5219,7 +5219,7 @@
         <div class="modal-body p-0">
           <div class="p-3 border-bottom">
             <div class="row g-2 align-items-end">
-              <div class="col-6 col-md-3">
+              <div class="col-12 col-md-auto">
                 <label class="form-label small mb-1">Status</label>
                 <select class="form-select form-select-sm" id="ciDetStatus">
                   <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
@@ -5228,14 +5228,14 @@
                   <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
                 </select>
               </div>
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md-auto">
                 <label class="form-label small mb-1">Prioridade</label>
                 <select class="form-select form-select-sm" id="ciDetPrioridade">
                   <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
                   <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
                 </select>
               </div>
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md-auto">
                 <label class="form-label small mb-1">Responsável</label>
                 <div class="d-flex gap-1">
                   <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
@@ -5277,11 +5277,8 @@
             </div>
           </div>
         </div>
-        <div class="modal-footer justify-content-between">
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarEquipamentoIntecs">
-            <i class="ph ph-arrow-clockwise"></i> Atualizar Equipamento
-          </button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+        <div class="modal-footer">
+          <div id="ciEqBotoes" class="d-flex gap-1 me-auto"></div>
         </div>
       </div>
     </div>

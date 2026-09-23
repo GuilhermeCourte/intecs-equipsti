@@ -6424,6 +6424,7 @@ async function abrirChamadoIntecsDetalhe(id) {
   _chamadoIntecsDetalhe = null;
   $('ciDetalheTitle').textContent = 'Carregando...';
   $('ciDetEquipamento').innerHTML = '<span class="text-muted">Carregando...</span>';
+  $('ciEqBotoes').innerHTML = '';
   $('ciComentariosLista').innerHTML = '';
   $('ciHistoricoLista').innerHTML = '';
   modalChamadoIntecsDetalhe.show();
@@ -6449,13 +6450,14 @@ async function abrirChamadoIntecsDetalhe(id) {
 }
 
 // Cabeçalho da máquina vinculada ao chamado (a que o solicitante escolheu no
-// portal, não necessariamente a de onde ele abriu) com os botões de conexão
-// remota da aba Conexão Remota — o Take Control vai direto para ela.
+// portal, não necessariamente a de onde ele abriu). Retorna o bloco de info
+// (nome/site/aviso, fica em #ciDetEquipamento) separado dos botões de conexão
+// (control/terminal/file, vão para #ciEqBotoes no rodapé do modal).
 function renderMaquinaDoChamado(resumo) {
   const maquina = resumo.maquina || {};
   const hostname = maquina.hostname || '';
   const agentId = resumo.tactical_agent_id || '';
-  if (!hostname && !agentId) return '';
+  if (!hostname && !agentId) return { info: '', botoes: '' };
   const online = !!maquina.status_online;
   // Conexão só para quem está atendendo o chamado: sem atribuição, o clique
   // avisa em um modal (com atalho para se atribuir) em vez de conectar.
@@ -6472,11 +6474,12 @@ function renderMaquinaDoChamado(resumo) {
   const aviso = botoes && !atribuidoAMim
     ? '<div class="text-muted small mb-2"><i class="ph ph-info"></i> Atribua o chamado a você para conectar à máquina.</div>'
     : '';
-  return '<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom pb-2 mb-2">'
+  const info = '<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom pb-2 mb-2">'
     + '<div>' + crBolinha(online) + '<strong>' + escapeHtml(hostname || agentId) + '</strong>'
     + (maquina.site_name ? ' <span class="text-muted small">· ' + escapeHtml(maquina.site_name) + '</span>' : '')
-    + '</div>' + botoes + '</div>'
+    + '</div></div>'
     + aviso + '<div id="ciEqAlerta"></div>';
+  return { info, botoes };
 }
 
 async function carregarEquipamentoDoChamado(id) {
@@ -6484,11 +6487,15 @@ async function carregarEquipamentoDoChamado(id) {
     const resumo = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id) + '/equipamento');
     if (!resumo) {
       $('ciDetEquipamento').innerHTML = '<span class="text-muted">Nenhum equipamento vinculado a este chamado.</span>';
+      $('ciEqBotoes').innerHTML = '';
       return;
     }
-    $('ciDetEquipamento').innerHTML = renderMaquinaDoChamado(resumo);
+    const { info, botoes } = renderMaquinaDoChamado(resumo);
+    $('ciDetEquipamento').innerHTML = info;
+    $('ciEqBotoes').innerHTML = botoes;
   } catch (err) {
     $('ciDetEquipamento').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+    $('ciEqBotoes').innerHTML = '';
   }
 }
 
@@ -6613,9 +6620,9 @@ function configurarChamadosIntecs() {
     }
   });
 
-  // Botões de conexão remota da máquina vinculada (card fixo do modal).
+  // Botões de conexão remota da máquina vinculada (rodapé do modal).
   // Sem atribuição não conecta: avisa em modal, com atalho para se atribuir.
-  $('ciDetEquipamento').addEventListener('click', async (ev) => {
+  $('ciEqBotoes').addEventListener('click', async (ev) => {
     const btn = ev.target.closest('.btn-cr');
     if (!btn || btn.disabled) return;
     if (_chamadoIntecsDetalhe && _chamadoIntecsDetalhe.responsavel_id !== _ciPerfil.id) {
@@ -6625,19 +6632,6 @@ function configurarChamadosIntecs() {
     conectarViaBotao(btn);
   });
 
-  $('btnAtualizarEquipamentoIntecs').addEventListener('click', async () => {
-    if (!_chamadoIntecsAtual) return;
-    const btn = $('btnAtualizarEquipamentoIntecs');
-    btn.disabled = true;
-    try {
-      await api('POST', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual) + '/equipamento/atualizar');
-      await carregarEquipamentoDoChamado(_chamadoIntecsAtual);
-    } catch (err) {
-      $('ciDetEquipamento').innerHTML = '<span class="text-danger">Erro ao atualizar: ' + escapeHtml(err.message) + '</span>';
-    } finally {
-      btn.disabled = false;
-    }
-  });
 }
 
 // Indicadores acima da lista. Vêm da mesma rota do antigo dashboard — dela só
@@ -7379,7 +7373,6 @@ function aplicarPermissoesDetalheChamado(chamado) {
   const podeAtender = podeAtenderCI();
   const podeComentar = podeAtender || chamado.usuario_id === _ciPerfil.id;
   ['ciDetStatus', 'ciDetPrioridade', 'ciDetResponsavel'].forEach((id) => { $(id).disabled = !podeAtender; });
-  $('btnAtualizarEquipamentoIntecs').style.display = podeAtender ? '' : 'none';
   $('ciNovoComentario').closest('.d-flex').style.display = podeComentar ? '' : 'none';
   // Técnico só comenta no chamado atribuído a ele — mesmo que também seja o
   // solicitante. Solicitante comum (portal) não passa por aqui.
