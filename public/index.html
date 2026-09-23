@@ -845,46 +845,40 @@
     .sub-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
 
     /* ---------- Grupo Conexão no rodapé do chamado (Intecs) ---------- */
-    /* Terminal/Arquivos mostram, no hover, um rótulo curto (Terminal/Arquivos,
-       o mesmo já usado como rótulo visível no modalConexao da aba Conexão
-       Remota) — fixo por tipo aqui, não vem do atributo title dos botões:
-       esse title é "Terminal remoto"/"Arquivos remotos" e é compartilhado com
-       outras telas (mesma função crBtn), então não pode mudar globalmente só
-       por causa deste hover. O Conectar recolhe pro ícone enquanto isso. Só
-       com mouse de verdade, pra não travar um toque em "expandido".
-       O rótulo é position:absolute (nunca entra na largura do flex) — a T24
-       usava um ::after que CRESCIA dentro do fluxo; isso empurrava a largura
-       do #ciEqBotoes o suficiente pra estourar o flex-wrap do .modal-footer
-       em telas estreitas, o rodapé quebrava linha, o botão saía debaixo do
-       cursor, o hover desfazia, a quebra desfazia, o cursor voltava pro
-       botão... e o rodapé inteiro ficava piscando entre as duas alturas. */
+    /* Terminal/Arquivos "abrem" de volta DENTRO do próprio botão (o efeito
+       original da T24 — ícone vira ícone+texto), com o rótulo curto da T29
+       (Terminal/Arquivos; o title continua intocado, "Terminal remoto" /
+       "Arquivos remotos", que é compartilhado com outras telas). O Conectar
+       recolhe pro ícone enquanto isso. Só com mouse de verdade, pra não
+       travar um toque em "expandido".
+       #ciEqBotoes tem largura FIXA (178px — medi os 3 estados possíveis com
+       Playwright: repouso 177,5px, hover Terminal 176,4px, hover Arquivos
+       176,1px; uso o maior + margem) e os botões ficam alinhados à direita
+       dentro dela — por isso a largura do grupo nunca muda com o hover, o
+       .modal-footer nunca precisa quebrar linha (era essa quebra que soltava
+       o botão de baixo do cursor e causava o loop de piscar da T24/T28). O
+       efeito de abrir continua, só que interno a essa largura reservada,
+       sem afetar o resto do rodapé. */
     @media (hover: hover) and (pointer: fine) {
-      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"],
-      #ciEqBotoes .btn-cr[data-cr-tipo="file"] {
-        position: relative;
+      #ciEqBotoes {
+        width: 178px;
+        justify-content: flex-end;
       }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after { content: "Terminal"; }
       #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after { content: "Arquivos"; }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after,
       #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after {
-        position: absolute;
-        top: 50%; right: calc(100% + .35rem);
-        transform: translateY(-50%);
+        display: inline-block;
+        max-width: 0;
+        overflow: hidden;
         white-space: nowrap;
-        padding: .25rem .6rem;
-        border-radius: .375rem;
-        background: var(--ink);
-        color: #fff;
-        font-size: .8125rem;
-        font-weight: 600;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity .15s ease;
-        z-index: 2;
+        vertical-align: middle;
+        transition: max-width .2s ease, margin-left .2s ease;
       }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]:hover::after,
       #ciEqBotoes .btn-cr[data-cr-tipo="file"]:hover::after {
-        opacity: 1;
+        max-width: 6rem;
+        margin-left: .35rem;
       }
       #ciEqBotoes:has(.btn-cr[data-cr-tipo="terminal"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label,
       #ciEqBotoes:has(.btn-cr[data-cr-tipo="file"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label {
