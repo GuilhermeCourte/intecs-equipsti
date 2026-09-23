@@ -5219,31 +5219,6 @@
         <div class="modal-body p-0">
           <div class="p-3 border-bottom">
             <div class="row g-2 align-items-end">
-              <div class="col-12 col-md-auto">
-                <label class="form-label small mb-1">Status</label>
-                <select class="form-select form-select-sm" id="ciDetStatus">
-                  <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
-                  <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
-                  <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
-                  <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
-                </select>
-              </div>
-              <div class="col-6 col-md-auto">
-                <label class="form-label small mb-1">Prioridade</label>
-                <select class="form-select form-select-sm" id="ciDetPrioridade">
-                  <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
-                  <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
-                </select>
-              </div>
-              <div class="col-6 col-md-auto">
-                <label class="form-label small mb-1">Responsável</label>
-                <div class="d-flex gap-1">
-                  <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
-                  <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
-                    <i class="ph ph-user-plus"></i>
-                  </button>
-                </div>
-              </div>
               <div class="col-6 col-md-3">
                 <label class="form-label small mb-1">SLA</label>
                 <div id="ciDetSlaBadge" class="small"></div>
@@ -5278,7 +5253,37 @@
           </div>
         </div>
         <div class="modal-footer">
-          <div id="ciEqBotoes" class="d-flex gap-1 me-auto"></div>
+          <div class="d-flex flex-wrap gap-2 align-items-end me-auto">
+            <div>
+              <label class="form-label small mb-1">Status</label>
+              <select class="form-select form-select-sm" id="ciDetStatus">
+                <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
+                <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
+                <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
+                <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label small mb-1">Prioridade</label>
+              <select class="form-select form-select-sm" id="ciDetPrioridade">
+                <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
+                <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label small mb-1">Responsável</label>
+              <div class="d-flex gap-1">
+                <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
+                  <i class="ph ph-user-plus"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="form-label small mb-1">Conexão</label>
+            <div id="ciEqBotoes" class="d-flex gap-1"></div>
+          </div>
         </div>
       </div>
     </div>
