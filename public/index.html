@@ -5217,64 +5217,55 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-0">
-          <div class="row g-2 p-3 border-bottom align-items-end">
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">Status</label>
-              <select class="form-select form-select-sm" id="ciDetStatus">
-                <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
-                <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
-                <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
-                <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">Prioridade</label>
-              <select class="form-select form-select-sm" id="ciDetPrioridade">
-                <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
-                <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">Responsável</label>
-              <div class="d-flex gap-1">
-                <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
-                  <i class="ph ph-user-plus"></i>
-                </button>
+          <div class="p-3 border-bottom">
+            <div class="row g-2 align-items-end">
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1">Status</label>
+                <select class="form-select form-select-sm" id="ciDetStatus">
+                  <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
+                  <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
+                  <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
+                  <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
+                </select>
               </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">SLA</label>
-              <div id="ciDetSlaBadge" class="small"></div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1">Prioridade</label>
+                <select class="form-select form-select-sm" id="ciDetPrioridade">
+                  <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
+                  <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1">Responsável</label>
+                <div class="d-flex gap-1">
+                  <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
+                  <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
+                    <i class="ph ph-user-plus"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1">SLA</label>
+                <div id="ciDetSlaBadge" class="small"></div>
+              </div>
             </div>
           </div>
           <div class="px-3 pt-3" id="ciDetDadosChamado"></div>
-          <ul class="nav nav-tabs px-3 pt-2" role="tablist">
+          <div class="px-3 pb-2" id="ciDetEquipamento"></div>
+          <ul class="nav sub-tabs" role="tablist">
             <li class="nav-item" role="presentation">
-              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#ci-eq-resumo" type="button" role="tab">Resumo</button>
+              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#ci-comentarios" type="button" role="tab">
+                <i class="ph ph-chat-circle-text"></i> Comentários
+              </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-hardware" type="button" role="tab">Hardware</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-rede" type="button" role="tab">Rede</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-seguranca" type="button" role="tab">Segurança</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-comentarios" type="button" role="tab">Comentários</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-historico" type="button" role="tab">Histórico</button>
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#ci-historico" type="button" role="tab">
+                <i class="ph ph-clock-counter-clockwise"></i> Histórico
+              </button>
             </li>
           </ul>
           <div class="tab-content p-3">
-            <div class="tab-pane fade show active" id="ci-eq-resumo" role="tabpanel"></div>
-            <div class="tab-pane fade" id="ci-eq-hardware" role="tabpanel"></div>
-            <div class="tab-pane fade" id="ci-eq-rede" role="tabpanel"></div>
-            <div class="tab-pane fade" id="ci-eq-seguranca" role="tabpanel"></div>
-            <div class="tab-pane fade" id="ci-comentarios" role="tabpanel">
+            <div class="tab-pane fade show active" id="ci-comentarios" role="tabpanel">
               <div id="ciComentariosLista" class="mb-3"></div>
               <div class="d-flex gap-2">
                 <textarea class="form-control" id="ciNovoComentario" rows="2" placeholder="Escreva um comentário..."></textarea>
@@ -5290,6 +5281,7 @@
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarEquipamentoIntecs">
             <i class="ph ph-arrow-clockwise"></i> Atualizar Equipamento
           </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
         </div>
       </div>
     </div>

@@ -6373,18 +6373,6 @@ function configurarFiltrosChamadosIntecs() {
   wireCtxFiltro(ciFilterCtx, document.querySelector('#tabelaChamadosIntecs thead'));
 }
 
-function renderCamposEquipamento(obj) {
-  if (!obj || typeof obj !== 'object') return '<span class="text-muted">Sem dados.</span>';
-  const linhas = Object.entries(obj).map(([k, v]) => {
-    let valor;
-    if (v == null || v === '') valor = '<span class="text-muted">-</span>';
-    else if (Array.isArray(v) || typeof v === 'object') valor = '<pre class="mb-0 small">' + escapeHtml(JSON.stringify(v, null, 2)) + '</pre>';
-    else valor = escapeHtml(String(v));
-    return `<div class="row mb-1"><div class="col-5 text-muted small">${escapeHtml(k)}</div><div class="col-7">${valor}</div></div>`;
-  });
-  return linhas.join('') || '<span class="text-muted">Sem dados.</span>';
-}
-
 function renderDadosChamado(c) {
   const linhas = [
     ['Categoria', c.categoria_nome, c.subcategoria_nome ? `${c.categoria_nome || ''} / ${c.subcategoria_nome}` : c.categoria_nome],
@@ -6399,7 +6387,7 @@ function renderDadosChamado(c) {
   ].filter(([, raw]) => raw != null && raw !== '');
 
   const camposHtml = linhas.map(([label, , valor]) =>
-    `<div class="col-6 col-md-4"><div class="small text-muted">${escapeHtml(label)}</div><div>${escapeHtml(String(valor))}</div></div>`
+    `<div class="col-6 col-md-4"><div class="small text-muted">${escapeHtml(label)}</div><div class="fw-semibold text-break">${escapeHtml(String(valor))}</div></div>`
   ).join('');
 
   $('ciDetDadosChamado').innerHTML = `
@@ -6435,9 +6423,7 @@ async function abrirChamadoIntecsDetalhe(id) {
   _chamadoIntecsAtual = id;
   _chamadoIntecsDetalhe = null;
   $('ciDetalheTitle').textContent = 'Carregando...';
-  ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => {
-    $(elId).innerHTML = '<span class="text-muted">Carregando...</span>';
-  });
+  $('ciDetEquipamento').innerHTML = '<span class="text-muted">Carregando...</span>';
   $('ciComentariosLista').innerHTML = '';
   $('ciHistoricoLista').innerHTML = '';
   modalChamadoIntecsDetalhe.show();
@@ -6497,21 +6483,12 @@ async function carregarEquipamentoDoChamado(id) {
   try {
     const resumo = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id) + '/equipamento');
     if (!resumo) {
-      const msg = '<span class="text-muted">Nenhum equipamento vinculado a este chamado.</span>';
-      ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => { $(elId).innerHTML = msg; });
+      $('ciDetEquipamento').innerHTML = '<span class="text-muted">Nenhum equipamento vinculado a este chamado.</span>';
       return;
     }
-    $('ci-eq-resumo').innerHTML = renderMaquinaDoChamado(resumo) + renderCamposEquipamento({
-      status: resumo.status_online ? 'Online' : 'Offline',
-      'CPU (%)': resumo.cpu_pct, 'RAM (%)': resumo.ram_pct, 'Uptime (seg)': resumo.uptime_seg,
-      'Coletado em': fmtDataHora(resumo.coletado_em)
-    });
-    $('ci-eq-hardware').innerHTML = renderCamposEquipamento({ ...resumo.hardware_info, ...resumo.os_info });
-    $('ci-eq-rede').innerHTML = renderCamposEquipamento(resumo.rede_info);
-    $('ci-eq-seguranca').innerHTML = renderCamposEquipamento(resumo.seguranca_info);
+    $('ciDetEquipamento').innerHTML = renderMaquinaDoChamado(resumo);
   } catch (err) {
-    const msg = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
-    ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => { $(elId).innerHTML = msg; });
+    $('ciDetEquipamento').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
   }
 }
 
@@ -6636,9 +6613,9 @@ function configurarChamadosIntecs() {
     }
   });
 
-  // Botões de conexão remota da máquina vinculada (cabeçalho do tab Resumo).
+  // Botões de conexão remota da máquina vinculada (card fixo do modal).
   // Sem atribuição não conecta: avisa em modal, com atalho para se atribuir.
-  $('ci-eq-resumo').addEventListener('click', async (ev) => {
+  $('ciDetEquipamento').addEventListener('click', async (ev) => {
     const btn = ev.target.closest('.btn-cr');
     if (!btn || btn.disabled) return;
     if (_chamadoIntecsDetalhe && _chamadoIntecsDetalhe.responsavel_id !== _ciPerfil.id) {
@@ -6656,7 +6633,7 @@ function configurarChamadosIntecs() {
       await api('POST', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual) + '/equipamento/atualizar');
       await carregarEquipamentoDoChamado(_chamadoIntecsAtual);
     } catch (err) {
-      $('ci-eq-resumo').innerHTML = '<span class="text-danger">Erro ao atualizar: ' + escapeHtml(err.message) + '</span>';
+      $('ciDetEquipamento').innerHTML = '<span class="text-danger">Erro ao atualizar: ' + escapeHtml(err.message) + '</span>';
     } finally {
       btn.disabled = false;
     }
