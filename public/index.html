@@ -844,6 +844,32 @@
     .sub-tabs .nav-link:hover { color: var(--ink); }
     .sub-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
 
+    /* ---------- Grupo Conexão no rodapé do chamado (Intecs) ---------- */
+    /* Terminal/Arquivos mostram, no hover, o texto do próprio title() que já
+       existe (nada novo) via attr(); o Conectar recolhe pro ícone enquanto
+       isso. Só com mouse de verdade, pra não travar um toque em "expandido". */
+    @media (hover: hover) and (pointer: fine) {
+      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after,
+      #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after {
+        content: attr(title);
+        display: inline-block;
+        max-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        vertical-align: middle;
+        transition: max-width .2s ease, margin-left .2s ease;
+      }
+      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]:hover::after,
+      #ciEqBotoes .btn-cr[data-cr-tipo="file"]:hover::after {
+        max-width: 12rem;
+        margin-left: .35rem;
+      }
+      #ciEqBotoes:has(.btn-cr[data-cr-tipo="terminal"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label,
+      #ciEqBotoes:has(.btn-cr[data-cr-tipo="file"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label {
+        display: none;
+      }
+    }
+
     /* ---------- Painel de conexões (Internet › Conexão) ---------- */
     /* 5 por fileira no desktop; vai reduzindo até 2 no celular. */
     .conexao-grid {
@@ -5217,14 +5243,6 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-0">
-          <div class="p-3 border-bottom">
-            <div class="row g-2 align-items-end">
-              <div class="col-6 col-md-3">
-                <label class="form-label small mb-1">SLA</label>
-                <div id="ciDetSlaBadge" class="small"></div>
-              </div>
-            </div>
-          </div>
           <div class="px-3 pt-3" id="ciDetDadosChamado"></div>
           <div class="px-3 pb-2" id="ciDetEquipamento"></div>
           <ul class="nav sub-tabs" role="tablist">
@@ -5278,6 +5296,10 @@
                   <i class="ph ph-user-plus"></i>
                 </button>
               </div>
+            </div>
+            <div>
+              <label class="form-label small mb-1">SLA</label>
+              <div id="ciDetSlaBadge" class="small"></div>
             </div>
           </div>
           <div>

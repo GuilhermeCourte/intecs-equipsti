@@ -7148,7 +7148,7 @@ const crBolinha = (online) => '<span class="dash-dot ' + (online ? 'dash-dot--gr
 const crBtn = (agentId, tipo, titulo, icone, rotulo, habilitado, extra = '', pequeno = true) =>
   `<button type="button" class="btn ${pequeno ? 'btn-sm ' : ''}${habilitado ? 'btn-outline-primary' : 'btn-secondary'} btn-cr${extra ? ' ' + extra : ''}"`
   + ` data-agent-id="${escapeHtml(agentId)}" data-cr-tipo="${tipo}" title="${titulo}"${habilitado ? '' : ' disabled'}>`
-  + `<i class="ph ${icone}"></i>${rotulo ? ' ' + rotulo : ''}</button>`;
+  + `<i class="ph ${icone}"></i>${rotulo ? ` <span class="btn-cr-label">${rotulo}</span>` : ''}</button>`;
 
 // Agente Linux não tem MeshCentral: só o Terminal (Remote Background do RMM)
 // funciona — Conectar/Arquivos ficam desabilitados (mesmo visual de máquina
