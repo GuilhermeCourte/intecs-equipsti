@@ -847,22 +847,39 @@
     /* ---------- Grupo Conexão no rodapé do chamado (Intecs) ---------- */
     /* Terminal/Arquivos mostram, no hover, o texto do próprio title() que já
        existe (nada novo) via attr(); o Conectar recolhe pro ícone enquanto
-       isso. Só com mouse de verdade, pra não travar um toque em "expandido". */
+       isso. Só com mouse de verdade, pra não travar um toque em "expandido".
+       O rótulo é position:absolute (nunca entra na largura do flex) — a T24
+       usava um ::after que CRESCIA dentro do fluxo; isso empurrava a largura
+       do #ciEqBotoes o suficiente pra estourar o flex-wrap do .modal-footer
+       em telas estreitas, o rodapé quebrava linha, o botão saía debaixo do
+       cursor, o hover desfazia, a quebra desfazia, o cursor voltava pro
+       botão... e o rodapé inteiro ficava piscando entre as duas alturas. */
     @media (hover: hover) and (pointer: fine) {
+      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"],
+      #ciEqBotoes .btn-cr[data-cr-tipo="file"] {
+        position: relative;
+      }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after,
       #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after {
         content: attr(title);
-        display: inline-block;
-        max-width: 0;
-        overflow: hidden;
+        position: absolute;
+        top: 50%; right: calc(100% + .35rem);
+        transform: translateY(-50%);
         white-space: nowrap;
-        vertical-align: middle;
-        transition: max-width .2s ease, margin-left .2s ease;
+        padding: .25rem .6rem;
+        border-radius: .375rem;
+        background: var(--ink);
+        color: #fff;
+        font-size: .8125rem;
+        font-weight: 600;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .15s ease;
+        z-index: 2;
       }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]:hover::after,
       #ciEqBotoes .btn-cr[data-cr-tipo="file"]:hover::after {
-        max-width: 12rem;
-        margin-left: .35rem;
+        opacity: 1;
       }
       #ciEqBotoes:has(.btn-cr[data-cr-tipo="terminal"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label,
       #ciEqBotoes:has(.btn-cr[data-cr-tipo="file"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label {
