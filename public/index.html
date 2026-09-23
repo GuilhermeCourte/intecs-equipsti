@@ -845,9 +845,13 @@
     .sub-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
 
     /* ---------- Grupo Conexão no rodapé do chamado (Intecs) ---------- */
-    /* Terminal/Arquivos mostram, no hover, o texto do próprio title() que já
-       existe (nada novo) via attr(); o Conectar recolhe pro ícone enquanto
-       isso. Só com mouse de verdade, pra não travar um toque em "expandido".
+    /* Terminal/Arquivos mostram, no hover, um rótulo curto (Terminal/Arquivos,
+       o mesmo já usado como rótulo visível no modalConexao da aba Conexão
+       Remota) — fixo por tipo aqui, não vem do atributo title dos botões:
+       esse title é "Terminal remoto"/"Arquivos remotos" e é compartilhado com
+       outras telas (mesma função crBtn), então não pode mudar globalmente só
+       por causa deste hover. O Conectar recolhe pro ícone enquanto isso. Só
+       com mouse de verdade, pra não travar um toque em "expandido".
        O rótulo é position:absolute (nunca entra na largura do flex) — a T24
        usava um ::after que CRESCIA dentro do fluxo; isso empurrava a largura
        do #ciEqBotoes o suficiente pra estourar o flex-wrap do .modal-footer
@@ -859,9 +863,10 @@
       #ciEqBotoes .btn-cr[data-cr-tipo="file"] {
         position: relative;
       }
+      #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after { content: "Terminal"; }
+      #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after { content: "Arquivos"; }
       #ciEqBotoes .btn-cr[data-cr-tipo="terminal"]::after,
       #ciEqBotoes .btn-cr[data-cr-tipo="file"]::after {
-        content: attr(title);
         position: absolute;
         top: 50%; right: calc(100% + .35rem);
         transform: translateY(-50%);
