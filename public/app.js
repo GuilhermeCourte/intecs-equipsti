@@ -6121,6 +6121,7 @@ function configurarNovoChamado() {
 // ============================================================
 let modalNovoChamadoIntecs = null;
 let modalChamadoIntecsDetalhe = null;
+let modalResolverChamado = null;
 let _chamadosIntecs = [];
 let _chamadoIntecsAtual = null;
 let _chamadoIntecsDetalhe = null; // dados do chamado aberto no modal (p/ regra de conexão remota)
@@ -6225,7 +6226,13 @@ async function carregarPrioridadesEStatusIntecs() {
   _ciStatusConfig.forEach((s) => { if (!CI_STATUS_LABEL[s.nome]) CI_STATUS_LABEL[s.nome] = s.nome; });
 
   const itensPrioridade = _ciPrioridadesConfig.map((p) => ({ value: p.nome, label: CI_PRIORIDADE_LABEL[p.nome] || p.nome }));
-  const itensStatus = _ciStatusConfig.map((s) => ({ value: s.nome, label: CI_STATUS_LABEL[s.nome] || s.nome }));
+  // O select de status do modal não oferece mais os status de fechamento —
+  // esses viram um botão Encerrar à parte (fora do escopo desta mudança).
+  // CI_STATUS_CONCLUIDOS continua intacto: outras telas (badge, filtro da
+  // tabela) seguem enxergando todos os status normalmente.
+  const itensStatus = _ciStatusConfig
+    .filter((s) => !CI_STATUS_CONCLUIDOS.includes(s.nome))
+    .map((s) => ({ value: s.nome, label: CI_STATUS_LABEL[s.nome] || s.nome }));
 
   const setSelectPlano = (id, itens, comPlaceholder) => {
     $(id).innerHTML = (comPlaceholder ? `<option value="">${comPlaceholder}</option>` : '') +
@@ -6373,18 +6380,6 @@ function configurarFiltrosChamadosIntecs() {
   wireCtxFiltro(ciFilterCtx, document.querySelector('#tabelaChamadosIntecs thead'));
 }
 
-function renderCamposEquipamento(obj) {
-  if (!obj || typeof obj !== 'object') return '<span class="text-muted">Sem dados.</span>';
-  const linhas = Object.entries(obj).map(([k, v]) => {
-    let valor;
-    if (v == null || v === '') valor = '<span class="text-muted">-</span>';
-    else if (Array.isArray(v) || typeof v === 'object') valor = '<pre class="mb-0 small">' + escapeHtml(JSON.stringify(v, null, 2)) + '</pre>';
-    else valor = escapeHtml(String(v));
-    return `<div class="row mb-1"><div class="col-5 text-muted small">${escapeHtml(k)}</div><div class="col-7">${valor}</div></div>`;
-  });
-  return linhas.join('') || '<span class="text-muted">Sem dados.</span>';
-}
-
 function renderDadosChamado(c) {
   const linhas = [
     ['Categoria', c.categoria_nome, c.subcategoria_nome ? `${c.categoria_nome || ''} / ${c.subcategoria_nome}` : c.categoria_nome],
@@ -6399,7 +6394,7 @@ function renderDadosChamado(c) {
   ].filter(([, raw]) => raw != null && raw !== '');
 
   const camposHtml = linhas.map(([label, , valor]) =>
-    `<div class="col-6 col-md-4"><div class="small text-muted">${escapeHtml(label)}</div><div>${escapeHtml(String(valor))}</div></div>`
+    `<div class="col-6 col-md-4"><div class="small text-muted">${escapeHtml(label)}</div><div class="fw-semibold text-break">${escapeHtml(String(valor))}</div></div>`
   ).join('');
 
   $('ciDetDadosChamado').innerHTML = `
@@ -6435,9 +6430,8 @@ async function abrirChamadoIntecsDetalhe(id) {
   _chamadoIntecsAtual = id;
   _chamadoIntecsDetalhe = null;
   $('ciDetalheTitle').textContent = 'Carregando...';
-  ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => {
-    $(elId).innerHTML = '<span class="text-muted">Carregando...</span>';
-  });
+  $('ciDetEquipamento').innerHTML = '<span class="text-muted">Carregando...</span>';
+  $('ciEqBotoes').innerHTML = '';
   $('ciComentariosLista').innerHTML = '';
   $('ciHistoricoLista').innerHTML = '';
   modalChamadoIntecsDetalhe.show();
@@ -6446,11 +6440,24 @@ async function abrirChamadoIntecsDetalhe(id) {
     const data = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id));
     _chamadoIntecsDetalhe = data;
     $('ciDetalheTitle').textContent = `#${data.id} — ${data.titulo}`;
-    $('ciDetStatus').value = data.status;
+    // O select não tem mais as opções de fechamento (Resolvido/Fechado/
+    // Cancelado — viram um botão Encerrar à parte). Um chamado que já esteja
+    // num desses estados precisa continuar mostrando o status certo, então
+    // injeta uma option avulsa pra esse valor quando ele não está na lista
+    // (removendo a injetada do chamado anterior, pra não acumular).
+    const selStatus = $('ciDetStatus');
+    selStatus.querySelectorAll('option[data-injetada]').forEach((o) => o.remove());
+    if (!Array.from(selStatus.options).some((o) => o.value === data.status)) {
+      selStatus.insertAdjacentHTML('beforeend',
+        `<option data-injetada="1" value="${escapeHtml(data.status)}">${escapeHtml(CI_STATUS_LABEL[data.status] || data.status)}</option>`);
+    }
+    selStatus.value = data.status;
     $('ciDetPrioridade').value = data.prioridade;
     $('ciDetResponsavel').value = data.responsavel_id || '';
     const sla = slaInfo(data);
     $('ciDetSlaBadge').innerHTML = `<span class="badge-status ${sla.classe}">${escapeHtml(sla.texto)}</span> <span class="text-muted">até ${fmtDataHora(data.sla_conclusao_prazo)}</span>`;
+    $('ciResumoSolucaoWrap').style.display = data.solucao ? '' : 'none';
+    if (data.solucao) $('ciResumoSolucaoTexto').innerHTML = escapeHtml(data.solucao).replace(/\n/g, '<br>');
     renderDadosChamado(data);
     renderComentarios(data.comentarios || []);
     renderHistorico(data.historico || []);
@@ -6463,55 +6470,62 @@ async function abrirChamadoIntecsDetalhe(id) {
 }
 
 // Cabeçalho da máquina vinculada ao chamado (a que o solicitante escolheu no
-// portal, não necessariamente a de onde ele abriu) com os botões de conexão
-// remota da aba Conexão Remota — o Take Control vai direto para ela.
+// portal, não necessariamente a de onde ele abriu). Retorna o bloco de info
+// (nome/site/aviso, fica em #ciDetEquipamento) separado dos botões de conexão
+// (control/terminal/file, vão para #ciEqBotoes no rodapé do modal).
 function renderMaquinaDoChamado(resumo) {
   const maquina = resumo.maquina || {};
   const hostname = maquina.hostname || '';
   const agentId = resumo.tactical_agent_id || '';
-  if (!hostname && !agentId) return '';
+  if (!hostname && !agentId) return { info: '', botoes: '' };
   const online = !!maquina.status_online;
   // Conexão só para quem está atendendo o chamado: sem atribuição, o clique
   // avisa em um modal (com atalho para se atribuir) em vez de conectar.
   const atribuidoAMim = _chamadoIntecsDetalhe?.responsavel_id === _ciPerfil?.id;
   const tituloControl = atribuidoAMim ? 'Assumir o controle da tela' : 'Atribua o chamado a você para conectar';
   const ehLinux = crEhLinux(maquina);
+  // Terminal/Arquivos agora "abrem" o próprio nome dentro do botão no hover
+  // (CSS) — o tooltip nativo (title) ficaria repetindo a mesma palavra à
+  // toa. Ele só continua quando o botão está desabilitado (Linux) ou quando
+  // falta se atribuir o chamado (só o Conectar depende disso) — são os dois
+  // casos em que o texto explica por que o clique não vai fazer o esperado.
+  // Só mexe no valor passado pra crBtn NESTE call site — a função em si e a
+  // aba Conexão Remota continuam gerando o title de sempre, sem alteração.
+  const tituloControlFinal = ehLinux ? CR_TITULO_LINUX : (atribuidoAMim ? '' : tituloControl);
   const botoes = podeAtenderCI() && agentId
     ? '<div class="d-flex gap-1">'
-      + crBtn(agentId, 'control', ehLinux ? CR_TITULO_LINUX : tituloControl, 'ph-monitor-play', 'Conectar', !ehLinux)
-      + crBtn(agentId, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true)
-      + crBtn(agentId, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', !ehLinux)
+      + crBtn(agentId, 'control', tituloControlFinal, 'ph-monitor-play', 'Conectar', !ehLinux)
+      + comNomeAcessivel(crBtn(agentId, 'terminal', '', 'ph-terminal-window', '', true, 'btn-cr-abre-nome'), 'Terminal remoto')
+      + (ehLinux
+        ? crBtn(agentId, 'file', CR_TITULO_LINUX, 'ph-folder-open', '', false)
+        : comNomeAcessivel(crBtn(agentId, 'file', '', 'ph-folder-open', '', true, 'btn-cr-abre-nome'), 'Arquivos remotos'))
       + '</div>'
     : '';
   const aviso = botoes && !atribuidoAMim
     ? '<div class="text-muted small mb-2"><i class="ph ph-info"></i> Atribua o chamado a você para conectar à máquina.</div>'
     : '';
-  return '<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom pb-2 mb-2">'
+  const info = '<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom pb-2 mb-2">'
     + '<div>' + crBolinha(online) + '<strong>' + escapeHtml(hostname || agentId) + '</strong>'
     + (maquina.site_name ? ' <span class="text-muted small">· ' + escapeHtml(maquina.site_name) + '</span>' : '')
-    + '</div>' + botoes + '</div>'
+    + '</div></div>'
     + aviso + '<div id="ciEqAlerta"></div>';
+  return { info, botoes };
 }
 
 async function carregarEquipamentoDoChamado(id) {
   try {
     const resumo = await api('GET', '/api/chamados-intecs/' + encodeURIComponent(id) + '/equipamento');
     if (!resumo) {
-      const msg = '<span class="text-muted">Nenhum equipamento vinculado a este chamado.</span>';
-      ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => { $(elId).innerHTML = msg; });
+      $('ciDetEquipamento').innerHTML = '<span class="text-muted">Nenhum equipamento vinculado a este chamado.</span>';
+      $('ciEqBotoes').innerHTML = '';
       return;
     }
-    $('ci-eq-resumo').innerHTML = renderMaquinaDoChamado(resumo) + renderCamposEquipamento({
-      status: resumo.status_online ? 'Online' : 'Offline',
-      'CPU (%)': resumo.cpu_pct, 'RAM (%)': resumo.ram_pct, 'Uptime (seg)': resumo.uptime_seg,
-      'Coletado em': fmtDataHora(resumo.coletado_em)
-    });
-    $('ci-eq-hardware').innerHTML = renderCamposEquipamento({ ...resumo.hardware_info, ...resumo.os_info });
-    $('ci-eq-rede').innerHTML = renderCamposEquipamento(resumo.rede_info);
-    $('ci-eq-seguranca').innerHTML = renderCamposEquipamento(resumo.seguranca_info);
+    const { info, botoes } = renderMaquinaDoChamado(resumo);
+    $('ciDetEquipamento').innerHTML = info;
+    $('ciEqBotoes').innerHTML = botoes;
   } catch (err) {
-    const msg = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
-    ['ci-eq-resumo', 'ci-eq-hardware', 'ci-eq-rede', 'ci-eq-seguranca'].forEach((elId) => { $(elId).innerHTML = msg; });
+    $('ciDetEquipamento').innerHTML = '<span class="text-danger">Erro: ' + escapeHtml(err.message) + '</span>';
+    $('ciEqBotoes').innerHTML = '';
   }
 }
 
@@ -6523,6 +6537,25 @@ async function atualizarCampoChamadoIntecs(campo, valor) {
     await carregarChamadosIntecs();
   } catch (err) {
     alert('Erro ao atualizar: ' + err.message);
+  }
+}
+
+// Botão Encerrar > Resolvido: a Solução (texto opcional) e o status viram um
+// PATCH só, na mesma requisição — "Só resolver" pede pro servidor não avisar
+// o solicitante (notificar_solicitante:false); "Resolver e enviar" deixa o
+// aviso automático de RESOLVIDO seguir, com a solução dentro do e-mail.
+async function resolverChamadoIntecs(notificarSolicitante) {
+  if (!_chamadoIntecsAtual) return;
+  const solucao = trim($('ciResolverSolucao').value);
+  try {
+    await api('PATCH', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual), {
+      status: 'RESOLVIDO', solucao, notificar_solicitante: notificarSolicitante
+    });
+    modalResolverChamado.hide();
+    await abrirChamadoIntecsDetalhe(_chamadoIntecsAtual);
+    await carregarChamadosIntecs();
+  } catch (err) {
+    alert('Erro ao resolver: ' + err.message);
   }
 }
 
@@ -6619,6 +6652,15 @@ function configurarChamadosIntecs() {
   $('ciDetResponsavel').addEventListener('change', () => atualizarCampoChamadoIntecs('responsavel_id', $('ciDetResponsavel').value || null));
   $('btnAtribuirAMim').addEventListener('click', () => atualizarCampoChamadoIntecs('responsavel_id', _ciPerfil.id));
 
+  $('btnEncerrarFechado').addEventListener('click', () => atualizarCampoChamadoIntecs('status', 'FECHADO'));
+  $('btnEncerrarCancelado').addEventListener('click', () => atualizarCampoChamadoIntecs('status', 'CANCELADO'));
+  $('btnEncerrarResolvido').addEventListener('click', () => {
+    $('ciResolverSolucao').value = '';
+    modalResolverChamado.show();
+  });
+  $('btnSoResolver').addEventListener('click', () => resolverChamadoIntecs(false));
+  $('btnResolverEEnviar').addEventListener('click', () => resolverChamadoIntecs(true));
+
   $('btnEnviarComentarioIntecs').addEventListener('click', async () => {
     if (!_chamadoIntecsAtual) return;
     const texto = trim($('ciNovoComentario').value);
@@ -6636,9 +6678,9 @@ function configurarChamadosIntecs() {
     }
   });
 
-  // Botões de conexão remota da máquina vinculada (cabeçalho do tab Resumo).
+  // Botões de conexão remota da máquina vinculada (rodapé do modal).
   // Sem atribuição não conecta: avisa em modal, com atalho para se atribuir.
-  $('ci-eq-resumo').addEventListener('click', async (ev) => {
+  $('ciEqBotoes').addEventListener('click', async (ev) => {
     const btn = ev.target.closest('.btn-cr');
     if (!btn || btn.disabled) return;
     if (_chamadoIntecsDetalhe && _chamadoIntecsDetalhe.responsavel_id !== _ciPerfil.id) {
@@ -6648,19 +6690,6 @@ function configurarChamadosIntecs() {
     conectarViaBotao(btn);
   });
 
-  $('btnAtualizarEquipamentoIntecs').addEventListener('click', async () => {
-    if (!_chamadoIntecsAtual) return;
-    const btn = $('btnAtualizarEquipamentoIntecs');
-    btn.disabled = true;
-    try {
-      await api('POST', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual) + '/equipamento/atualizar');
-      await carregarEquipamentoDoChamado(_chamadoIntecsAtual);
-    } catch (err) {
-      $('ci-eq-resumo').innerHTML = '<span class="text-danger">Erro ao atualizar: ' + escapeHtml(err.message) + '</span>';
-    } finally {
-      btn.disabled = false;
-    }
-  });
 }
 
 // Indicadores acima da lista. Vêm da mesma rota do antigo dashboard — dela só
@@ -7177,7 +7206,12 @@ const crBolinha = (online) => '<span class="dash-dot ' + (online ? 'dash-dot--gr
 const crBtn = (agentId, tipo, titulo, icone, rotulo, habilitado, extra = '', pequeno = true) =>
   `<button type="button" class="btn ${pequeno ? 'btn-sm ' : ''}${habilitado ? 'btn-outline-primary' : 'btn-secondary'} btn-cr${extra ? ' ' + extra : ''}"`
   + ` data-agent-id="${escapeHtml(agentId)}" data-cr-tipo="${tipo}" title="${titulo}"${habilitado ? '' : ' disabled'}>`
-  + `<i class="ph ${icone}"></i>${rotulo ? ' ' + rotulo : ''}</button>`;
+  + `<i class="ph ${icone}"></i>${rotulo ? ` <span class="btn-cr-label">${rotulo}</span>` : ''}</button>`;
+
+// Ícone de crBtn sem rótulo visível perde o title como nome acessível quando
+// o title é esvaziado (botão habilitado com o nome abrindo no hover, ver
+// .btn-cr-abre-nome) — repõe via aria-label, que não dispara tooltip nativo.
+const comNomeAcessivel = (html, rotulo) => html.replace('<button ', `<button aria-label="${escapeHtml(rotulo)}" `);
 
 // Agente Linux não tem MeshCentral: só o Terminal (Remote Background do RMM)
 // funciona — Conectar/Arquivos ficam desabilitados (mesmo visual de máquina
@@ -7216,14 +7250,32 @@ function renderConexaoRemota() {
     .filter((a) => !termo || buscaNorm((a.hostname || '') + ' ' + (a.logged_username || '') + ' ' + (a.site_name || '')).includes(termo))
     .sort((a, b) => String(a.hostname || '').localeCompare(String(b.hostname || '')));
 
+  // A coluna Ações só tem folga pra reservar espaço do "abre o nome" a partir
+  // de 768px — abaixo disso a tabela já rola horizontalmente hoje sem
+  // relação com isto, e reservar mais espaço pioraria esse scroll. Então o
+  // JS (title/aria-label) segue a MESMA régua da media query do CSS — do
+  // contrário o botão ficaria sem title E sem o nome abrindo no celular.
+  // Único limite conhecido: redimensionar a janela cruzando 768px sem outro
+  // motivo de re-render deixa o title desatualizado até a próxima renderização.
+  const abreNomeNoHover = window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 768px)').matches;
   $('crTbody').innerHTML = lista.map((a) => {
     const online = !!a.status_online;
     const ehLinux = crEhLinux(a);
     const acoes = podeConectar
-      ? '<div class="d-flex gap-1 justify-content-end">'
-        + crBtn(a.tactical_agent_id, 'control', ehLinux ? CR_TITULO_LINUX : 'Assumir o controle da tela', 'ph-monitor-play', '', !ehLinux)
-        + crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true)
-        + crBtn(a.tactical_agent_id, 'file', ehLinux ? CR_TITULO_LINUX : 'Arquivos remotos', 'ph-folder-open', '', !ehLinux)
+      ? '<div class="d-flex gap-1 justify-content-end cr-acoes">'
+        + (ehLinux
+          ? crBtn(a.tactical_agent_id, 'control', CR_TITULO_LINUX, 'ph-monitor-play', '', false)
+          : abreNomeNoHover
+            ? comNomeAcessivel(crBtn(a.tactical_agent_id, 'control', '', 'ph-monitor-play', '', true, 'btn-cr-abre-nome'), 'Assumir o controle da tela')
+            : crBtn(a.tactical_agent_id, 'control', 'Assumir o controle da tela', 'ph-monitor-play', '', true))
+        + (abreNomeNoHover
+          ? comNomeAcessivel(crBtn(a.tactical_agent_id, 'terminal', '', 'ph-terminal-window', '', true, 'btn-cr-abre-nome'), 'Terminal remoto')
+          : crBtn(a.tactical_agent_id, 'terminal', 'Terminal remoto', 'ph-terminal-window', '', true))
+        + (ehLinux
+          ? crBtn(a.tactical_agent_id, 'file', CR_TITULO_LINUX, 'ph-folder-open', '', false)
+          : abreNomeNoHover
+            ? comNomeAcessivel(crBtn(a.tactical_agent_id, 'file', '', 'ph-folder-open', '', true, 'btn-cr-abre-nome'), 'Arquivos remotos')
+            : crBtn(a.tactical_agent_id, 'file', 'Arquivos remotos', 'ph-folder-open', '', true))
         + '</div>'
       : '';
     return '<tr data-agent-id="' + escapeHtml(a.tactical_agent_id) + '" style="cursor:pointer">'
@@ -7402,7 +7454,6 @@ function aplicarPermissoesDetalheChamado(chamado) {
   const podeAtender = podeAtenderCI();
   const podeComentar = podeAtender || chamado.usuario_id === _ciPerfil.id;
   ['ciDetStatus', 'ciDetPrioridade', 'ciDetResponsavel'].forEach((id) => { $(id).disabled = !podeAtender; });
-  $('btnAtualizarEquipamentoIntecs').style.display = podeAtender ? '' : 'none';
   $('ciNovoComentario').closest('.d-flex').style.display = podeComentar ? '' : 'none';
   // Técnico só comenta no chamado atribuído a ele — mesmo que também seja o
   // solicitante. Solicitante comum (portal) não passa por aqui.
@@ -7415,6 +7466,7 @@ function aplicarPermissoesDetalheChamado(chamado) {
   const btnAtribuir = $('btnAtribuirAMim');
   btnAtribuir.style.display = podeAtender ? '' : 'none';
   btnAtribuir.disabled = chamado.responsavel_id === _ciPerfil.id;
+  $('ciEncerrarWrap').style.display = podeAtender ? '' : 'none';
 }
 
 // ============================================================
@@ -9291,6 +9343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalIntecsMsa = new bootstrap.Modal($('modalIntecsMsa'));
   modalNovoChamadoIntecs = new bootstrap.Modal($('modalNovoChamadoIntecs'));
   modalChamadoIntecsDetalhe = new bootstrap.Modal($('modalChamadoIntecsDetalhe'));
+  modalResolverChamado = new bootstrap.Modal($('modalResolverChamado'));
   modalEditarUsuario = new bootstrap.Modal($('modalEditarUsuario'));
   modalNovoUsuario = new bootstrap.Modal($('modalNovoUsuario'));
   document.querySelectorAll('.modal').forEach(el => {

@@ -852,6 +852,119 @@
     .sub-tabs .nav-link:hover { color: var(--ink); }
     .sub-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
 
+    /* ---------- Botão de conexão que abre o nome no hover (compartilhado) ---------- */
+    /* Usado no rodapé do chamado (#ciEqBotoes: Terminal/Arquivos) e na lista
+       da Conexão Remota (.cr-acoes: Conectar/Terminal/Arquivos, os três).
+       O ícone vira ícone+nome DENTRO do próprio botão, no hover, sem tooltip
+       nativo (o JS já esvazia o title dos habilitados — ver crBtn nos dois
+       call sites). Só com mouse de verdade, pra não travar um toque
+       "expandido". O nome vem de content fixo por data-cr-tipo (não de
+       attr(title), que fica vazio quando habilitado — ver T29/T32). */
+    @media (hover: hover) and (pointer: fine) {
+      .btn-cr-abre-nome {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .btn-cr-abre-nome[data-cr-tipo="control"]::after { content: "Conectar"; }
+      .btn-cr-abre-nome[data-cr-tipo="terminal"]::after { content: "Terminal"; }
+      .btn-cr-abre-nome[data-cr-tipo="file"]::after { content: "Arquivos"; }
+      .btn-cr-abre-nome::after {
+        display: inline-block;
+        max-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        vertical-align: middle;
+        transition: max-width .2s ease, margin-left .2s ease;
+      }
+      .btn-cr-abre-nome:hover::after {
+        max-width: 6rem;
+        margin-left: .35rem;
+      }
+    }
+
+    /* ---------- Grupo Conexão no rodapé do chamado (Intecs) ---------- */
+    /* Terminal/Arquivos usam .btn-cr-abre-nome (acima). O Conectar é
+       diferente aqui: tem rótulo SEMPRE visível ("Conectar" fixo, não abre
+       no hover) que precisa recolher pra dar lugar ao Terminal/Arquivos
+       abrindo — por isso não usa a classe compartilhada.
+       #ciEqBotoes tem largura FIXA (178px — medi os 3 estados possíveis com
+       Playwright: repouso 177,5px, hover Terminal 176,4px, hover Arquivos
+       176,1px; uso o maior + margem) e os botões ficam alinhados à direita
+       dentro dela — por isso a largura do grupo nunca muda com o hover, o
+       .modal-footer nunca precisa quebrar linha (era essa quebra que soltava
+       o botão de baixo do cursor e causava o loop de piscar da T24/T28). */
+    @media (hover: hover) and (pointer: fine) {
+      #ciEqBotoes {
+        width: 178px;
+        justify-content: flex-end;
+      }
+      #ciEqBotoes .btn-cr {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      /* Rótulo do Conectar: some/reaparece encolhendo (não com display:none,
+         que é instantâneo) e SEM quebrar linha — e reaparecer tem atraso de
+         .2s (o tempo que o Terminal/Arquivos levam pra fechar). Sem esse
+         atraso, ao passar o mouse de um botão pro outro passando pelo vão
+         entre eles (nem um nem outro em :hover por um instante), o Conectar
+         reaparecia NA HORA enquanto o outro botão ainda estava fechando —
+         nesse instante os três juntos não cabiam nos 178px reservados e,
+         como o rótulo não tinha nowrap, "Conectar" quebrava em 2 linhas e
+         o grupo inteiro crescia de altura por uma fração de segundo. */
+      #ciEqBotoes .btn-cr[data-cr-tipo="control"] .btn-cr-label {
+        display: inline-block;
+        max-width: 6rem;
+        overflow: hidden;
+        vertical-align: middle;
+        transition: max-width .2s ease .2s;
+      }
+      #ciEqBotoes:has(.btn-cr[data-cr-tipo="terminal"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label,
+      #ciEqBotoes:has(.btn-cr[data-cr-tipo="file"]:hover) .btn-cr[data-cr-tipo="control"] .btn-cr-label {
+        max-width: 0;
+        transition: max-width 0s ease 0s;
+      }
+    }
+
+    /* ---------- Ações da lista de Conexão Remota (fora do chamado) ---------- */
+    /* Os três (Conectar/Terminal/Arquivos) usam .btn-cr-abre-nome — aqui
+       nenhum tem rótulo permanente, então não precisa da lógica de recolher
+       do Conectar acima. Só reserva largura (mesma ideia do #ciEqBotoes) a
+       partir de 768px: medi a coluna Ações hoje com folga de sobra em
+       1366px (~161px), mas em 390px ela já não tem folga NENHUMA (104px de
+       conteúdo em 104px disponíveis) e a tabela JÁ rola horizontalmente
+       nessa largura hoje, sem relação com esta mudança — reservar mais
+       espaço lá pioraria esse scroll pré-existente. Abaixo de 768px o
+       comportamento fica como já era: só ícone, tooltip nativo de sempre. */
+    @media (hover: hover) and (pointer: fine) and (min-width: 768px) {
+      .cr-acoes {
+        width: 178px;
+        /* .cr-acoes não é filho de um pai flex (é filho direto da <td>), então
+           justify-content só alinha o que está DENTRO dela — não empurra ela
+           mesma pra direita da célula. margin-left:auto é o que faz isso
+           (equivalente ao papel do .modal-footer no rodapé do chamado, que
+           empurra o #ciEqBotoes porque ELE é flex). Sem isso a folga dos
+           178px sobrava à DIREITA dos botões em vez de ficar (invisível)
+           à esquerda deles. */
+        margin-left: auto;
+        justify-content: flex-end !important;
+      }
+      .cr-acoes .btn-cr {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+    }
+    /* Abaixo de 768px cancela o "abre o nome" especificamente na tabela (sem
+       a largura reservada acima, a mesma classe compartilhada voltaria a
+       crescer sem espaço e reabriria o bug do T28/T31). O JS também não
+       esvazia o title nesse caso (mesma régua de largura), então o botão
+       fica exatamente como era antes desta task. */
+    @media (max-width: 767.98px) {
+      .cr-acoes .btn-cr-abre-nome::after {
+        content: none;
+        display: none;
+      }
+    }
+
     /* ---------- Painel de conexões (Internet › Conexão) ---------- */
     /* 5 por fileira no desktop; vai reduzindo até 2 no celular. */
     .conexao-grid {
@@ -5225,63 +5338,62 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-0">
-          <div class="row g-2 p-3 border-bottom align-items-end">
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">Status</label>
-              <select class="form-select form-select-sm" id="ciDetStatus">
-                <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
-                <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
-                <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
-                <option value="RESOLVIDO">Resolvido</option><option value="FECHADO">Fechado</option><option value="CANCELADO">Cancelado</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">Prioridade</label>
-              <select class="form-select form-select-sm" id="ciDetPrioridade">
-                <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
-                <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">Responsável</label>
-              <div class="d-flex gap-1">
-                <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
-                  <i class="ph ph-user-plus"></i>
-                </button>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1">SLA</label>
-              <div id="ciDetSlaBadge" class="small"></div>
-            </div>
-          </div>
           <div class="px-3 pt-3" id="ciDetDadosChamado"></div>
-          <ul class="nav nav-tabs px-3 pt-2" role="tablist">
+          <div class="px-3 pb-2" id="ciDetEquipamento"></div>
+          <ul class="nav sub-tabs" role="tablist">
             <li class="nav-item" role="presentation">
-              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#ci-eq-resumo" type="button" role="tab">Resumo</button>
+              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#ci-resumo" type="button" role="tab">
+                <i class="ph ph-info"></i> Resumo
+              </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-hardware" type="button" role="tab">Hardware</button>
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#ci-comentarios" type="button" role="tab">
+                <i class="ph ph-chat-circle-text"></i> Comentários
+              </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-rede" type="button" role="tab">Rede</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-eq-seguranca" type="button" role="tab">Segurança</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-comentarios" type="button" role="tab">Comentários</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ci-historico" type="button" role="tab">Histórico</button>
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#ci-historico" type="button" role="tab">
+                <i class="ph ph-clock-counter-clockwise"></i> Histórico
+              </button>
             </li>
           </ul>
           <div class="tab-content p-3">
-            <div class="tab-pane fade show active" id="ci-eq-resumo" role="tabpanel"></div>
-            <div class="tab-pane fade" id="ci-eq-hardware" role="tabpanel"></div>
-            <div class="tab-pane fade" id="ci-eq-rede" role="tabpanel"></div>
-            <div class="tab-pane fade" id="ci-eq-seguranca" role="tabpanel"></div>
+            <div class="tab-pane fade show active" id="ci-resumo" role="tabpanel">
+              <div class="row g-2 align-items-end">
+                <div class="col-6 col-md-auto">
+                  <label class="form-label small mb-1">Status</label>
+                  <select class="form-select form-select-sm" id="ciDetStatus">
+                    <option value="ABERTO">Aberto</option><option value="EM_ANALISE">Em análise</option>
+                    <option value="AGUARDANDO_USUARIO">Aguardando usuário</option><option value="EM_ATENDIMENTO">Em atendimento</option>
+                    <option value="AGUARDANDO_FORNECEDOR">Aguardando fornecedor</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-auto">
+                  <label class="form-label small mb-1">Prioridade</label>
+                  <select class="form-select form-select-sm" id="ciDetPrioridade">
+                    <option value="BAIXA">Baixa</option><option value="MEDIA">Média</option>
+                    <option value="ALTA">Alta</option><option value="CRITICA">Crítica</option>
+                  </select>
+                </div>
+                <div class="col-6 col-md-auto">
+                  <label class="form-label small mb-1">Responsável</label>
+                  <div class="d-flex gap-1">
+                    <select class="form-select form-select-sm" id="ciDetResponsavel"><option value="">Ninguém</option></select>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtribuirAMim" title="Atribuir a mim">
+                      <i class="ph ph-user-plus"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label small mb-1">SLA</label>
+                  <div id="ciDetSlaBadge" class="small"></div>
+                </div>
+              </div>
+              <div class="mt-2" id="ciResumoSolucaoWrap" style="display:none">
+                <label class="form-label small mb-1">Solução</label>
+                <div class="border rounded p-2 bg-light" id="ciResumoSolucaoTexto"></div>
+              </div>
+            </div>
             <div class="tab-pane fade" id="ci-comentarios" role="tabpanel">
               <div id="ciComentariosLista" class="mb-3"></div>
               <div class="d-flex gap-2">
@@ -5294,9 +5406,43 @@
             </div>
           </div>
         </div>
-        <div class="modal-footer justify-content-between">
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAtualizarEquipamentoIntecs">
-            <i class="ph ph-arrow-clockwise"></i> Atualizar Equipamento
+        <div class="modal-footer">
+          <div class="dropdown me-auto" id="ciEncerrarWrap">
+            <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="ph ph-check-circle"></i> Encerrar
+            </button>
+            <ul class="dropdown-menu">
+              <li><button type="button" class="dropdown-item" id="btnEncerrarResolvido">Resolvido</button></li>
+              <li><button type="button" class="dropdown-item" id="btnEncerrarFechado">Fechado</button></li>
+              <li><button type="button" class="dropdown-item" id="btnEncerrarCancelado">Cancelado</button></li>
+            </ul>
+          </div>
+          <div>
+            <label class="form-label small mb-1">Conexão</label>
+            <div id="ciEqBotoes" class="d-flex gap-1"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL RESOLVER CHAMADO INTECS ===================== -->
+  <div class="modal fade" id="modalResolverChamado" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-check-circle me-2"></i>Resolver chamado</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label" for="ciResolverSolucao">Solução <span class="text-muted">(opcional)</span></label>
+          <textarea class="form-control" id="ciResolverSolucao" rows="4"
+            placeholder="Descreva o que foi feito para resolver o chamado..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" id="btnSoResolver">Só resolver</button>
+          <button type="button" class="btn btn-primary" id="btnResolverEEnviar">
+            <i class="ph ph-paper-plane-tilt"></i> Resolver e enviar
           </button>
         </div>
       </div>
