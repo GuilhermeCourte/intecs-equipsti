@@ -355,13 +355,15 @@ export async function notificarEmailLote({ titulo, tag, blocos, papeis, usuarioI
  * @param {string} o.titulo    manchete do e-mail
  * @param {string} [o.chamada] frase de abertura
  * @param {string} [o.comentario]
+ * @param {string} [o.legendaComentario] rótulo acima do texto de o.comentario
+ *   (ex.: "Solução informada:"); default é "<autor> comentou:".
  * @param {Array}  [o.mudancas]
  * @param {string} [o.equipamento]
  * @returns {Promise<boolean>} true se o e-mail foi disparado (há destinatário
  *   válido e o solicitante não é o próprio autor). A entrega em si acontece em
  *   segundo plano — falha de SMTP aparece só no log.
  */
-export async function notificarSolicitante({ chamado, ator, titulo, chamada, comentario, mudancas, equipamento, tile }) {
+export async function notificarSolicitante({ chamado, ator, titulo, chamada, comentario, legendaComentario, mudancas, equipamento, tile }) {
   try {
     const donoId = Number(chamado?.usuario_id) || 0;
     if (!donoId) return false;
@@ -385,7 +387,7 @@ export async function notificarSolicitante({ chamado, ator, titulo, chamada, com
 
     const { subject, html, text } = emailParaSolicitante({
       chamado, titulo, chamada, autor: ator?.email || 'a equipe de TI',
-      comentario, mudancas, equipamento, tile
+      comentario, legendaComentario, mudancas, equipamento, tile
     });
     // Não aguardado, pela mesma razão de notificar(): o técnico não fica
     // esperando o SMTP para ver o comentário dele salvo.

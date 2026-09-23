@@ -207,7 +207,7 @@ function prazoHtml(chamado) {
 }
 
 // Bloco do evento: o comentário novo ou a transição de status, em card.
-function eventoHtml({ comentario, autor, mudancas }) {
+function eventoHtml({ comentario, autor, mudancas, legendaComentario }) {
   const corpo = comentario
     ? `<div style="font-size:14px;line-height:1.55;color:${P.ink};white-space:pre-wrap;word-break:break-word;">${esc(comentario)}</div>`
     : (Array.isArray(mudancas) && mudancas.length
@@ -220,7 +220,7 @@ function eventoHtml({ comentario, autor, mudancas }) {
 
   const img = icone(comentario ? 'comentario' : 'status', 22);
   const legenda = comentario
-    ? `<strong style="color:${P.ink};">${esc(autor)}</strong> comentou:`
+    ? (legendaComentario ? esc(legendaComentario) : `<strong style="color:${P.ink};">${esc(autor)}</strong> comentou:`)
     : `Alterado por <strong style="color:${P.ink};">${esc(autor)}</strong>:`;
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -263,8 +263,8 @@ const respiro = (px) => `<div style="height:${px}px;line-height:${px}px;font-siz
 // — a única diferença é a faixa do topo, e para onde o botão leva.
 // 'cabecalhoEstilo' é passado inteiro pelo chamador porque o gradiente precisa
 // de background-color e background-image separados (ver HEADER_GRADIENTE).
-function montarDocumento({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, tile, url, urlConectar, cabecalhoBg, cabecalhoEstilo }) {
-  const evento = eventoHtml({ comentario, autor, mudancas });
+function montarDocumento({ chamado, titulo, chamada, autor, comentario, legendaComentario, mudancas, equipamento, tile, url, urlConectar, cabecalhoBg, cabecalhoEstilo }) {
+  const evento = eventoHtml({ comentario, autor, mudancas, legendaComentario });
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -316,7 +316,8 @@ function montarDocumento({ chamado, titulo, chamada, autor, comentario, mudancas
  * @param {string} o.titulo       manchete (ex.: 'Seu chamado foi resolvido')
  * @param {string} [o.chamada]    frase de abertura
  * @param {string} [o.autor]      quem executou a ação
- * @param {string} [o.comentario] texto do comentário novo
+ * @param {string} [o.comentario] texto do comentário novo (ou da solução, ver legendaComentario)
+ * @param {string} [o.legendaComentario] rótulo de o.comentario; default "<autor> comentou:"
  * @param {Array}  [o.mudancas]   [{de, para}] da transição de status
  * @param {string} [o.equipamento]
  * @param {string} [o.tile]  qual tile do cabeçalho: 'recibo' | 'resposta' |
@@ -361,10 +362,10 @@ export function emailParaEquipe(o) {
 }
 
 // Versão texto puro — fallback para cliente que não renderiza HTML.
-function textoChamado({ chamado, titulo, chamada, autor, comentario, mudancas, equipamento, url, urlConectar }) {
+function textoChamado({ chamado, titulo, chamada, autor, comentario, legendaComentario, mudancas, equipamento, url, urlConectar }) {
   const linhas = [titulo, ''];
   if (chamada) linhas.push(chamada, '');
-  if (comentario) linhas.push(`${autor} comentou:`, comentario, '');
+  if (comentario) linhas.push(legendaComentario || `${autor} comentou:`, comentario, '');
   else if (Array.isArray(mudancas) && mudancas.length) {
     linhas.push(`Alterado por ${autor}:`);
     mudancas.forEach((m) => linhas.push(`  ${rotular(m.de)} -> ${rotular(m.para)}`));

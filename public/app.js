@@ -6121,6 +6121,7 @@ function configurarNovoChamado() {
 // ============================================================
 let modalNovoChamadoIntecs = null;
 let modalChamadoIntecsDetalhe = null;
+let modalResolverChamado = null;
 let _chamadosIntecs = [];
 let _chamadoIntecsAtual = null;
 let _chamadoIntecsDetalhe = null; // dados do chamado aberto no modal (p/ regra de conexão remota)
@@ -6455,6 +6456,8 @@ async function abrirChamadoIntecsDetalhe(id) {
     $('ciDetResponsavel').value = data.responsavel_id || '';
     const sla = slaInfo(data);
     $('ciDetSlaBadge').innerHTML = `<span class="badge-status ${sla.classe}">${escapeHtml(sla.texto)}</span> <span class="text-muted">até ${fmtDataHora(data.sla_conclusao_prazo)}</span>`;
+    $('ciResumoSolucaoWrap').style.display = data.solucao ? '' : 'none';
+    if (data.solucao) $('ciResumoSolucaoTexto').innerHTML = escapeHtml(data.solucao).replace(/\n/g, '<br>');
     renderDadosChamado(data);
     renderComentarios(data.comentarios || []);
     renderHistorico(data.historico || []);
@@ -6524,6 +6527,25 @@ async function atualizarCampoChamadoIntecs(campo, valor) {
     await carregarChamadosIntecs();
   } catch (err) {
     alert('Erro ao atualizar: ' + err.message);
+  }
+}
+
+// Botão Encerrar > Resolvido: a Solução (texto opcional) e o status viram um
+// PATCH só, na mesma requisição — "Só resolver" pede pro servidor não avisar
+// o solicitante (notificar_solicitante:false); "Resolver e enviar" deixa o
+// aviso automático de RESOLVIDO seguir, com a solução dentro do e-mail.
+async function resolverChamadoIntecs(notificarSolicitante) {
+  if (!_chamadoIntecsAtual) return;
+  const solucao = trim($('ciResolverSolucao').value);
+  try {
+    await api('PATCH', '/api/chamados-intecs/' + encodeURIComponent(_chamadoIntecsAtual), {
+      status: 'RESOLVIDO', solucao, notificar_solicitante: notificarSolicitante
+    });
+    modalResolverChamado.hide();
+    await abrirChamadoIntecsDetalhe(_chamadoIntecsAtual);
+    await carregarChamadosIntecs();
+  } catch (err) {
+    alert('Erro ao resolver: ' + err.message);
   }
 }
 
@@ -6619,6 +6641,15 @@ function configurarChamadosIntecs() {
   $('ciDetPrioridade').addEventListener('change', () => atualizarCampoChamadoIntecs('prioridade', $('ciDetPrioridade').value));
   $('ciDetResponsavel').addEventListener('change', () => atualizarCampoChamadoIntecs('responsavel_id', $('ciDetResponsavel').value || null));
   $('btnAtribuirAMim').addEventListener('click', () => atualizarCampoChamadoIntecs('responsavel_id', _ciPerfil.id));
+
+  $('btnEncerrarFechado').addEventListener('click', () => atualizarCampoChamadoIntecs('status', 'FECHADO'));
+  $('btnEncerrarCancelado').addEventListener('click', () => atualizarCampoChamadoIntecs('status', 'CANCELADO'));
+  $('btnEncerrarResolvido').addEventListener('click', () => {
+    $('ciResolverSolucao').value = '';
+    modalResolverChamado.show();
+  });
+  $('btnSoResolver').addEventListener('click', () => resolverChamadoIntecs(false));
+  $('btnResolverEEnviar').addEventListener('click', () => resolverChamadoIntecs(true));
 
   $('btnEnviarComentarioIntecs').addEventListener('click', async () => {
     if (!_chamadoIntecsAtual) return;
@@ -7402,6 +7433,7 @@ function aplicarPermissoesDetalheChamado(chamado) {
   const btnAtribuir = $('btnAtribuirAMim');
   btnAtribuir.style.display = podeAtender ? '' : 'none';
   btnAtribuir.disabled = chamado.responsavel_id === _ciPerfil.id;
+  $('ciEncerrarWrap').style.display = podeAtender ? '' : 'none';
 }
 
 // ============================================================
@@ -9278,6 +9310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalIntecsMsa = new bootstrap.Modal($('modalIntecsMsa'));
   modalNovoChamadoIntecs = new bootstrap.Modal($('modalNovoChamadoIntecs'));
   modalChamadoIntecsDetalhe = new bootstrap.Modal($('modalChamadoIntecsDetalhe'));
+  modalResolverChamado = new bootstrap.Modal($('modalResolverChamado'));
   modalEditarUsuario = new bootstrap.Modal($('modalEditarUsuario'));
   modalNovoUsuario = new bootstrap.Modal($('modalNovoUsuario'));
   document.querySelectorAll('.modal').forEach(el => {

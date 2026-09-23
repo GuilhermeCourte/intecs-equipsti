@@ -3908,6 +3908,10 @@ app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigir
     campos.categoria_id = Number(req.body.categoria_id) || null;
     historicoEntradas.push(['CATEGORIA', 'categoria_id', chamado.categoria_id, campos.categoria_id]);
   }
+  // Solução (botão Encerrar > Resolvido): campo próprio, sem entrada de
+  // histórico dedicada — a troca de status pra RESOLVIDO já registra isso.
+  const solucaoInformada = req.body.solucao !== undefined ? (trim(req.body.solucao) || '') : null;
+  if (solucaoInformada !== null) campos.solucao = solucaoInformada || null;
   if (respondidoAgora) campos.sla_respondido_em = new Date();
   campos.atualizado_por = req.user.email;
 
@@ -3940,9 +3944,14 @@ app.patch('/api/chamados-intecs/:id', exigirAuth, carregarPerfilChamados, exigir
       });
       // Só avisa o solicitante quando o status novo está marcado para isso
       // (coluna notifica_solicitante) — evita e-mail de troca interna de fila.
-      if (await chamadosIntecsRepo.statusNotificaSolicitante(statusDepois)) {
+      // "notificar_solicitante: false" é o botão Encerrar > Resolvido > Só
+      // resolver — suprime esse aviso automático só nesta requisição.
+      if (req.body.notificar_solicitante !== false && await chamadosIntecsRepo.statusNotificaSolicitante(statusDepois)) {
         await notificarSolicitante({
-          chamado: atualizado, ator, equipamento, mudancas,
+          chamado: atualizado, ator, equipamento,
+          mudancas: solucaoInformada ? undefined : mudancas,
+          comentario: solucaoInformada || undefined,
+          legendaComentario: solucaoInformada ? 'Solução informada:' : undefined,
           tile: tileParaSolicitante(statusDepois),
           titulo: tituloParaSolicitante(statusDepois),
           chamada: chamadaParaSolicitante(statusDepois)

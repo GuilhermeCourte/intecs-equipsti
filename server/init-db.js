@@ -474,6 +474,11 @@ IF COL_LENGTH('dbo.EQUIPSTI_chamados_intecs', 'sla_conclusao_prazo') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_chamados_intecs', 'sla_respondido_em') IS NULL
   ALTER TABLE dbo.EQUIPSTI_chamados_intecs ADD sla_respondido_em DATETIME2 NULL;
 
+-- Solução do chamado (botão Encerrar > Resolvido): campo próprio, não é
+-- comentário — decisão explícita do usuário.
+IF COL_LENGTH('dbo.EQUIPSTI_chamados_intecs', 'solucao') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_chamados_intecs ADD solucao NVARCHAR(MAX) NULL;
+
 IF OBJECT_ID('dbo.EQUIPSTI_chamados_intecs_categorias', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_chamados_intecs_categorias (
   id    INT IDENTITY(1,1) PRIMARY KEY,

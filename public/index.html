@@ -5294,6 +5294,10 @@
                   <div id="ciDetSlaBadge" class="small"></div>
                 </div>
               </div>
+              <div class="mt-2" id="ciResumoSolucaoWrap" style="display:none">
+                <label class="form-label small mb-1">Solução</label>
+                <div class="border rounded p-2 bg-light" id="ciResumoSolucaoTexto"></div>
+              </div>
             </div>
             <div class="tab-pane fade" id="ci-comentarios" role="tabpanel">
               <div id="ciComentariosLista" class="mb-3"></div>
@@ -5308,10 +5312,43 @@
           </div>
         </div>
         <div class="modal-footer">
+          <div class="dropdown me-auto" id="ciEncerrarWrap">
+            <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="ph ph-check-circle"></i> Encerrar
+            </button>
+            <ul class="dropdown-menu">
+              <li><button type="button" class="dropdown-item" id="btnEncerrarResolvido">Resolvido</button></li>
+              <li><button type="button" class="dropdown-item" id="btnEncerrarFechado">Fechado</button></li>
+              <li><button type="button" class="dropdown-item" id="btnEncerrarCancelado">Cancelado</button></li>
+            </ul>
+          </div>
           <div>
             <label class="form-label small mb-1">Conexão</label>
             <div id="ciEqBotoes" class="d-flex gap-1"></div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL RESOLVER CHAMADO INTECS ===================== -->
+  <div class="modal fade" id="modalResolverChamado" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="ph ph-check-circle me-2"></i>Resolver chamado</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label" for="ciResolverSolucao">Solução <span class="text-muted">(opcional)</span></label>
+          <textarea class="form-control" id="ciResolverSolucao" rows="4"
+            placeholder="Descreva o que foi feito para resolver o chamado..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" id="btnSoResolver">Só resolver</button>
+          <button type="button" class="btn btn-primary" id="btnResolverEEnviar">
+            <i class="ph ph-paper-plane-tilt"></i> Resolver e enviar
+          </button>
         </div>
       </div>
     </div>
