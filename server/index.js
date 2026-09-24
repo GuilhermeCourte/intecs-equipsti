@@ -3029,6 +3029,7 @@ const CHAMADO_UNIDADES = [
   'AS - GUAIANASES',
   'AS - TIRADENTES',
   'AS - MBOI MIRIM',
+  'AS - GRAJAÚ',
 ];
 
 app.get('/api/chamados/assuntos', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
