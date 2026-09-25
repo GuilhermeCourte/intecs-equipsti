@@ -27,6 +27,16 @@
   };
   const ymdParaBR = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
 
+  // Nome de exibição: a parte do e-mail antes do @. Se duas pessoas da lista
+  // têm o mesmo nome, mostra o e-mail inteiro dessas duas para não confundir.
+  function nomeDe(email) {
+    const e = String(email || '');
+    const nome = e.split('@')[0];
+    const conhecidos = [...st.usuarios.map((u) => u.email), st.eu && st.eu.email].filter(Boolean);
+    const repetido = conhecidos.filter((c) => c.split('@')[0].toLowerCase() === nome.toLowerCase()).length > 1;
+    return repetido ? e : nome;
+  }
+
   let raiz = null;
   let cfg = {};
   let modais = null; // { editar, compartilhar, apagar } — instâncias do Bootstrap
@@ -141,12 +151,12 @@
 
     const chips = [chipPrazo(t)];
     if (pane === 'atribuidas') {
-      chips.push(`<span class="td-chip"><i class="ph ph-user-circle"></i>para ${esc(t.donoEmail)}</span>`);
+      chips.push(`<span class="td-chip" title="${esc(t.donoEmail)}"><i class="ph ph-user-circle"></i>para ${esc(nomeDe(t.donoEmail))}</span>`);
       chips.push(t.concluida
         ? '<span class="td-chip ok"><i class="ph ph-check-circle"></i>Concluída</span>'
         : '<span class="td-chip"><i class="ph ph-hourglass-medium"></i>Pendente</span>');
     } else if (t.atribuida) {
-      chips.push(`<span class="td-chip"><i class="ph ph-paper-plane-tilt"></i>de ${esc(t.criadoPorEmail)}</span>`);
+      chips.push(`<span class="td-chip" title="${esc(t.criadoPorEmail)}"><i class="ph ph-paper-plane-tilt"></i>de ${esc(nomeDe(t.criadoPorEmail))}</span>`);
     }
     if (podeLiberar && t.compartilhadoCom && t.compartilhadoCom.length) {
       chips.push(`<span class="td-chip"><i class="ph ph-users"></i>Liberada para ${t.compartilhadoCom.length}</span>`);
@@ -191,7 +201,7 @@
   }
 
   function formAtribuir() {
-    const opcoes = st.usuarios.map((u) => `<option value="${u.id}">${esc(u.email)}</option>`).join('');
+    const opcoes = st.usuarios.map((u) => `<option value="${u.id}" title="${esc(u.email)}">${esc(nomeDe(u.email))}</option>`).join('');
     return `<form class="td-add" data-td-form="atribuir" autocomplete="off">
       <input type="text" class="form-control form-control-sm td-texto" name="titulo" maxlength="500" required
         placeholder="Tarefa para outra pessoa..." aria-label="Tarefa">
@@ -209,7 +219,7 @@
     // Dropdown de listas.
     const sel = raiz.querySelector('#tdDono');
     sel.innerHTML = `<option value="">Minha lista</option>`
-      + st.usuarios.map((u) => `<option value="${u.id}">${esc(u.email)}</option>`).join('');
+      + st.usuarios.map((u) => `<option value="${u.id}" title="${esc(u.email)}">${esc(nomeDe(u.email))}</option>`).join('');
     sel.value = st.alvoId ? String(st.alvoId) : '';
     raiz.querySelector('#tdSoLeitura').classList.toggle('d-none', d.propria);
 
@@ -228,7 +238,7 @@
       html = (d.propria ? formNova('TRABALHO') : '')
         + listaTarefas(d.trabalho, 'trabalho', 'Nenhuma tarefa de trabalho.');
     } else if (st.aba === 'pessoal') {
-      html = (d.propria ? formNova('PESSOAL') : `<p class="text-muted small mb-2">Só as tarefas que ${esc(d.dono.email)} liberou para você.</p>`)
+      html = (d.propria ? formNova('PESSOAL') : `<p class="text-muted small mb-2">Só as tarefas que ${esc(nomeDe(d.dono.email))} liberou para você.</p>`)
         + listaTarefas(d.pessoal, 'pessoal', 'Nenhuma tarefa pessoal.');
     } else {
       html = formAtribuir() + listaTarefas(d.atribuidas, 'atribuidas', 'Você ainda não atribuiu tarefas a outras pessoas.');
@@ -354,7 +364,7 @@
     document.getElementById('tdCompartilharLista').innerHTML = st.usuarios.length
       ? st.usuarios.map((u) => `<div class="form-check">
           <input class="form-check-input" type="checkbox" value="${u.id}" id="tdLib${u.id}" ${marcados.has(u.id) ? 'checked' : ''}>
-          <label class="form-check-label" for="tdLib${u.id}">${esc(u.email)}</label></div>`).join('')
+          <label class="form-check-label" for="tdLib${u.id}" title="${esc(u.email)}">${esc(nomeDe(u.email))}</label></div>`).join('')
       : '<span class="text-muted">Não há outras pessoas com acesso ao TODO.</span>';
     modais.compartilhar.show();
   }
