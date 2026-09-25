@@ -4,14 +4,15 @@
    --bg, --bg-soft, --radius), então acompanha o tema claro/escuro.
    ============================================================ */
 .td-toolbar {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: flex-end; justify-content: space-between;
   gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem;
 }
-.td-dono { display: flex; align-items: center; gap: .5rem; min-width: 0; }
-.td-dono label {
-  font-size: .85rem; font-weight: 600; color: var(--muted);
-  white-space: nowrap; margin: 0; display: inline-flex; align-items: center; gap: .35rem;
-}
+/* Rótulo em cima do dropdown, como nos formulários (form-label small mb-1); o ícone ao lado do texto. */
+.td-dono { display: flex; flex-direction: column; min-width: 0; }
+.td-dono .form-label { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+.td-dono-linha { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+/* O dropdown (37px) é mais alto que o botão de atualizar: 2px de folga centraliza um no outro. */
+.td-toolbar > [data-td="atualizar"] { margin-bottom: 2px; }
 .td-dono .form-select { width: auto; max-width: 300px; min-width: 170px; }
 .td-dono .choices { flex: 0 1 260px; width: 260px; min-width: 170px; }
 
@@ -81,7 +82,8 @@ html[data-theme="dark"] .td-feita .td-check { color: #4cc38a; }
   .td-tela .form-control, .td-tela .form-select { font-size: 16px; }
   /* Sem quebra: o botão de atualizar fica na mesma linha do seletor. */
   .td-toolbar { flex-wrap: nowrap; }
-  .td-dono { flex: 1 1 0; flex-wrap: wrap; }
+  .td-dono { flex: 1 1 0; }
+  .td-dono-linha { flex-wrap: wrap; }
   .td-dono .form-select, .td-dono .choices { flex: 1 1 140px; min-width: 0; max-width: none; }
   .td-campo-texto { flex: 1 1 100%; }
   .td-campo-prazo, .td-campo-dest { flex: 1 1 140px; }

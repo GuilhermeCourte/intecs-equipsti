@@ -521,9 +521,11 @@
       <div class="td-tela">
         <div class="td-toolbar">
           <div class="td-dono">
-            <label for="tdDono"><i class="ph ph-users"></i> Lista de</label>
-            <select class="form-select form-select-sm" id="tdDono" aria-label="Lista de"><option value="eu">Minha lista</option></select>
-            <span class="td-chip d-none" id="tdSoLeitura"><i class="ph ph-eye"></i> Somente leitura</span>
+            <label class="form-label small mb-1" for="tdDono"><i class="ph ph-users"></i> Lista de</label>
+            <div class="td-dono-linha">
+              <select class="form-select form-select-sm" id="tdDono" aria-label="Lista de"><option value="eu">Minha lista</option></select>
+              <span class="td-chip d-none" id="tdSoLeitura"><i class="ph ph-eye"></i> Somente leitura</span>
+            </div>
           </div>
           <button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="atualizar" title="Atualizar">
             <i class="ph ph-arrow-clockwise fs-5"></i>
