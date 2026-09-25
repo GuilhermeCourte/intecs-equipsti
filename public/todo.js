@@ -63,6 +63,29 @@
     } finally { suprimir = false; }
   }
 
+  // Calendário do prazo no padrão do sistema (flatpickr, como initIntecsMsaDatas do admin).
+  // O input original vira hidden com o valor em Y-m-d (é ele que o FormData lê); o campo que
+  // a pessoa vê é o altInput em d/m/Y. Sem a biblioteca (CDN fora do ar) fica o input nativo.
+  const datas = [];      // instâncias dos formulários da lista (refeitas a cada render)
+  let dataEditar = null; // instância do modal de editar
+
+  function criarData(el) {
+    if (typeof window.flatpickr === 'undefined') return null;
+    return window.flatpickr(el, {
+      locale: 'pt', dateFormat: 'Y-m-d', altInput: true, altFormat: 'd/m/Y',
+      allowInput: true, disableMobile: true, monthSelectorType: 'static',
+      onReady(_d, _s, fp) {
+        fp.altInput.classList.add('form-control');
+        if (fp.input.title) fp.altInput.title = fp.input.title;
+        if (fp.input.getAttribute('aria-label')) fp.altInput.setAttribute('aria-label', fp.input.getAttribute('aria-label'));
+        const prev = fp.calendarContainer.querySelector('.flatpickr-prev-month');
+        const next = fp.calendarContainer.querySelector('.flatpickr-next-month');
+        if (prev) prev.innerHTML = '<i class="ph ph-caret-left"></i>';
+        if (next) next.innerHTML = '<i class="ph ph-caret-right"></i>';
+      }
+    });
+  }
+
   const itensPessoas = () => st.usuarios.map((u) => ({ value: String(u.id), label: nomeDe(u.email) }));
 
   let raiz = null;
@@ -268,7 +291,9 @@
       html = formAtribuir() + listaTarefas(d.atribuidas, 'atribuidas', 'Você ainda não atribuiu tarefas a outras pessoas.');
     }
     if (escolhas.dest) { escolhas.dest.destroy(); escolhas.dest = null; } // o select antigo sai junto com o innerHTML
+    datas.splice(0).forEach((fp) => fp.destroy());
     raiz.querySelector('#tdConteudo').innerHTML = html;
+    raiz.querySelectorAll('#tdConteudo .td-prazo').forEach((el) => { const fp = criarData(el); if (fp) datas.push(fp); });
     const dest = raiz.querySelector('#tdConteudo .td-dest');
     if (dest) {
       escolhas.dest = criarChoices(dest);
@@ -337,6 +362,7 @@
       </div>`;
     document.body.append(...div.children);
     const inst = (id) => window.bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
+    dataEditar = criarData(document.getElementById('tdEditarPrazo'));
     modais = { editar: inst('tdModalEditar'), compartilhar: inst('tdModalCompartilhar'), apagar: inst('tdModalApagar') };
 
     document.getElementById('tdFormEditar').addEventListener('submit', async (ev) => {
@@ -381,8 +407,14 @@
     st.tarefaAberta = t;
     document.getElementById('tdEditarAviso').innerHTML = '';
     document.getElementById('tdEditarTitulo').value = t.titulo;
-    document.getElementById('tdEditarPrazo').value = t.prazo || '';
-    document.getElementById('tdEditarPrazo').required = t.atribuida;
+    const campoPrazo = document.getElementById('tdEditarPrazo');
+    if (dataEditar) {
+      if (t.prazo) dataEditar.setDate(t.prazo, false); else dataEditar.clear(false);
+      dataEditar.altInput.required = t.atribuida;
+    } else {
+      campoPrazo.value = t.prazo || '';
+      campoPrazo.required = t.atribuida;
+    }
     document.getElementById('tdEditarPrazoDica').textContent = t.atribuida ? '(obrigatório)' : '(opcional)';
     modais.editar.show();
   }
@@ -431,6 +463,8 @@
       const f = new FormData(form);
       // O select do Choices não valida sozinho (o nativo fica escondido), então confere aqui.
       if (form.dataset.tdForm === 'atribuir' && !f.get('destinatarioId')) return avisar('Escolha para quem atribuir.');
+      // O input com o valor fica hidden (não valida sozinho); o campo visível copia o required, mas confere aqui também.
+      if (form.dataset.tdForm === 'atribuir' && !f.get('prazo')) return avisar('Informe o prazo.');
       const btn = form.querySelector('button[type="submit"]');
       btn.disabled = true;
       let ok;
