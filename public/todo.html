@@ -148,6 +148,13 @@
     .sub-tabs .nav-link i { font-size: 1.1rem; }
     .sub-tabs .nav-link:hover { color: var(--ink); }
     .sub-tabs .nav-link.active { color: #fff; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,.18); }
+    /* Nome da seção no topo de cada aba */
+    .pane-titulo-mobile {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: 1.35rem; font-weight: 800; letter-spacing: -.5px;
+      line-height: 1.1; margin: 0 0 .6rem;
+    }
+    .pane-titulo-mobile .ph, .pane-titulo-mobile .material-icons { font-size: 1.15em; }
     .modal-content { border: none; border-radius: var(--radius); overflow: hidden; }
     .modal-header.bg-primary { background: var(--bar) !important; }
     /* ---------- Dropdown customizado (Choices.js) ---------- */
@@ -558,6 +565,11 @@ html[data-theme="dark"] .flatpickr-day.selected { color: var(--ink-contrast) !im
         </div>
       </div>
       <div class="card-body">
+        <!-- Mesmo cabeçalho da aba TODO do admin (ícone, título e subtítulo), sem o link para si mesma. -->
+        <h2 class="pane-titulo-mobile"><i class="ph ph-list-checks"></i> TODO</h2>
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+          <p class="text-muted mb-0">Suas tarefas de trabalho e pessoais.</p>
+        </div>
         <div id="todoRaiz"></div>
       </div>
     </div>
