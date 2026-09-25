@@ -2389,6 +2389,20 @@ async function carregarCalendario() {
   }
 }
 
+// ---------- Aba TODO ----------
+// A tela é a do todo.js (a mesma da página /todo); aqui só a casca do admin:
+// monta na 1ª vez que a aba abre e recarrega nas seguintes.
+let _todoMontado = false;
+function abrirTodo() {
+  if (_todoMontado) return window.TodoTela.recarregar();
+  _todoMontado = true;
+  window.TodoTela.montar($('todoRaiz'), {
+    obterToken: () => TOKEN,
+    aoExpirar: sairDoApp,
+    avisar: (tipo, msg) => showAlert('', tipo, msg)
+  });
+}
+
 function renderCalendarioGrid() {
   $('calMesLabel').textContent = MESES_PT[calMes] + ' ' + calAno;
   const primeiroDia = new Date(calAno, calMes, 1);
@@ -5328,7 +5342,7 @@ const LOG_MODULOS = [
   ['REGISTROS', 'Registros'], ['EMPRESTIMOS', 'Empréstimos'],
   ['CHAMADOS_INTECS', 'Chamados INTECS'], ['CHAMADOS_MSA', 'Chamados MSA'],
   ['CONEXAO_REMOTA', 'Conexão Remota'], ['INTERNET', 'Internet'], ['SENHAS', 'Senhas'],
-  ['CALENDARIO', 'Calendário'], ['OPCOES', 'Opções'], ['USUARIOS', 'Usuários'],
+  ['CALENDARIO', 'Calendário'], ['TODO', 'TODO'], ['OPCOES', 'Opções'], ['USUARIOS', 'Usuários'],
   ['ACESSO', 'Acesso']
 ];
 const LOG_MODULO_LABEL = Object.fromEntries(LOG_MODULOS);
@@ -7076,6 +7090,7 @@ const ABA_PERMISSAO = {
   'tab-utils': 'utils_acessar',
   'tab-vps': 'aba_vps',
   'tab-calendario': 'aba_calendario',
+  'tab-todo': 'aba_todo',
   'tab-gerenciar': 'aba_gerenciar',
   'tab-usuarios': 'aba_usuarios',
   'tab-logs': 'aba_logs'
@@ -8555,7 +8570,7 @@ async function carregarDashboard({ forcar = false } = {}) {
 let dadosCarregados = false;
 
 // ---------- Notificações (sininho) ----------
-const NOTIF_ICONES = { REGISTRO: 'ph-table', EMPRESTIMO: 'ph-hand-arrow-up', CHAMADO: 'ph-headset', CALENDARIO: 'ph-calendar-blank', TESTE: 'ph-flask' };
+const NOTIF_ICONES = { REGISTRO: 'ph-table', EMPRESTIMO: 'ph-hand-arrow-up', CHAMADO: 'ph-headset', CALENDARIO: 'ph-calendar-blank', TODO: 'ph-list-checks', TESTE: 'ph-flask' };
 
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -8773,6 +8788,7 @@ function sairDoApp() {
   TOKEN = '';
   _ciPerfil = null; // próximo login recarrega papel/permissões
   invalidarCacheTodos(); // não herdar registros/facetas na próxima sessão da aba
+  if (window.TodoTela) window.TodoTela.limpar(); // nem as tarefas da pessoa anterior
   localStorage.removeItem('token');
   document.documentElement.classList.remove('sessao-ativa');
   $('appView').classList.add('hidden');
@@ -9580,6 +9596,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregarInternet();
   });
   $('tab-calendario').addEventListener('shown.bs.tab', carregarCalendario);
+  $('tab-todo').addEventListener('shown.bs.tab', abrirTodo);
   $('btnAtualizarInternet').addEventListener('click', carregarInternet);
   $('btnNovoInternet').addEventListener('click', () => abrirInternet(null));
   $('btnExcluirInternet').addEventListener('click', excluirInternet);

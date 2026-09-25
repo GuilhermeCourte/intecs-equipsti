@@ -808,6 +808,45 @@ IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'emails_extras') IS NULL
   ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD emails_extras NVARCHAR(MAX) NULL;
 IF COL_LENGTH('dbo.EQUIPSTI_calendario_eventos', 'criado_por_id') IS NULL
   ALTER TABLE dbo.EQUIPSTI_calendario_eventos ADD criado_por_id INT NULL;
+
+-- ============================================================
+-- TODO: tarefas por usuário (aba TODO do admin + página /todo).
+-- 'dono_id' é de quem é a lista onde a task aparece; 'criado_por_id' é quem a
+-- criou. Iguais = task própria; diferentes = task atribuída por outra pessoa
+-- (sempre na lista TRABALHO e sempre com prazo — a regra fica na API).
+-- 'aviso_vespera'/'aviso_dia' guardam os lembretes já enviados (sininho) e
+-- voltam a 0 quando o prazo muda.
+-- ============================================================
+IF OBJECT_ID('dbo.EQUIPSTI_todo_tarefas', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_todo_tarefas (
+  id             INT IDENTITY(1,1) PRIMARY KEY,
+  dono_id        INT NOT NULL,
+  criado_por_id  INT NOT NULL,
+  lista          NVARCHAR(10) NOT NULL DEFAULT 'TRABALHO',   -- TRABALHO | PESSOAL
+  titulo         NVARCHAR(500) NOT NULL,
+  prazo          DATE NULL,
+  concluida      BIT NOT NULL DEFAULT 0,
+  concluida_em   DATETIME2 NULL,
+  aviso_vespera  BIT NOT NULL DEFAULT 0,
+  aviso_dia      BIT NOT NULL DEFAULT 0,
+  criado_em      DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+  atualizado_em  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_todo_dono')
+  CREATE INDEX IX_EQUIPSTI_todo_dono ON dbo.EQUIPSTI_todo_tarefas (dono_id, lista, concluida);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EQUIPSTI_todo_criador')
+  CREATE INDEX IX_EQUIPSTI_todo_criador ON dbo.EQUIPSTI_todo_tarefas (criado_por_id);
+
+-- Liberação de uma task PESSOAL para leitura de outros usuários.
+IF OBJECT_ID('dbo.EQUIPSTI_todo_compartilhos', 'U') IS NULL
+CREATE TABLE dbo.EQUIPSTI_todo_compartilhos (
+  tarefa_id   INT NOT NULL,
+  usuario_id  INT NOT NULL,
+  PRIMARY KEY (tarefa_id, usuario_id),
+  CONSTRAINT FK_todo_compartilhos_tarefa FOREIGN KEY (tarefa_id)
+    REFERENCES dbo.EQUIPSTI_todo_tarefas(id) ON DELETE CASCADE
+);
 `;
 
 async function main() {

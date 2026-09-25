@@ -1,0 +1,77 @@
+/* ============================================================
+   TODO — estilos da tela compartilhada (aba do admin + página /todo).
+   Só consome as variáveis do tema do Gestão TI (--ink, --line, --muted,
+   --bg, --bg-soft, --radius), então acompanha o tema claro/escuro.
+   ============================================================ */
+.td-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem;
+}
+.td-dono { display: flex; align-items: center; gap: .5rem; min-width: 0; flex-wrap: wrap; }
+.td-dono label {
+  font-size: .85rem; font-weight: 600; color: var(--muted);
+  white-space: nowrap; margin: 0; display: inline-flex; align-items: center; gap: .35rem;
+}
+.td-dono .form-select { width: auto; max-width: 300px; min-width: 170px; }
+
+/* Formulário de nova tarefa / atribuição */
+.td-add { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.td-add .td-texto { flex: 1 1 260px; min-width: 0; width: auto; }
+.td-add .td-prazo { flex: 0 0 auto; width: 150px; }
+.td-add .td-dest { flex: 0 1 240px; min-width: 0; width: auto; }
+
+/* Lista */
+.td-lista {
+  list-style: none; margin: 0; padding: 0; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg);
+}
+.td-item {
+  display: flex; align-items: flex-start; gap: .75rem;
+  padding: .75rem 1rem; border-bottom: 1px solid var(--line);
+}
+.td-item:last-child { border-bottom: 0; }
+.td-check {
+  border: 0; background: none; padding: 0; flex: none;
+  font-size: 1.5rem; line-height: 1; color: var(--muted); cursor: pointer;
+  transition: color .15s ease;
+}
+.td-check:hover:not(:disabled) { color: var(--ink); }
+.td-check:disabled { cursor: default; }
+.td-corpo { flex: 1 1 auto; min-width: 0; }
+.td-titulo { font-weight: 600; overflow-wrap: anywhere; }
+.td-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+.td-acoes { display: flex; flex: none; gap: .1rem; }
+.td-feita .td-check { color: #1a7f4b; }
+.td-feita .td-titulo { color: var(--muted); font-weight: 500; text-decoration: line-through; }
+
+.td-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .72rem; font-weight: 600; padding: .25em .65em; border-radius: 999px;
+  color: var(--muted); background: var(--bg-soft); border: 1px solid var(--line);
+  max-width: 100%; overflow-wrap: anywhere;
+}
+.td-chip.atrasada { color: #c0392b; background: rgba(192, 57, 43, .10); border-color: rgba(192, 57, 43, .30); }
+.td-chip.hoje     { color: #d68910; background: rgba(214, 137, 16, .12); border-color: rgba(214, 137, 16, .32); }
+.td-chip.ok       { color: #1a7f4b; background: rgba(26, 127, 75, .10); border-color: rgba(26, 127, 75, .30); }
+html[data-theme="dark"] .td-chip.atrasada { color: #ef8a80; }
+html[data-theme="dark"] .td-chip.hoje     { color: #f0b04d; }
+html[data-theme="dark"] .td-chip.ok,
+html[data-theme="dark"] .td-feita .td-check { color: #4cc38a; }
+
+.td-secao-tit {
+  font-size: .72rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--muted); margin: 1.25rem 0 .5rem;
+}
+.td-vazio { padding: 1.5rem 0; }
+
+@media (max-width: 767.98px) {
+  /* 16px nos campos: o iOS dá zoom na página com fonte menor. */
+  .td-tela .form-control, .td-tela .form-select { font-size: 16px; }
+  /* Sem quebra: o botão de atualizar fica na mesma linha do seletor. */
+  .td-toolbar { flex-wrap: nowrap; }
+  .td-dono { flex: 1 1 0; }
+  .td-dono .form-select { flex: 1 1 140px; min-width: 0; max-width: none; }
+  .td-add .td-prazo, .td-add .td-dest { flex: 1 1 140px; width: auto; }
+  .td-add .btn { flex: 1 1 100%; }
+  .td-item { padding: .7rem .8rem; gap: .6rem; }
+}

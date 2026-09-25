@@ -2243,6 +2243,8 @@
     html[data-theme="dark"] .flatpickr-weekdays { background: var(--bg-soft); }
     html[data-theme="dark"] .flatpickr-weekday { color: #fff; }
   </style>
+  <!-- Estilos da tela TODO, compartilhados com a página /todo. -->
+  <link href="todo.css?v=1" rel="stylesheet">
 </head>
 <body>
 
@@ -2393,6 +2395,8 @@
 
           <button type="button" class="mm-item" data-tab="tab-calendario"><i class="ph ph-calendar-blank"></i> Calendário</button>
 
+          <button type="button" class="mm-item" data-tab="tab-todo"><i class="ph ph-list-checks"></i> TODO</button>
+
           <div class="mm-group">
             <button type="button" class="mm-group-toggle" data-bs-toggle="collapse" data-bs-target="#mmGrupoOpcoes" aria-expanded="false">
               <i class="ph ph-sliders-horizontal"></i> Opções <i class="ph ph-caret-down mm-chev"></i>
@@ -2488,6 +2492,11 @@
           <button class="nav-link" id="tab-calendario" data-bs-toggle="tab"
             data-bs-target="#pane-calendario" type="button" role="tab">
             <i class="ph ph-calendar-blank"></i> Calendário
+          </button>
+
+          <button class="nav-link" id="tab-todo" data-bs-toggle="tab"
+            data-bs-target="#pane-todo" type="button" role="tab">
+            <i class="ph ph-list-checks"></i> TODO
           </button>
 
           <div class="dropdown app-tabs-group" id="grupo-opcoes">
@@ -3473,6 +3482,18 @@
                 </table>
               </div>
             </div>
+          </div>
+
+          <!-- ABA TODO (a tela em si é montada por todo.js; a mesma da página /todo) -->
+          <div class="tab-pane fade" id="pane-todo" role="tabpanel">
+            <h2 class="pane-titulo-mobile"><i class="ph ph-list-checks"></i> TODO</h2>
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+              <p class="text-muted mb-0">Suas tarefas de trabalho e pessoais. Também em <a href="/todo" target="_blank" rel="noopener">/todo</a>, que se instala como app.</p>
+              <button type="button" class="btn btn-link btn-sm text-muted p-1 btn-log-modulo d-none" data-logmodulo="TODO" title="Ver logs deste módulo">
+                <i class="material-icons ic-logs fs-5">travel_explore</i>
+              </button>
+            </div>
+            <div id="todoRaiz"></div>
           </div>
 
           <!-- ABA CHAMADOS -->
@@ -5589,7 +5610,8 @@
   <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="app.js?v=20"></script>
+  <script src="todo.js?v=1"></script>
+  <script type="module" src="app.js?v=21"></script>
   <script>
     /* Mostra a barra de scroll das tabelas e listas roláveis enquanto rola e a
        oculta pouco depois de parar (~700ms). Funciona para X e Y. */
