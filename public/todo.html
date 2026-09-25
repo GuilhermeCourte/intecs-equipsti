@@ -465,10 +465,9 @@ html[data-theme="dark"] .flatpickr-day.selected { color: var(--ink-contrast) !im
     /* Só o que é próprio desta página. */
     #appView.layout-topbar-sticky .card-body { max-width: 1320px; width: 100%; margin: 0 auto; }
     #appView.layout-topbar-sticky .card-header .card-titulo { min-width: 0; }
-    /* Título da barra no formato da topbar do /status (GTI · Serviços): mesmo tamanho, peso e ponto separador. */
-    .card-titulo .brand-name { font-size: .95rem; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
-    .card-titulo .brand-name .brand-dot { opacity: .55; font-weight: 500; margin: 0 2px; }
-    @media (max-width: 576px) { .card-titulo .brand-name { font-size: .88rem; } }
+    /* Título da barra: mesma fonte do nome Gestão TI da topbar do admin (herda do h5: família, tamanho, peso); só o separador é mais discreto. */
+    .card-titulo .brand-name { white-space: nowrap; }
+    .card-titulo .brand-name .brand-dot { opacity: .55; margin: 0 2px; }
   </style>
   <link href="/todo.css?v=6" rel="stylesheet">
 </head>
