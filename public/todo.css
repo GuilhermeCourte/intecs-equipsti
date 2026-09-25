@@ -7,18 +7,26 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem;
 }
-.td-dono { display: flex; align-items: center; gap: .5rem; min-width: 0; flex-wrap: wrap; }
+.td-dono { display: flex; align-items: center; gap: .5rem; min-width: 0; }
 .td-dono label {
   font-size: .85rem; font-weight: 600; color: var(--muted);
   white-space: nowrap; margin: 0; display: inline-flex; align-items: center; gap: .35rem;
 }
 .td-dono .form-select { width: auto; max-width: 300px; min-width: 170px; }
+.td-dono .choices { flex: 0 1 260px; width: 260px; min-width: 170px; }
+
+/* Dropdown do sistema (Choices.js) no tamanho compacto dos filtros das tabelas (equivale ao form-select-sm). */
+/* [data-type*=select-one]: sem ele o padding-bottom 7.5px do CSS do Choices (mais específico) vence. */
+.td-tela .choices[data-type*="select-one"] .choices__inner { min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px; }
+.td-tela .choices__list--single .choices__item { font-size: .875rem; }
+.td-tela .choices__list--dropdown .choices__item,
+.td-tela .choices__list[aria-expanded] .choices__item { padding: 7px 10px; font-size: .875rem; }
 
 /* Formulário de nova tarefa / atribuição */
 .td-add { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .td-add .td-texto { flex: 1 1 260px; min-width: 0; width: auto; }
 .td-add .td-prazo { flex: 0 0 auto; width: 150px; }
-.td-add .td-dest { flex: 0 1 240px; min-width: 0; width: auto; }
+.td-add .td-dest, .td-add .choices { flex: 0 1 240px; min-width: 0; width: auto; }
 
 /* Lista */
 .td-lista {
@@ -69,9 +77,9 @@ html[data-theme="dark"] .td-feita .td-check { color: #4cc38a; }
   .td-tela .form-control, .td-tela .form-select { font-size: 16px; }
   /* Sem quebra: o botão de atualizar fica na mesma linha do seletor. */
   .td-toolbar { flex-wrap: nowrap; }
-  .td-dono { flex: 1 1 0; }
-  .td-dono .form-select { flex: 1 1 140px; min-width: 0; max-width: none; }
-  .td-add .td-prazo, .td-add .td-dest { flex: 1 1 140px; width: auto; }
+  .td-dono { flex: 1 1 0; flex-wrap: wrap; }
+  .td-dono .form-select, .td-dono .choices { flex: 1 1 140px; min-width: 0; max-width: none; }
+  .td-add .td-prazo, .td-add .td-dest, .td-add .choices { flex: 1 1 140px; width: auto; }
   .td-add .btn { flex: 1 1 100%; }
   .td-item { padding: .7rem .8rem; gap: .6rem; }
 }

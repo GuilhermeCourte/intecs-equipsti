@@ -37,6 +37,34 @@
     return repetido ? e : nome;
   }
 
+  // Dropdowns no padrão do sistema (Choices.js). Sem a biblioteca (CDN fora do ar) o
+  // <select> nativo continua funcionando.
+  const escolhas = { dono: null, dest: null };
+  let suprimir = false; // o Choices dispara 'change' ao preencher por código; não é escolha do usuário
+
+  function criarChoices(el) {
+    if (typeof window.Choices === 'undefined') return null;
+    return new window.Choices(el, {
+      searchEnabled: false, itemSelectText: '', shouldSort: false, allowHTML: false,
+      placeholder: true, placeholderValue: 'Selecione...', position: 'bottom'
+    });
+  }
+
+  // itens: [{ value, label, placeholder? }]; valor = o selecionado.
+  function preencherSelect(el, inst, itens, valor) {
+    suprimir = true;
+    try {
+      if (inst) {
+        inst.setChoices(itens.map((i) => ({ ...i, selected: i.value === valor })), 'value', 'label', true);
+      } else {
+        el.innerHTML = itens.map((i) => `<option value="${esc(i.value)}">${esc(i.label)}</option>`).join('');
+        el.value = valor;
+      }
+    } finally { suprimir = false; }
+  }
+
+  const itensPessoas = () => st.usuarios.map((u) => ({ value: String(u.id), label: nomeDe(u.email) }));
+
   let raiz = null;
   let cfg = {};
   let modais = null; // { editar, compartilhar, apagar } — instâncias do Bootstrap
@@ -201,13 +229,11 @@
   }
 
   function formAtribuir() {
-    const opcoes = st.usuarios.map((u) => `<option value="${u.id}" title="${esc(u.email)}">${esc(nomeDe(u.email))}</option>`).join('');
+    // O <select> nasce vazio: render() o preenche (Choices.js ou nativo) depois de montar o HTML.
     return `<form class="td-add" data-td-form="atribuir" autocomplete="off">
       <input type="text" class="form-control form-control-sm td-texto" name="titulo" maxlength="500" required
         placeholder="Tarefa para outra pessoa..." aria-label="Tarefa">
-      <select class="form-select form-select-sm td-dest" name="destinatarioId" required aria-label="Destinatário">
-        <option value="">Para quem...</option>${opcoes}
-      </select>
+      <select class="form-select form-select-sm td-dest" name="destinatarioId" aria-label="Destinatário"></select>
       <input type="date" class="form-control form-control-sm td-prazo" name="prazo" required title="Prazo (obrigatório)" aria-label="Prazo">
       <button type="submit" class="btn btn-primary btn-sm"><i class="ph ph-paper-plane-tilt"></i> Atribuir</button>
     </form>`;
@@ -217,10 +243,8 @@
     const d = st.dados;
     if (!d) return;
     // Dropdown de listas.
-    const sel = raiz.querySelector('#tdDono');
-    sel.innerHTML = `<option value="">Minha lista</option>`
-      + st.usuarios.map((u) => `<option value="${u.id}" title="${esc(u.email)}">${esc(nomeDe(u.email))}</option>`).join('');
-    sel.value = st.alvoId ? String(st.alvoId) : '';
+    preencherSelect(raiz.querySelector('#tdDono'), escolhas.dono,
+      [{ value: 'eu', label: 'Minha lista' }, ...itensPessoas()], st.alvoId ? String(st.alvoId) : 'eu');
     raiz.querySelector('#tdSoLeitura').classList.toggle('d-none', d.propria);
 
     // Sub-abas.
@@ -243,7 +267,13 @@
     } else {
       html = formAtribuir() + listaTarefas(d.atribuidas, 'atribuidas', 'Você ainda não atribuiu tarefas a outras pessoas.');
     }
+    if (escolhas.dest) { escolhas.dest.destroy(); escolhas.dest = null; } // o select antigo sai junto com o innerHTML
     raiz.querySelector('#tdConteudo').innerHTML = html;
+    const dest = raiz.querySelector('#tdConteudo .td-dest');
+    if (dest) {
+      escolhas.dest = criarChoices(dest);
+      preencherSelect(dest, escolhas.dest, [{ value: '', label: 'Para quem...', placeholder: true }, ...itensPessoas()], '');
+    }
   }
 
   // ---------- Modais (criados uma vez, no body) ----------
@@ -399,6 +429,8 @@
       ev.preventDefault();
       limparAviso();
       const f = new FormData(form);
+      // O select do Choices não valida sozinho (o nativo fica escondido), então confere aqui.
+      if (form.dataset.tdForm === 'atribuir' && !f.get('destinatarioId')) return avisar('Escolha para quem atribuir.');
       const btn = form.querySelector('button[type="submit"]');
       btn.disabled = true;
       let ok;
@@ -418,7 +450,10 @@
     });
 
     raiz.querySelector('#tdDono').addEventListener('change', async (ev) => {
-      st.alvoId = ev.target.value ? Number(ev.target.value) : null;
+      if (suprimir) return;
+      const novo = ev.target.value && ev.target.value !== 'eu' ? Number(ev.target.value) : null;
+      if (novo === st.alvoId) return;
+      st.alvoId = novo;
       st.aba = 'trabalho';
       limparAviso();
       await recarregarLista();
@@ -433,7 +468,7 @@
         <div class="td-toolbar">
           <div class="td-dono">
             <label for="tdDono"><i class="ph ph-users"></i> Lista de</label>
-            <select class="form-select form-select-sm" id="tdDono"><option value="">Minha lista</option></select>
+            <select class="form-select form-select-sm" id="tdDono" aria-label="Lista de"><option value="eu">Minha lista</option></select>
             <span class="td-chip d-none" id="tdSoLeitura"><i class="ph ph-eye"></i> Somente leitura</span>
           </div>
           <button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="atualizar" title="Atualizar">
@@ -444,6 +479,7 @@
         <ul class="nav sub-tabs" role="tablist" id="tdAbas"></ul>
         <div id="tdConteudo"><div class="text-muted">Carregando...</div></div>
       </div>`;
+    escolhas.dono = criarChoices(raiz.querySelector('#tdDono'));
     if (!modais) montarModais();
     ligarEventos();
     return recarregar();
@@ -457,7 +493,7 @@
     limparAviso();
     raiz.querySelector('#tdAbas').innerHTML = '';
     raiz.querySelector('#tdConteudo').innerHTML = '<div class="text-muted">Carregando...</div>';
-    raiz.querySelector('#tdDono').innerHTML = '<option value="">Minha lista</option>';
+    preencherSelect(raiz.querySelector('#tdDono'), escolhas.dono, [{ value: 'eu', label: 'Minha lista' }], 'eu');
     raiz.querySelector('#tdSoLeitura').classList.add('d-none');
   }
 
