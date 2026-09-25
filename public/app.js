@@ -8317,7 +8317,7 @@ function renderChamadosDash(ci, msaRaw) {
 }
 
 // ---------- Eventos do mês (fonte: /api/calendario/eventos, aba_calendario) ----------
-function itemEventoDash(x, vencido) {
+function itemEventoDash(x) {
   const d = x.data;
   const rec = x.evt.recorrencia;
   const sub = [x.evt.tipo, rec === 'MENSAL' ? 'mensal' : (rec === 'ANUAL' ? 'anual' : null)]
@@ -8328,7 +8328,7 @@ function itemEventoDash(x, vencido) {
     <span class="dash-item-quando">${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}</span>
     <span class="dash-dot cal-evento--${rec}" style="margin-top:.28rem"></span>
     <span class="dash-item-corpo">
-      <div class="dash-item-tit"><span data-ir="tab-calendario" data-ir-abrir="evento" data-ir-id="${x.evt.id}">${escapeHtml(x.evt.titulo)}</span>${vencido ? ' <span class="badge bg-danger" style="font-size:.55rem;vertical-align:middle">VENCIDO</span>' : ''}</div>
+      <div class="dash-item-tit"><span data-ir="tab-calendario" data-ir-abrir="evento" data-ir-id="${x.evt.id}">${escapeHtml(x.evt.titulo)}</span></div>
       ${sub ? `<div class="dash-item-sub">${escapeHtml(sub)}</div>` : ''}
     </span>
     ${x.evt.valor ? `<span class="dash-item-val">${fmtMoeda(x.evt.valor)}</span>` : ''}
@@ -8364,34 +8364,15 @@ function desenharEventosDoMes() {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const base = new Date(hoje.getFullYear(), hoje.getMonth() + _dashMesOffset, 1);
   const ano = base.getFullYear(), mes = base.getMonth();
-  const ehCorrente = _dashMesOffset === 0;
 
-  let doMes = _dashEventos
+  const doMes = _dashEventos
     .map(e => ({ evt: e, data: ocorrenciaNoMes(e, ano, mes) }))
     .filter(x => x.data)
     .sort((a, b) => a.data - b.data);
 
   const html = [];
 
-  // Vencidos só no mês corrente, sob divisor próprio: são pendências de hoje,
-  // não "eventos de agosto" — misturá-los ao navegar para setembro confundiria.
-  if (ehCorrente) {
-    // Vencido só existe em NENHUMA — recorrente já projeta para a próxima
-    // volta. Para esses, proximaOcorrenciaCalendario devolve a data literal.
-    const vencidos = _dashEventos
-      .filter(e => e.recorrencia === 'NENHUMA')
-      .map(e => ({ evt: e, data: proximaOcorrenciaCalendario(e) }))
-      .filter(x => x.data < hoje)
-      .sort((a, b) => a.data - b.data);
-    if (vencidos.length) {
-      const idsVencidos = new Set(vencidos.map(x => x.evt.id));
-      doMes = doMes.filter(x => !idsVencidos.has(x.evt.id));
-      html.push('<div class="dash-item-divisor">VENCIDOS</div>');
-      html.push(...vencidos.map(x => itemEventoDash(x, true)));
-      if (doMes.length) html.push(`<div class="dash-item-divisor">${MESES_PT[mes].toUpperCase()}</div>`);
-    }
-  }
-  html.push(...doMes.map(x => itemEventoDash(x, false)));
+  html.push(...doMes.map(x => itemEventoDash(x)));
 
   $('dashEventosSub').textContent = MESES_PT[mes] + (ano !== hoje.getFullYear() ? ' ' + ano : '');
   $('dashEventosLista').innerHTML = html.length
