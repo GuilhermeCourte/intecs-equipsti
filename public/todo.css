@@ -23,10 +23,14 @@
 .td-tela .choices__list[aria-expanded] .choices__item { padding: 7px 10px; font-size: .875rem; }
 
 /* Formulário de nova tarefa / atribuição */
-.td-add { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.td-add .td-texto { flex: 1 1 260px; min-width: 0; width: auto; }
-.td-add .td-prazo { flex: 0 0 auto; width: 150px; }
-.td-add .td-dest, .td-add .choices { flex: 0 1 240px; min-width: 0; width: auto; }
+.td-add { display: flex; gap: .5rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; }
+.td-campo { min-width: 0; }
+.td-campo-texto { flex: 1 1 260px; }
+.td-campo-prazo { flex: 0 0 150px; }
+.td-campo-dest { flex: 0 1 240px; }
+.td-campo .form-control, .td-campo .form-select, .td-campo .choices { width: 100%; }
+/* O dropdown compacto do sistema (37px) é 2px mais alto que o input sm (35px): sem isto o rótulo dele sobe 2px em relação aos outros. */
+.td-campo-dest .choices { margin-bottom: -2px; }
 
 /* Lista */
 .td-lista {
@@ -79,7 +83,8 @@ html[data-theme="dark"] .td-feita .td-check { color: #4cc38a; }
   .td-toolbar { flex-wrap: nowrap; }
   .td-dono { flex: 1 1 0; flex-wrap: wrap; }
   .td-dono .form-select, .td-dono .choices { flex: 1 1 140px; min-width: 0; max-width: none; }
-  .td-add .td-prazo, .td-add .td-dest, .td-add .choices { flex: 1 1 140px; width: auto; }
+  .td-campo-texto { flex: 1 1 100%; }
+  .td-campo-prazo, .td-campo-dest { flex: 1 1 140px; }
   .td-add .btn { flex: 1 1 100%; }
   .td-item { padding: .7rem .8rem; gap: .6rem; }
 }

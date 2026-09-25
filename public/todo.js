@@ -76,6 +76,11 @@
       allowInput: true, disableMobile: true, monthSelectorType: 'static',
       onReady(_d, _s, fp) {
         fp.altInput.classList.add('form-control');
+        if (fp.input.id) {
+          fp.altInput.id = fp.input.id + 'Vis';
+          const rotulo = document.querySelector('label[for="' + fp.input.id + '"]');
+          if (rotulo) rotulo.setAttribute('for', fp.altInput.id);
+        }
         if (fp.input.title) fp.altInput.title = fp.input.title;
         if (fp.input.getAttribute('aria-label')) fp.altInput.setAttribute('aria-label', fp.input.getAttribute('aria-label'));
         const prev = fp.calendarContainer.querySelector('.flatpickr-prev-month');
@@ -244,9 +249,15 @@
 
   function formNova(lista) {
     return `<form class="td-add" data-td-form="nova" data-lista="${lista}" autocomplete="off">
-      <input type="text" class="form-control form-control-sm td-texto" name="titulo" maxlength="500" required
-        placeholder="${lista === 'PESSOAL' ? 'Nova tarefa pessoal...' : 'Nova tarefa de trabalho...'}" aria-label="Tarefa">
-      <input type="date" class="form-control form-control-sm td-prazo" name="prazo" title="Prazo (opcional)" aria-label="Prazo">
+      <div class="td-campo td-campo-texto">
+        <label class="form-label small mb-1" for="tdNovaTexto">Nova tarefa</label>
+        <input type="text" class="form-control form-control-sm td-texto" id="tdNovaTexto" name="titulo" maxlength="500" required
+          placeholder="${lista === 'PESSOAL' ? 'Nova tarefa pessoal...' : 'Nova tarefa de trabalho...'}" aria-label="Tarefa">
+      </div>
+      <div class="td-campo td-campo-prazo">
+        <label class="form-label small mb-1" for="tdNovaPrazo">Prazo</label>
+        <input type="date" class="form-control form-control-sm td-prazo" id="tdNovaPrazo" name="prazo" title="Prazo (opcional)" aria-label="Prazo">
+      </div>
       <button type="submit" class="btn btn-primary btn-sm"><i class="ph ph-plus"></i> Adicionar</button>
     </form>`;
   }
@@ -254,10 +265,19 @@
   function formAtribuir() {
     // O <select> nasce vazio: render() o preenche (Choices.js ou nativo) depois de montar o HTML.
     return `<form class="td-add" data-td-form="atribuir" autocomplete="off">
-      <input type="text" class="form-control form-control-sm td-texto" name="titulo" maxlength="500" required
-        placeholder="Tarefa para outra pessoa..." aria-label="Tarefa">
-      <select class="form-select form-select-sm td-dest" name="destinatarioId" aria-label="Destinatário"></select>
-      <input type="date" class="form-control form-control-sm td-prazo" name="prazo" required title="Prazo (obrigatório)" aria-label="Prazo">
+      <div class="td-campo td-campo-texto">
+        <label class="form-label small mb-1" for="tdAtribTexto">Nova tarefa</label>
+        <input type="text" class="form-control form-control-sm td-texto" id="tdAtribTexto" name="titulo" maxlength="500" required
+          placeholder="Tarefa para outra pessoa..." aria-label="Tarefa">
+      </div>
+      <div class="td-campo td-campo-dest">
+        <label class="form-label small mb-1" for="tdAtribDest">Destinatário</label>
+        <select class="form-select form-select-sm td-dest" id="tdAtribDest" name="destinatarioId" aria-label="Destinatário"></select>
+      </div>
+      <div class="td-campo td-campo-prazo">
+        <label class="form-label small mb-1" for="tdAtribPrazo">Prazo</label>
+        <input type="date" class="form-control form-control-sm td-prazo" id="tdAtribPrazo" name="prazo" required title="Prazo (obrigatório)" aria-label="Prazo">
+      </div>
       <button type="submit" class="btn btn-primary btn-sm"><i class="ph ph-paper-plane-tilt"></i> Atribuir</button>
     </form>`;
   }
