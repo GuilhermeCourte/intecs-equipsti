@@ -28,6 +28,7 @@ import * as googleDrive from './googleworkspace/service.js';
 import * as driveArquivos from './googleworkspace/driveArquivos.js';
 import * as chamadosIntecsRepo from './chamadosIntecsRepository.js';
 import * as emailsRepo from './emailsRepository.js';
+import * as todoRepo from './todoRepository.js';
 import { parsePainelLocaweb } from './locaweb/parser.js';
 import { calcularPrazosSla } from './chamadosIntecsSla.js';
 import { carregarPerfilChamados, exigirPapel, exigirPermissao, podeVerChamado } from './chamadosIntecsAuth.js';
@@ -2095,6 +2096,197 @@ async function rodarLembretesCalendario() {
 // Vercel Cron chamar de fora. Ele dependia de CRON_SECRET, que nunca foi
 // definida — então respondia 404 desde sempre. Quem dispara os lembretes é o
 // agendador interno, no fim deste arquivo.
+
+// ===================== TODO (tarefas por usuário) =====================
+// Todas as rotas exigem aba_todo. Quem pode o quê:
+//   - criar/concluir/editar/apagar na PRÓPRIA lista: o dono (que também é o criador);
+//   - task atribuída (criador ≠ dono): o dono só CONCLUI; texto, prazo e exclusão são do criador;
+//   - lista de outra pessoa: só leitura — Trabalho inteira, Pessoal só o que ela liberou
+//     para quem olha (filtrado no SQL, ver todoRepository.listaDeOutro).
+// Task que a pessoa não pode nem ver (Pessoal alheia não liberada) responde 404, como se
+// não existisse; task visível mas sem direito para a ação responde 403.
+const TODO_TITULO_MAX = 500;
+
+function prazoTodoValido(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !isNaN(d) && d.toISOString().slice(0, 10) === s;
+}
+
+// Task PESSOAL não vai para o log com o título: o log global é lido por quem tem
+// aba_logs, e o que alguém anota como pessoal não é da conta deles.
+const rotuloLogTodo = (t) => (t.lista === 'PESSOAL' ? `Task pessoal #${t.id}` : String(t.titulo).slice(0, 200));
+
+function logTodo(req, t, acao, extra = {}) {
+  return registrarLog({
+    modulo: 'TODO', entidadeId: String(t.id), entidadeRotulo: rotuloLogTodo(t), acao,
+    usuario: req.user.email, usuarioId: req.user.sub, ...extra
+  });
+}
+
+async function tarefaVisivelPara(id, meId) {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const t = await todoRepo.buscarTarefa(id);
+  if (!t) return null;
+  if (t.lista === 'PESSOAL' && t.donoId !== meId && t.criadoPorId !== meId && !(await todoRepo.liberadaPara(id, meId))) return null;
+  return t;
+}
+
+// Título/prazo vindos do corpo. Devolve { erro } ou os valores já limpos.
+function lerCamposTodo(body, { prazoObrigatorio = false } = {}) {
+  const titulo = trim(body.titulo);
+  const prazo = trim(body.prazo) || null;
+  if (!titulo) return { erro: 'Informe a tarefa.' };
+  if (titulo.length > TODO_TITULO_MAX) return { erro: `A tarefa aceita até ${TODO_TITULO_MAX} caracteres.` };
+  if (prazo && !prazoTodoValido(prazo)) return { erro: 'Prazo inválido.' };
+  if (prazoObrigatorio && !prazo) return { erro: 'Informe o prazo.' };
+  return { titulo, prazo };
+}
+
+// Quem pode receber leitura de uma task Pessoal: ativo, com aba_todo e não eu.
+async function lerLiberadosTodo(valor, meId) {
+  const ids = [...new Set((Array.isArray(valor) ? valor : []).map(Number))];
+  const validos = await todoRepo.usuariosComTodo();
+  const emails = [];
+  for (const id of ids) {
+    const u = validos.find((x) => x.id === id);
+    if (!Number.isInteger(id) || !u || id === meId) return { erro: 'Usuário inválido na lista de liberados.' };
+    emails.push(u.email);
+  }
+  return { ids, emails };
+}
+
+// Quem participa do TODO (menos eu): alimenta o dropdown de listas, a atribuição e o compartilhamento.
+app.get('/api/todo/usuarios', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  res.json((await todoRepo.usuariosComTodo()).filter((u) => u.id !== meId));
+}));
+
+app.get('/api/todo/lista', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  const alvoId = req.query.usuarioId ? Number(req.query.usuarioId) : meId;
+  if (!Number.isInteger(alvoId) || alvoId <= 0) return res.status(400).json({ error: 'Usuário inválido.' });
+  if (alvoId === meId) {
+    return res.json({ dono: { id: meId, email: req.user.email }, propria: true, ...(await todoRepo.listaPropria(meId)) });
+  }
+  const dono = await todoRepo.usuarioComTodo(alvoId);
+  if (!dono) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  res.json({ dono, propria: false, ...(await todoRepo.listaDeOutro(meId, alvoId)) });
+}));
+
+app.post('/api/todo', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  const campos = lerCamposTodo(req.body);
+  if (campos.erro) return res.status(400).json({ error: campos.erro });
+  const lista = trim(req.body.lista || 'TRABALHO').toUpperCase();
+  if (!todoRepo.LISTAS.includes(lista)) return res.status(400).json({ error: 'Lista inválida.' });
+  let liberados = { ids: [], emails: [] };
+  if (lista === 'PESSOAL' && req.body.compartilharCom !== undefined) {
+    liberados = await lerLiberadosTodo(req.body.compartilharCom, meId);
+    if (liberados.erro) return res.status(400).json({ error: liberados.erro });
+  }
+  const id = await todoRepo.criarTarefa({ donoId: meId, criadoPorId: meId, lista, ...campos });
+  const t = { id, lista, titulo: campos.titulo };
+  await logTodo(req, t, 'CRIADO', {
+    valorNovo: lista === 'PESSOAL' ? `Pessoal · ${campos.prazo || 'sem prazo'}` : `${campos.titulo} · ${campos.prazo || 'sem prazo'}`
+  });
+  if (liberados.ids.length) {
+    await todoRepo.definirCompartilhos(id, liberados.ids);
+    await logTodo(req, t, 'COMPARTILHADO', { valorNovo: liberados.emails.join(', ') });
+  }
+  res.status(201).json({ ok: true, id });
+}));
+
+// Abre uma task COM PRAZO na lista Trabalho de outra pessoa.
+app.post('/api/todo/atribuir', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  const campos = lerCamposTodo(req.body, { prazoObrigatorio: true });
+  if (campos.erro) return res.status(400).json({ error: campos.erro });
+  const destId = Number(req.body.destinatarioId);
+  if (destId === meId) return res.status(400).json({ error: 'Para você mesmo, crie a tarefa na sua lista.' });
+  const dest = await todoRepo.usuarioComTodo(destId);
+  if (!dest) return res.status(400).json({ error: 'Destinatário inválido.' });
+  const id = await todoRepo.criarTarefa({ donoId: dest.id, criadoPorId: meId, lista: 'TRABALHO', ...campos });
+  await logTodo(req, { id, lista: 'TRABALHO', titulo: campos.titulo }, 'ATRIBUIDA', {
+    valorNovo: `${dest.email} · prazo ${campos.prazo}`
+  });
+  await notificar({
+    tipo: 'TODO', acao: 'ATRIBUIDA', titulo: 'Nova task atribuída',
+    mensagem: `${campos.titulo}\nPrazo: ${todoRepo.ymdParaBR(campos.prazo)}`,
+    link: 'tab-todo', refId: id, ator: { id: meId, email: req.user.email },
+    email: false, sininhoUsuarioIds: [dest.id]
+  });
+  res.status(201).json({ ok: true, id });
+}));
+
+// Texto e prazo: só o criador (dono, na task própria; quem atribuiu, na atribuída).
+app.put('/api/todo/:id', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  const t = await tarefaVisivelPara(Number(req.params.id), meId);
+  if (!t) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+  if (t.criadoPorId !== meId) return res.status(403).json({ error: 'Só quem criou a tarefa pode editá-la.' });
+  const campos = lerCamposTodo(req.body, { prazoObrigatorio: t.atribuida });
+  if (campos.erro) return res.status(400).json({ error: campos.erro });
+  const prazoMudou = logMudou(t.prazo, campos.prazo);
+  await todoRepo.atualizarTarefa(t.id, { ...campos, prazoMudou });
+  if (logMudou(t.titulo, campos.titulo)) {
+    await logTodo(req, t, 'ATUALIZADO', {
+      campo: 'TAREFA',
+      valorAnterior: t.lista === 'PESSOAL' ? null : t.titulo, valorNovo: t.lista === 'PESSOAL' ? null : campos.titulo
+    });
+  }
+  if (prazoMudou) {
+    await logTodo(req, t, 'ATUALIZADO', { campo: 'PRAZO', valorAnterior: t.prazo, valorNovo: campos.prazo });
+  }
+  res.json({ ok: true });
+}));
+
+// Concluir/reabrir: só o dono da lista onde a task está (o destinatário, na atribuída).
+app.put('/api/todo/:id/concluir', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  const t = await tarefaVisivelPara(Number(req.params.id), meId);
+  if (!t) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+  if (t.donoId !== meId) return res.status(403).json({ error: 'Só o dono da lista pode concluir a tarefa.' });
+  if (typeof req.body.concluida !== 'boolean') return res.status(400).json({ error: 'concluida deve ser true/false.' });
+  if (t.concluida !== req.body.concluida) {
+    await todoRepo.definirConclusao(t.id, req.body.concluida);
+    await logTodo(req, t, 'ATUALIZADO', {
+      campo: 'STATUS', valorAnterior: t.concluida ? 'Concluída' : 'Pendente',
+      valorNovo: req.body.concluida ? 'Concluída' : 'Pendente'
+    });
+  }
+  res.json({ ok: true });
+}));
+
+// Liberação de leitura de uma task Pessoal: só o dono.
+app.put('/api/todo/:id/compartilhar', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  const t = await tarefaVisivelPara(Number(req.params.id), meId);
+  if (!t) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+  if (t.donoId !== meId || t.criadoPorId !== meId || t.lista !== 'PESSOAL') {
+    return res.status(403).json({ error: 'Só o dono de uma tarefa pessoal pode liberá-la.' });
+  }
+  const liberados = await lerLiberadosTodo(req.body.usuarioIds, meId);
+  if (liberados.erro) return res.status(400).json({ error: liberados.erro });
+  const antes = await todoRepo.idsCompartilhados(t.id);
+  await todoRepo.definirCompartilhos(t.id, liberados.ids);
+  if (antes.length !== liberados.ids.length || antes.some((id) => !liberados.ids.includes(id))) {
+    await logTodo(req, t, 'COMPARTILHADO', { valorNovo: liberados.emails.join(', ') || '(ninguém)' });
+  }
+  res.json({ ok: true });
+}));
+
+app.delete('/api/todo/:id', exigirAuth, exigirPermissao('aba_todo'), wrap(async (req, res) => {
+  const meId = Number(req.user.sub);
+  const t = await tarefaVisivelPara(Number(req.params.id), meId);
+  if (!t) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+  if (t.criadoPorId !== meId) return res.status(403).json({ error: 'Só quem criou a tarefa pode apagá-la.' });
+  await todoRepo.excluirTarefa(t.id);
+  await logTodo(req, t, 'EXCLUIDO', {
+    valorAnterior: t.lista === 'PESSOAL' ? null : `${t.titulo} · ${t.prazo || 'sem prazo'}`
+  });
+  res.json({ ok: true });
+}));
 
 // ===================== CATÁLOGO DE E-MAILS =====================
 // GET /api/emails é o buscador de /emails: exige login, mas NÃO exige
@@ -4330,6 +4522,9 @@ app.get('/status', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'status.html
 // Buscador do catálogo de e-mails: como /chamados, a rota é aberta e quem
 // exige login é o conteúdo (GET /api/emails).
 app.get('/emails', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'emails.html')));
+// TODO: mesma tela da aba do admin, instalável como PWA. Rota aberta e o
+// conteúdo protegido por login (GET /api/todo/*), como /emails.
+app.get('/todo', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'todo.html')));
 // Utilitários: a tela é aberta no PC do colaborador, então nem ela nem o JS
 // dela ficam em cache de disco por lá.
 app.get('/utils', (req, res) => {
@@ -4382,6 +4577,11 @@ const HORA_LEMBRETES = 7;
 agendarDiario(HORA_LEMBRETES, () => rodarLembretesCalendario()
   .then((n) => { if (n) console.log(`Calendário: ${n} aviso(s) enviado(s).`); })
   .catch((e) => console.error('Lembretes calendário:', e.message)));
+// Lembretes de prazo do TODO, no mesmo horário do calendário e pelo mesmo motivo
+// (sem disparo no boot; a flag por task torna a repetição inofensiva).
+agendarDiario(HORA_LEMBRETES, () => todoRepo.rodarLembretes()
+  .then((n) => { if (n) console.log(`TODO: ${n} lembrete(s) de prazo enviado(s).`); })
+  .catch((e) => console.error('Lembretes TODO:', e.message)));
 console.log(`Lembretes do calendário: próximo disparo em ${Math.round(msAteHoraSaoPaulo(HORA_LEMBRETES) / 60000)} min (${HORA_LEMBRETES}h de Brasília).`);
 
 // Expurgo das notificações antigas, de madrugada. O sininho só enxerga os
