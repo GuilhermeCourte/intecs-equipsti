@@ -24,7 +24,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <title>TODO · Gestão TI</title>
+  <title>GTI · TODO</title>
   <!-- Caminhos absolutos: a página responde em /todo e /todo/ (que mudaria a base relativa). -->
   <link rel="manifest" href="/todo-manifest.json">
   <link rel="icon" type="image/png" href="/favicon_intecs.png?v=5">
@@ -458,6 +458,10 @@ html[data-theme="dark"] .flatpickr-day.selected { color: var(--ink-contrast) !im
     /* Só o que é próprio desta página. */
     #appView.layout-topbar-sticky .card-body { max-width: 1320px; width: 100%; margin: 0 auto; }
     #appView.layout-topbar-sticky .card-header .card-titulo { min-width: 0; }
+    /* Título da barra no formato da topbar do /status (GTI · Serviços): mesmo tamanho, peso e ponto separador. */
+    .card-titulo .brand-name { font-size: .95rem; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+    .card-titulo .brand-name .brand-dot { opacity: .55; font-weight: 500; margin: 0 2px; }
+    @media (max-width: 576px) { .card-titulo .brand-name { font-size: .88rem; } }
   </style>
   <link href="/todo.css?v=4" rel="stylesheet">
 </head>
@@ -543,7 +547,7 @@ html[data-theme="dark"] .flatpickr-day.selected { color: var(--ink-contrast) !im
       <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0 d-flex align-items-center gap-2 card-titulo">
           <img src="/logo_intecs.png" alt="Intecs" style="height:28px;width:auto;">
-          TODO
+          <span class="brand-name">GTI <span class="brand-dot">·</span> TODO</span>
         </h5>
         <div class="d-flex align-items-center gap-2">
           <small id="userEmail" class="d-none d-sm-inline"></small>
