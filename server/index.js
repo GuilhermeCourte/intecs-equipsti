@@ -481,7 +481,7 @@ app.put('/api/users/:id', exigirAuth, exigirPermissao('aba_usuarios'), wrap(asyn
 
 // ===================== OPÇÕES =====================
 app.get('/api/options', exigirAuth, wrap(async (req, res) => {
-  const r = await query('SELECT lista, valor, oculto, detalhe, preco, tipo_aquisicao, quantidade, cnpj, endereco FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
+  const r = await query('SELECT lista, valor, oculto, detalhe, preco, tipo_aquisicao, quantidade, estoque_minimo, cnpj, endereco FROM dbo.EQUIPSTI_opcoes ORDER BY lista, valor');
   const counts = await query(`
     SELECT equipamento, COUNT(*) AS total
     FROM dbo.EQUIPSTI_registros
@@ -500,7 +500,10 @@ app.get('/api/options', exigirAuth, wrap(async (req, res) => {
       cnpj: row.cnpj || null,
       endereco: row.endereco || null
     };
-    if (row.lista === 'INSUMOS') item.quantidade = row.quantidade ?? 0;
+    if (row.lista === 'INSUMOS') {
+      item.quantidade = row.quantidade ?? 0;
+      item.estoque_minimo = row.estoque_minimo ?? null;
+    }
     if (row.lista === 'EQUIPAMENTO') item.qtd_registros = equipCount[row.valor] ?? 0;
     out[row.lista].push(item);
   });
@@ -511,18 +514,32 @@ app.put('/api/options/quantidade', exigirAuth, exigirPermissao('aba_gerenciar'),
   const valor = trim(req.body.valor);
   const qtd = parseInt(req.body.quantidade, 10);
   if (isNaN(qtd) || qtd < 0) return res.status(400).json({ error: 'Quantidade inválida.' });
-  const antesQ = await query('SELECT quantidade FROM dbo.EQUIPSTI_opcoes WHERE lista = @lista AND valor = @valor',
+  // Estoque mínimo é opcional no corpo: ausente = não mexe; vazio/null = sem limite.
+  const mudaMin = Object.hasOwn(req.body, 'estoque_minimo');
+  let minimo = null;
+  if (mudaMin && req.body.estoque_minimo !== null && req.body.estoque_minimo !== '') {
+    minimo = Number(req.body.estoque_minimo);
+    if (!Number.isInteger(minimo) || minimo < 0) return res.status(400).json({ error: 'Estoque mínimo inválido.' });
+  }
+  const antesQ = await query('SELECT quantidade, estoque_minimo FROM dbo.EQUIPSTI_opcoes WHERE lista = @lista AND valor = @valor',
     { lista: S('INSUMOS'), valor: S(valor) });
-  await query('UPDATE dbo.EQUIPSTI_opcoes SET quantidade = @qtd WHERE lista = @lista AND valor = @valor',
-    { qtd: { type: sql.Int, value: qtd }, lista: S('INSUMOS'), valor: S(valor) });
+  await query(`UPDATE dbo.EQUIPSTI_opcoes SET quantidade = @qtd${mudaMin ? ', estoque_minimo = @minimo' : ''} WHERE lista = @lista AND valor = @valor`,
+    { qtd: { type: sql.Int, value: qtd },
+      ...(mudaMin ? { minimo: { type: sql.Int, value: minimo } } : {}),
+      lista: S('INSUMOS'), valor: S(valor) });
   const qAntes = antesQ.recordset[0]?.quantidade;
-  if (logMudou(qAntes, qtd, true)) {
-    await registrarLog({
-      modulo: 'OPCOES', entidadeRotulo: `INSUMOS · ${valor}`,
-      acao: 'ATUALIZADO', campo: 'QUANTIDADE',
-      valorAnterior: qAntes == null ? null : String(qAntes), valorNovo: String(qtd),
-      usuario: req.user.email, usuarioId: req.user.sub
-    });
+  const mAntes = antesQ.recordset[0]?.estoque_minimo;
+  const paresQ = [['QUANTIDADE', qAntes, qtd]];
+  if (mudaMin) paresQ.push(['ESTOQUE MÍNIMO', mAntes, minimo]);
+  for (const [campo, de, para] of paresQ) {
+    if (logMudou(de, para, true)) {
+      await registrarLog({
+        modulo: 'OPCOES', entidadeRotulo: `INSUMOS · ${valor}`,
+        acao: 'ATUALIZADO', campo,
+        valorAnterior: de == null ? null : String(de), valorNovo: para == null ? null : String(para),
+        usuario: req.user.email, usuarioId: req.user.sub
+      });
+    }
   }
   res.json({ ok: true });
 }));
@@ -3148,43 +3165,11 @@ app.post('/api/chamados/:chave/interacao', exigirAuth, exigirPermissao('aba_cham
 
 const EUROSA_CODUSUARIO = '12290';
 
-app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
-  const codCatalogo   = trim(req.body.codCatalogo   || '');
-  const assuntoText   = trim(req.body.assuntoText   || '');
-  const descricao     = trim(req.body.descricao     || '');
-  const localTrabalho = trim(req.body.localTrabalho || '');
-  const endereco      = trim(req.body.endereco      || '');
-  const unidade       = trim(req.body.unidade       || '');
-
-  if (!codCatalogo) return res.status(400).json({ error: 'Selecione o assunto.' });
-
-  // Resolve o equipamento (nome + N/S) a partir do patrimônio para montar o
-  // cabeçalho padrão da descrição. Quando o PAT tem N/S único, o front não envia
-  // o NS, então derivamos do banco (eqChamado.ns).
-  const patChamado = trim(req.body.patrimonio || '');
-  const nsForm     = trim(req.body.ns || '');
-  const eqChamado  = patChamado
-    ? await lookupEquip(patChamado, nsForm)
-    : { equipamento: '', setor: '', unidade: '', ns: '' };
-  const nsChamado  = nsForm || eqChamado.ns;
-
-  // Descrição = cabeçalho do equipamento (nome / PAT / N/S) + observação opcional,
-  // separados por uma linha em branco. Linhas sem valor são omitidas.
-  const linhasEquip = [];
-  if (eqChamado.equipamento) linhasEquip.push(eqChamado.equipamento);
-  if (patChamado)            linhasEquip.push('PAT: ' + patChamado);
-  if (nsChamado)             linhasEquip.push('N/S: ' + nsChamado);
-
-  const partes = [];
-  if (linhasEquip.length) partes.push(linhasEquip.join('<br>'));
-  if (descricao)          partes.push(descricao);
-  // A MSA remove as tags <p> sem inserir separador, então um </p><p> vira uma
-  // colagem sem espaço; usamos <br><br> (mesmo mecanismo do cabeçalho) para
-  // garantir a linha em branco entre o cabeçalho e a observação.
-  const descricaoHtml = partes.length ? '<p>' + partes.join('<br><br>') + '</p>' : '';
-
-  if (!descricaoHtml) return res.status(400).json({ error: 'Informe o patrimônio ou uma observação.' });
-
+// Abre o chamado na MSA (PUT /Chamados), espelha na aba INTECS vs MSA e avisa
+// (log + notificação/e-mail). Compartilhado pelo "Novo Chamado" e pelo "Pedir
+// mais" dos insumos. 'resumo' (opcional) substitui o texto da notificação.
+async function abrirChamadoMsa(req, { codCatalogo, assuntoText, descricao, descricaoHtml, localTrabalho,
+                                      endereco, unidade, patChamado, nsChamado, equipamento, resumo }) {
   // AutoCategoriaArvore = parte após o último " - " no texto do assunto
   const arvore = assuntoText.includes(' - ')
     ? assuntoText.slice(assuntoText.lastIndexOf(' - ') + 3)
@@ -3248,12 +3233,108 @@ app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(asyn
     tipo: 'CHAMADO', acao: 'CRIADO', link: 'tab-chamados', email: true,
     ator: { id: req.user.sub, email: req.user.email },
     titulo: 'Chamado aberto',
-    mensagem: `${assuntoText || descricao}`
-            + (patChamado ? ` · ${eqChamado.equipamento || 'Equipamento'} — PAT ${patChamado}` : '')
+    mensagem: `${resumo || assuntoText || descricao}`
+            + (patChamado ? ` · ${equipamento || 'Equipamento'} — PAT ${patChamado}` : '')
             + (codigo ? ` · nº ${codigo}` : '')
   });
 
-  res.status(201).json(result.data);
+  return result.data;
+}
+
+app.post('/api/chamados', exigirAuth, exigirPermissao('aba_chamados'), wrap(async (req, res) => {
+  const codCatalogo   = trim(req.body.codCatalogo   || '');
+  const assuntoText   = trim(req.body.assuntoText   || '');
+  const descricao     = trim(req.body.descricao     || '');
+  const localTrabalho = trim(req.body.localTrabalho || '');
+  const endereco      = trim(req.body.endereco      || '');
+  const unidade       = trim(req.body.unidade       || '');
+
+  if (!codCatalogo) return res.status(400).json({ error: 'Selecione o assunto.' });
+
+  // Resolve o equipamento (nome + N/S) a partir do patrimônio para montar o
+  // cabeçalho padrão da descrição. Quando o PAT tem N/S único, o front não envia
+  // o NS, então derivamos do banco (eqChamado.ns).
+  const patChamado = trim(req.body.patrimonio || '');
+  const nsForm     = trim(req.body.ns || '');
+  const eqChamado  = patChamado
+    ? await lookupEquip(patChamado, nsForm)
+    : { equipamento: '', setor: '', unidade: '', ns: '' };
+  const nsChamado  = nsForm || eqChamado.ns;
+
+  // Descrição = cabeçalho do equipamento (nome / PAT / N/S) + observação opcional,
+  // separados por uma linha em branco. Linhas sem valor são omitidas.
+  const linhasEquip = [];
+  if (eqChamado.equipamento) linhasEquip.push(eqChamado.equipamento);
+  if (patChamado)            linhasEquip.push('PAT: ' + patChamado);
+  if (nsChamado)             linhasEquip.push('N/S: ' + nsChamado);
+
+  const partes = [];
+  if (linhasEquip.length) partes.push(linhasEquip.join('<br>'));
+  if (descricao)          partes.push(descricao);
+  // A MSA remove as tags <p> sem inserir separador, então um </p><p> vira uma
+  // colagem sem espaço; usamos <br><br> (mesmo mecanismo do cabeçalho) para
+  // garantir a linha em branco entre o cabeçalho e a observação.
+  const descricaoHtml = partes.length ? '<p>' + partes.join('<br><br>') + '</p>' : '';
+
+  if (!descricaoHtml) return res.status(400).json({ error: 'Informe o patrimônio ou uma observação.' });
+
+  res.status(201).json(await abrirChamadoMsa(req, {
+    codCatalogo, assuntoText, descricao, descricaoHtml, localTrabalho, endereco, unidade,
+    patChamado, nsChamado, equipamento: eqChamado.equipamento
+  }));
+}));
+
+// Pedido de insumo ("Pedir mais"): abre o chamado na MSA com valores fixos, já
+// que o insumo não tem unidade/local/assunto próprios. Os mesmos da tela Novo
+// Chamado (botão SEDE); o assunto é o único de suprimentos do catálogo.
+const MSA_PEDIDO_INSUMO = {
+  codCatalogo:   '7648',
+  assuntoText:   'SUPRIMENTOS - TONER - TROCAR',
+  unidade:       'INTECS_SP',
+  localTrabalho: 'SEDE',
+  endereco:      'Av. Paulista, 1159 - Jardim Paulista, São Paulo - SP, 01311-200'
+};
+
+app.post('/api/options/insumos/pedir-mais', exigirAuth, exigirPermissao('aba_gerenciar'), wrap(async (req, res) => {
+  const valor = trim(req.body.valor);
+  const qtdRaw = trim(req.body.quantidade);
+  if (!/^\d+$/.test(qtdRaw) || !Number.isSafeInteger(Number(qtdRaw)) || Number(qtdRaw) <= 0) {
+    return res.status(400).json({ error: 'Informe uma quantidade inteira maior que 0.' });
+  }
+  const qtdPedir = Number(qtdRaw);
+
+  const r = await query('SELECT quantidade, estoque_minimo FROM dbo.EQUIPSTI_opcoes WHERE lista = @lista AND valor = @valor',
+    { lista: S('INSUMOS'), valor: S(valor) });
+  if (!r.recordset.length) return res.status(404).json({ error: 'Insumo não encontrado.' });
+  const estoque = r.recordset[0].quantidade ?? 0;
+  const minimo = r.recordset[0].estoque_minimo;
+  if (minimo == null) return res.status(409).json({ error: 'Este insumo não tem estoque mínimo definido.' });
+  if (estoque > minimo) return res.status(409).json({ error: 'O estoque deste insumo está acima do mínimo.' });
+
+  // O mesmo texto vai em texto puro (coluna "problema" da aba INTECS vs MSA) e
+  // em HTML (descrição do chamado, com o nome escapado).
+  const linhas = [
+    ['Pedido de insumo', valor],
+    ['Quantidade a pedir', `${qtdPedir} un`],
+    ['Estoque atual', `${estoque} un (mínimo ${minimo})`]
+  ];
+  const escHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const descricao = linhas.map(([k, v]) => `${k}: ${v}`).join(' · ');
+  const descricaoHtml = '<p>' + linhas.map(([k, v]) => `${k}: ${escHtml(v)}`).join('<br>') + '</p>';
+
+  const resultado = await abrirChamadoMsa(req, {
+    ...MSA_PEDIDO_INSUMO, descricao, descricaoHtml, patChamado: '', nsChamado: '', equipamento: '',
+    resumo: `${MSA_PEDIDO_INSUMO.assuntoText} · ${valor} (${qtdPedir} un)`
+  });
+
+  const codigo = String(resultado?.url?.text || '').match(/\d{4}-\d{6}/)?.[0] || '';
+  await registrarLog({
+    modulo: 'OPCOES', entidadeRotulo: `INSUMOS · ${valor}`,
+    acao: 'PEDIDO', campo: 'PEDIR MAIS',
+    valorNovo: `${qtdPedir} un · estoque ${estoque}/mín. ${minimo}` + (codigo ? ` · chamado MSA ${codigo}` : ''),
+    usuario: req.user.email, usuarioId: req.user.sub
+  });
+  res.status(201).json({ ok: true, codigo });
 }));
 
 // ===================== DASHBOARD =====================

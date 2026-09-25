@@ -4224,6 +4224,14 @@
               <label class="form-label" for="opcao_qtd">QTD. EM ESTOQUE</label>
               <input type="number" class="form-control" id="opcao_qtd" min="0" autocomplete="off">
             </div>
+            <div class="col-md-6" id="opcao_min_grupo" style="display:none">
+              <label class="form-label" for="opcao_min">ESTOQUE MÍNIMO</label>
+              <input type="number" class="form-control" id="opcao_min" min="0" step="1" autocomplete="off" placeholder="Sem limite">
+            </div>
+            <div class="col-12" id="opcao_pedir_grupo" style="display:none">
+              <button type="button" class="btn btn-outline-primary" id="btnPedirMaisModal"><i class="ph ph-plus"></i> Pedir mais</button>
+              <span class="form-text ms-2">Estoque no mínimo ou abaixo dele.</span>
+            </div>
             <div class="col-12">
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="opcao_ativo">
