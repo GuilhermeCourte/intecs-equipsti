@@ -70,6 +70,7 @@ let UNIDADE_CNPJ = {};     // UNIDADE do sistema -> CNPJ (col. cnpj)
 let UNIDADE_ENDERECO = {}; // UNIDADE do sistema -> endereço (col. endereco)
 let MSA_UNIDADES = [];     // lista fixa de unidades da MSA (CHAMADO_UNIDADES)
 let INSUMO_QTD = {};
+let INSUMO_MIN = {};       // INSUMO -> estoque mínimo (ausente = sem limite, sem botão Pedir mais)
 let INSUMOS = [];
 let REGISTROS = [];
 let modalEditar = null;
@@ -2443,17 +2444,20 @@ function renderProximosVencimentosCal() {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const itens = CALENDARIO
     .map((e) => ({ evt: e, data: proximaOcorrenciaCalendario(e) }))
-    .sort((a, b) => a.data - b.data);
+    .sort((a, b) => a.data - b.data)
+    .filter(({ evt, data }) => !(evt.recorrencia === 'NENHUMA' && data < hoje));
+  if (!itens.length) {
+    cont.innerHTML = '<span class="text-muted p-3 d-block">Nenhum vencimento próximo.</span>';
+    return;
+  }
   cont.innerHTML = itens.map(({ evt, data }) => {
-    const vencido = evt.recorrencia === 'NENHUMA' && data < hoje;
     const dataFmt = data.toLocaleDateString('pt-BR');
     const valorTxt = evt.valor != null ? ' · R$ ' + Number(evt.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '';
     const recorrenciaTxt = evt.recorrencia !== 'NENHUMA' ? ' <span class="text-muted small">(' + (CAL_RECORRENCIA_LABEL[evt.recorrencia] || evt.recorrencia).toLowerCase() + ')</span>' : '';
-    const vencidoTxt = vencido ? ' <span class="text-danger small fw-bold">VENCIDO</span>' : '';
     return '<div class="cal-proximo-item" data-id="' + evt.id + '">' +
       '<span class="cal-dot cal-evento--' + evt.recorrencia + '"></span>' +
       '<div class="cal-proximo-data">' + dataFmt + '</div>' +
-      '<div class="flex-grow-1">' + escapeHtml(evt.titulo) + ' <span class="text-muted small">· ' + escapeHtml(evt.tipo) + '</span>' + recorrenciaTxt + valorTxt + vencidoTxt + '</div>' +
+      '<div class="flex-grow-1">' + escapeHtml(evt.titulo) + ' <span class="text-muted small">· ' + escapeHtml(evt.tipo) + '</span>' + recorrenciaTxt + valorTxt + '</div>' +
       '</div>';
   }).join('');
 }
@@ -2961,7 +2965,11 @@ async function loadOptions() {
   });
   if (pMsaUnidades) MSA_UNIDADES = await pMsaUnidades;
   INSUMO_QTD = {};
-  (data['INSUMOS'] || []).forEach((o) => { INSUMO_QTD[o.valor] = o.quantidade ?? 0; });
+  INSUMO_MIN = {};
+  (data['INSUMOS'] || []).forEach((o) => {
+    INSUMO_QTD[o.valor] = o.quantidade ?? 0;
+    if (o.estoque_minimo != null) INSUMO_MIN[o.valor] = o.estoque_minimo;
+  });
   INSUMOS = (data['INSUMOS'] || []).filter((o) => !o.oculto).map((o) => o.valor);
   renderAllSelects();
   renderListaOpcoes();
@@ -3027,7 +3035,11 @@ function renderListaOpcoes() {
     let qtdCell = '';
     if (isInsumo) {
       const qtd = INSUMO_QTD[v] ?? 0;
-      qtdCell = '<td>' + qtd + ' <span class="text-muted small">un</span></td>';
+      const pedir = insumoEstoqueBaixo(v)
+        ? ' <button type="button" class="btn btn-sm btn-outline-primary btn-pedir-mais ms-2" data-pedir="' + vEsc + '">' +
+          '<i class="ph ph-plus"></i> Pedir mais</button>'
+        : '';
+      qtdCell = '<td>' + qtd + ' <span class="text-muted small">un</span>' + pedir + '</td>';
     } else if (isEquip) {
       const cnt = EQUIP_QTD_REG[v] ?? 0;
       qtdCell = '<td><span class="badge bg-secondary bg-opacity-10 text-secondary fw-normal">' +
@@ -3055,6 +3067,32 @@ function renderListaOpcoes() {
     '<thead class="table-light"><tr>' + opcoesThead(lista) + '</tr></thead>' +
     '<tbody>' + linhas + '</tbody></table></div>';
   ctxAtualizarTh(opcoesFilterCtx);
+}
+
+// Insumo com estoque mínimo definido e quantidade igual ou abaixo dele.
+function insumoEstoqueBaixo(v) {
+  return INSUMO_MIN[v] != null && (INSUMO_QTD[v] ?? 0) <= INSUMO_MIN[v];
+}
+
+// "Pedir mais": pergunta a quantidade e abre o chamado na MSA pelo servidor.
+async function pedirMaisInsumo(valor) {
+  let codigo = '';
+  const perguntando = uiAsk({
+    title: 'Pedir mais',
+    message: valor + ' — estoque atual: ' + (INSUMO_QTD[valor] ?? 0) + ' un. Quantidade a pedir:',
+    input: true, placeholder: 'Ex.: 5', okText: 'Pedir',
+    onOk: async (texto) => {
+      const qtd = trim(texto);
+      if (!/^\d+$/.test(qtd) || Number(qtd) <= 0) throw new Error('Informe uma quantidade inteira maior que 0.');
+      const r = await api('POST', '/api/options/insumos/pedir-mais', { valor, quantidade: Number(qtd) });
+      codigo = r.codigo || '';
+    }
+  });
+  $('askInput').setAttribute('inputmode', 'numeric');
+  const res = await perguntando;
+  $('askInput').removeAttribute('inputmode');
+  if (res === null) return;
+  showAlert('alertGerenciar', 'success', 'Chamado ' + (codigo ? codigo + ' ' : '') + 'aberto na MSA para ' + valor + '.');
 }
 
 // Cabeçalho da tabela de Opções com colunas filtráveis (funil).
@@ -5051,6 +5089,8 @@ function configurarFormOpcao() {
 
   // Linha clicável → abre o modal de edição da opção.
   $('listaOpcoes').addEventListener('click', (ev) => {
+    const pedir = ev.target.closest('.btn-pedir-mais');
+    if (pedir) { pedirMaisInsumo(pedir.getAttribute('data-pedir')); return; }
     const row = ev.target.closest('tr[data-opt]');
     if (row) abrirModalOpcao(row.getAttribute('data-opt'));
   });
@@ -5059,6 +5099,8 @@ function configurarFormOpcao() {
   $('opcao_cnpj').addEventListener('input', (ev) => {
     ev.target.value = maskCNPJ(cnpjDigits(ev.target.value));
   });
+
+  $('btnPedirMaisModal').addEventListener('click', () => pedirMaisInsumo($('opcao_original').value));
 
   $('formOpcao').addEventListener('submit', salvarModalOpcao);
 }
@@ -5097,7 +5139,12 @@ function abrirModalOpcao(val) {
     $('opcao_cnpj').value = UNIDADE_CNPJ[val] || '';
     $('opcao_endereco').value = UNIDADE_ENDERECO[val] || '';
   }
-  if (isInsumo) $('opcao_qtd').value = INSUMO_QTD[val] ?? 0;
+  $('opcao_min_grupo').style.display = isInsumo ? '' : 'none';
+  $('opcao_pedir_grupo').style.display = isInsumo && insumoEstoqueBaixo(val) ? '' : 'none';
+  if (isInsumo) {
+    $('opcao_qtd').value = INSUMO_QTD[val] ?? 0;
+    $('opcao_min').value = INSUMO_MIN[val] ?? '';
+  }
 
   $('opcao_ativo').checked = (HIDDEN[lista] || []).indexOf(val) === -1;
   modalOpcao.show();
@@ -5120,6 +5167,18 @@ async function salvarModalOpcao(ev) {
       return;
     }
     cnpj = dig ? maskCNPJ(dig) : null;
+  }
+  // Estoque mínimo vazio = sem limite (o botão Pedir mais não aparece).
+  let min = null;
+  if (lista === 'INSUMOS') {
+    const minTxt = trim($('opcao_min').value);
+    if (minTxt !== '') {
+      min = Number(minTxt);
+      if (!Number.isInteger(min) || min < 0) {
+        $('alertOpcaoModal').innerHTML = '<div class="alert alert-warning py-2 mb-0">Estoque mínimo inválido — use um número inteiro a partir de 0.</div>';
+        return;
+      }
+    }
   }
 
   const restaurarBtn = btnSalvando($('btnSalvarOpcao'));
@@ -5147,8 +5206,13 @@ async function salvarModalOpcao(ev) {
       });
     } else if (lista === 'INSUMOS') {
       const qtd = parseInt($('opcao_qtd').value, 10);
-      if (!isNaN(qtd) && qtd >= 0 && qtd !== (INSUMO_QTD[original] ?? 0)) {
-        await api('PUT', '/api/options/quantidade', { valor: limpo, quantidade: qtd });
+      const qtdMudou = !isNaN(qtd) && qtd >= 0 && qtd !== (INSUMO_QTD[original] ?? 0);
+      const minMudou = min !== (INSUMO_MIN[original] ?? null);
+      if (qtdMudou || minMudou) {
+        await api('PUT', '/api/options/quantidade', {
+          valor: limpo, quantidade: !isNaN(qtd) && qtd >= 0 ? qtd : (INSUMO_QTD[original] ?? 0),
+          estoque_minimo: min
+        });
       }
     }
     const ativo = $('opcao_ativo').checked;
@@ -6455,7 +6519,7 @@ async function abrirChamadoIntecsDetalhe(id) {
     $('ciDetPrioridade').value = data.prioridade;
     $('ciDetResponsavel').value = data.responsavel_id || '';
     const sla = slaInfo(data);
-    $('ciDetSlaBadge').innerHTML = `<span class="badge-status ${sla.classe}">${escapeHtml(sla.texto)}</span> <span class="text-muted">até ${fmtDataHora(data.sla_conclusao_prazo)}</span>`;
+    $('ciDetSlaBadge').innerHTML = `<span class="badge-status ${sla.classe}">${escapeHtml(sla.texto)}</span> <span class="text-muted">até ${utDataHora(data.sla_conclusao_prazo)}</span>`;
     $('ciResumoSolucaoWrap').style.display = data.solucao ? '' : 'none';
     if (data.solucao) $('ciResumoSolucaoTexto').innerHTML = escapeHtml(data.solucao).replace(/\n/g, '<br>');
     renderDadosChamado(data);

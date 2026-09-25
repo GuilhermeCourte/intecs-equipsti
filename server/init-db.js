@@ -106,6 +106,11 @@ IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'endereco') IS NULL
 IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'uptimerobot_monitor_id') IS NULL
   ALTER TABLE dbo.EQUIPSTI_opcoes ADD uptimerobot_monitor_id BIGINT NULL;
 
+-- Migração: estoque mínimo do insumo (INSUMOS). NULL = sem limite, o botão
+-- "Pedir mais" não aparece; com valor, aparece quando quantidade <= estoque_minimo.
+IF COL_LENGTH('dbo.EQUIPSTI_opcoes', 'estoque_minimo') IS NULL
+  ALTER TABLE dbo.EQUIPSTI_opcoes ADD estoque_minimo INT NULL;
+
 -- Tabela de contratos de internet por unidade.
 IF OBJECT_ID('dbo.EQUIPSTI_internet', 'U') IS NULL
 CREATE TABLE dbo.EQUIPSTI_internet (
