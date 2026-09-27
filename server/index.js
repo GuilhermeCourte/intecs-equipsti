@@ -2116,13 +2116,18 @@ async function tarefaVisivelPara(id, meId) {
 }
 
 // Título/prazo vindos do corpo. Devolve { erro } ou os valores já limpos.
-function lerCamposTodo(body, { prazoObrigatorio = false } = {}) {
+// prazoAtual (só na edição): o prazo já salvo. Prazo no passado é recusado, exceto quando é
+// exatamente o que já estava salvo — editar só o texto de uma task vencida tem que passar.
+// "Hoje" é o de Brasília (o processo roda em UTC): à noite, o dia atual não pode virar passado.
+function lerCamposTodo(body, { prazoObrigatorio = false, prazoAtual } = {}) {
   const titulo = trim(body.titulo);
   const prazo = trim(body.prazo) || null;
   if (!titulo) return { erro: 'Informe a tarefa.' };
   if (titulo.length > TODO_TITULO_MAX) return { erro: `A tarefa aceita até ${TODO_TITULO_MAX} caracteres.` };
   if (prazo && !prazoTodoValido(prazo)) return { erro: 'Prazo inválido.' };
   if (prazoObrigatorio && !prazo) return { erro: 'Informe o prazo.' };
+  const mudouPrazo = prazoAtual === undefined || prazo !== prazoAtual;
+  if (prazo && mudouPrazo && prazo < todoRepo.hojeEmSaoPaulo()) return { erro: 'O prazo não pode ser uma data passada.' };
   return { titulo, prazo };
 }
 
@@ -2208,7 +2213,7 @@ app.put('/api/todo/:id', exigirAuth, exigirPermissao('aba_todo'), wrap(async (re
   const t = await tarefaVisivelPara(Number(req.params.id), meId);
   if (!t) return res.status(404).json({ error: 'Tarefa não encontrada.' });
   if (t.criadoPorId !== meId) return res.status(403).json({ error: 'Só quem criou a tarefa pode editá-la.' });
-  const campos = lerCamposTodo(req.body, { prazoObrigatorio: t.atribuida });
+  const campos = lerCamposTodo(req.body, { prazoObrigatorio: t.atribuida, prazoAtual: t.prazo });
   if (campos.erro) return res.status(400).json({ error: campos.erro });
   const prazoMudou = logMudou(t.prazo, campos.prazo);
   await todoRepo.atualizarTarefa(t.id, { ...campos, prazoMudou });

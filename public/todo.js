@@ -69,11 +69,17 @@
   const datas = [];      // instâncias dos formulários da lista (refeitas a cada render)
   let dataEditar = null; // instância do modal de editar
 
-  function criarData(el) {
+  // minDate 'today' nos formulários de criar/atribuir. O modal de editar passa minDate: false e
+  // controla o range ele mesmo (ver abrirEditar) — usar minDate lá tem um efeito colateral: setá-lo
+  // de novo depois de abrir uma task com prazo vencido ZERA a data (reproduzido isoladamente; era a
+  // causa do criador ficar sem conseguir editar uma task atribuída depois que o destinatário
+  // concluía uma com prazo vencido). 'enable' não tem esse problema.
+  function criarData(el, { minDate = true } = {}) {
     if (typeof window.flatpickr === 'undefined') return null;
     return window.flatpickr(el, {
       locale: 'pt', dateFormat: 'Y-m-d', altInput: true, altFormat: 'd/m/Y',
       allowInput: true, disableMobile: true, monthSelectorType: 'static',
+      minDate: minDate ? 'today' : undefined,
       onReady(_d, _s, fp) {
         fp.altInput.classList.add('form-control');
         if (fp.input.id) {
@@ -256,7 +262,7 @@
       </div>
       <div class="td-campo td-campo-prazo">
         <label class="form-label small mb-1" for="tdNovaPrazo">Prazo</label>
-        <input type="date" class="form-control form-control-sm td-prazo" id="tdNovaPrazo" name="prazo" title="Prazo (opcional)" aria-label="Prazo">
+        <input type="date" class="form-control form-control-sm td-prazo" id="tdNovaPrazo" name="prazo" min="${hojeYmd()}" title="Prazo (opcional)" aria-label="Prazo">
       </div>
       <button type="submit" class="btn btn-primary btn-sm"><i class="ph ph-plus"></i> Adicionar</button>
     </form>`;
@@ -276,7 +282,7 @@
       </div>
       <div class="td-campo td-campo-prazo">
         <label class="form-label small mb-1" for="tdAtribPrazo">Prazo</label>
-        <input type="date" class="form-control form-control-sm td-prazo" id="tdAtribPrazo" name="prazo" required title="Prazo (obrigatório)" aria-label="Prazo">
+        <input type="date" class="form-control form-control-sm td-prazo" id="tdAtribPrazo" name="prazo" min="${hojeYmd()}" required title="Prazo (obrigatório)" aria-label="Prazo">
       </div>
       <button type="submit" class="btn btn-primary btn-sm"><i class="ph ph-paper-plane-tilt"></i> Atribuir</button>
     </form>`;
@@ -382,7 +388,7 @@
       </div>`;
     document.body.append(...div.children);
     const inst = (id) => window.bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
-    dataEditar = criarData(document.getElementById('tdEditarPrazo'));
+    dataEditar = criarData(document.getElementById('tdEditarPrazo'), { minDate: false });
     modais = { editar: inst('tdModalEditar'), compartilhar: inst('tdModalCompartilhar'), apagar: inst('tdModalApagar') };
 
     document.getElementById('tdFormEditar').addEventListener('submit', async (ev) => {
@@ -429,9 +435,15 @@
     document.getElementById('tdEditarTitulo').value = t.titulo;
     const campoPrazo = document.getElementById('tdEditarPrazo');
     if (dataEditar) {
+      const prazoDaTask = t.prazo;
+      dataEditar.set('enable', [(d) => {
+        const s = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return s >= hojeYmd() || s === prazoDaTask;
+      }]);
       if (t.prazo) dataEditar.setDate(t.prazo, false); else dataEditar.clear(false);
       dataEditar.altInput.required = t.atribuida;
     } else {
+      campoPrazo.min = (t.prazo && t.prazo < hojeYmd()) ? '' : hojeYmd(); // sem min, o nativo aceita o valor vencido já salvo
       campoPrazo.value = t.prazo || '';
       campoPrazo.required = t.atribuida;
     }
