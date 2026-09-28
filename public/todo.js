@@ -232,10 +232,19 @@
       chips.push(`<span class="td-chip"><i class="ph ph-users"></i>Liberada para ${t.compartilhadoCom.length}</span>`);
     }
 
+    // Concluída não edita em nenhuma lista — precisa reabrir primeiro (regra de negócio, não bug:
+    // quem reabre é sempre o dono da lista, então numa atribuída o criador espera o destinatário).
+    // O botão fica visível e desabilitado, com tooltip, no mesmo padrão da Conexão Remota no Linux
+    // (nunca esconder um botão inativo — ver .td-acoes button:disabled no CSS pro tooltip funcionar).
+    const editarBloqueado = t.concluida;
     const acoes = [];
     if (podeLiberar) acoes.push(`<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="compartilhar" title="Liberar para outras pessoas"><i class="ph ph-users fs-5"></i></button>`);
-    if (podeEditar) acoes.push(`<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="editar" title="Editar"><i class="ph ph-pencil-simple fs-5"></i></button>`);
-    if (podeEditar) acoes.push(`<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="apagar" title="Apagar"><i class="ph ph-trash fs-5"></i></button>`);
+    if (podeEditar) {
+      acoes.push(editarBloqueado
+        ? `<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="editar" disabled title="Reabra a tarefa para editar"><i class="ph ph-pencil-simple fs-5"></i></button>`
+        : `<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="editar" title="Editar"><i class="ph ph-pencil-simple fs-5"></i></button>`);
+      acoes.push(`<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="apagar" title="Apagar"><i class="ph ph-trash fs-5"></i></button>`);
+    }
 
     const marca = t.concluida ? 'ph-check-circle' : 'ph-circle';
     const titCheck = podeConcluir ? (t.concluida ? 'Reabrir' : 'Concluir') : (t.concluida ? 'Concluída' : 'Pendente');
@@ -493,7 +502,7 @@
       if (acao === 'alternar') {
         limparAviso();
         if (await tentar(() => api('PUT', `/api/todo/${t.id}/concluir`, { concluida: !t.concluida }))) await recarregarLista();
-      } else if (acao === 'editar') abrirEditar(t);
+      } else if (acao === 'editar') { if (!t.concluida) abrirEditar(t); } // defesa: botão desabilitado já barra o clique
       else if (acao === 'compartilhar') abrirCompartilhar(t);
       else if (acao === 'apagar') abrirApagar(t);
     });

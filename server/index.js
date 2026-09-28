@@ -2230,6 +2230,9 @@ app.put('/api/todo/:id', exigirAuth, exigirPermissao('aba_todo'), wrap(async (re
   const t = await tarefaVisivelPara(Number(req.params.id), meId);
   if (!t) return res.status(404).json({ error: 'Tarefa não encontrada.' });
   if (t.criadoPorId !== meId) return res.status(403).json({ error: 'Só quem criou a tarefa pode editá-la.' });
+  // Regra de negócio (não bug): concluída não edita em nenhuma lista. Precisa reabrir primeiro —
+  // e quem reabre é sempre o dono da lista (o destinatário, na atribuída), nunca o criador aqui.
+  if (t.concluida) return res.status(409).json({ error: 'Reabra a tarefa para editar.' });
   const campos = lerCamposTodo(req.body, { prazoObrigatorio: t.atribuida, prazoAtual: t.prazo });
   if (campos.erro) return res.status(400).json({ error: campos.erro });
   const prazoMudou = logMudou(t.prazo, campos.prazo);
