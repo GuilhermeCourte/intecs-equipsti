@@ -27,6 +27,14 @@
   };
   const ymdParaBR = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
 
+  // concluidaEm chega como "YYYY-MM-DD HH:MM:SS" em UTC (SYSUTCDATETIME, sem 'Z'); dd/mm/aaaa no fuso de Brasília.
+  function dataConclusaoBR(utcSemZ) {
+    if (!utcSemZ) return '';
+    const d = new Date(String(utcSemZ).replace(' ', 'T') + 'Z');
+    if (isNaN(d)) return '';
+    return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+  }
+
   // Nome de exibição: a parte do e-mail antes do @. Se duas pessoas da lista
   // têm o mesmo nome, mostra o e-mail inteiro dessas duas para não confundir.
   function nomeDe(email) {
@@ -231,12 +239,15 @@
 
     const marca = t.concluida ? 'ph-check-circle' : 'ph-circle';
     const titCheck = podeConcluir ? (t.concluida ? 'Reabrir' : 'Concluir') : (t.concluida ? 'Concluída' : 'Pendente');
+    // Tarefa concluída antes de a coluna existir fica sem data — sem traço nem erro, o span some.
+    const concluidaEmTxt = t.concluida ? dataConclusaoBR(t.concluidaEm) : '';
     return `<li class="td-item ${t.concluida ? 'td-feita' : ''}" data-id="${t.id}">
       <button type="button" class="td-check" data-td="alternar" title="${titCheck}" aria-label="${titCheck}" ${podeConcluir ? '' : 'disabled'}><i class="ph ${marca}"></i></button>
       <div class="td-corpo">
         <div class="td-titulo">${esc(t.titulo)}</div>
         ${chips.filter(Boolean).length ? `<div class="td-meta">${chips.filter(Boolean).join('')}</div>` : ''}
       </div>
+      ${concluidaEmTxt ? `<div class="td-concluida-em">${esc(concluidaEmTxt)}</div>` : ''}
       ${acoes.length ? `<div class="td-acoes">${acoes.join('')}</div>` : ''}
     </li>`;
   }
