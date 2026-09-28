@@ -18,6 +18,7 @@ const ABAS = [
   'aba_senhas',
   'aba_vps',
   'aba_calendario',
+  'aba_todo',
   'aba_gerenciar',
   'aba_usuarios',
   'aba_logs'
@@ -41,6 +42,7 @@ export const ROTULOS = {
   aba_senhas: 'Senhas',
   aba_vps: 'Hospedagem',
   aba_calendario: 'Calendário',
+  aba_todo: 'TODO',
   aba_gerenciar: 'Opções',
   aba_usuarios: 'Usuários',
   aba_logs: 'Logs',

@@ -1,0 +1,92 @@
+/* ============================================================
+   TODO — estilos da tela compartilhada (aba do admin + página /todo).
+   Só consome as variáveis do tema do Gestão TI (--ink, --line, --muted,
+   --bg, --bg-soft, --radius), então acompanha o tema claro/escuro.
+   ============================================================ */
+.td-toolbar {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem;
+}
+/* Rótulo em cima do dropdown, como nos formulários (form-label small mb-1); o ícone ao lado do texto. */
+.td-dono { display: flex; flex-direction: column; min-width: 0; }
+.td-dono .form-label { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+.td-dono-linha { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+/* O dropdown (37px) é mais alto que o botão de atualizar: 2px de folga centraliza um no outro. */
+.td-toolbar > [data-td="atualizar"] { margin-bottom: 2px; }
+.td-dono .form-select { width: auto; max-width: 300px; min-width: 170px; }
+.td-dono .choices { flex: 0 1 260px; width: 260px; min-width: 170px; }
+
+/* Dropdown do sistema (Choices.js) no tamanho compacto dos filtros das tabelas (equivale ao form-select-sm). */
+/* [data-type*=select-one]: sem ele o padding-bottom 7.5px do CSS do Choices (mais específico) vence. */
+.td-tela .choices[data-type*="select-one"] .choices__inner { min-height: 31px; padding: 3px 8px; font-size: .875rem; border-radius: 8px; }
+.td-tela .choices__list--single .choices__item { font-size: .875rem; }
+.td-tela .choices__list--dropdown .choices__item,
+.td-tela .choices__list[aria-expanded] .choices__item { padding: 7px 10px; font-size: .875rem; }
+
+/* Formulário de nova tarefa / atribuição */
+.td-add { display: flex; gap: .5rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; }
+.td-campo { min-width: 0; }
+.td-campo-texto { flex: 1 1 260px; }
+.td-campo-prazo { flex: 0 0 150px; }
+.td-campo-dest { flex: 0 1 240px; }
+.td-campo .form-control, .td-campo .form-select, .td-campo .choices { width: 100%; }
+/* O dropdown compacto do sistema (37px) é 2px mais alto que o input sm (35px): sem isto o rótulo dele sobe 2px em relação aos outros. */
+.td-campo-dest .choices { margin-bottom: -2px; }
+
+/* Lista */
+.td-lista {
+  list-style: none; margin: 0; padding: 0; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg);
+}
+.td-item {
+  display: flex; align-items: flex-start; gap: .75rem;
+  padding: .75rem 1rem; border-bottom: 1px solid var(--line);
+}
+.td-item:last-child { border-bottom: 0; }
+.td-check {
+  border: 0; background: none; padding: 0; flex: none;
+  font-size: 1.5rem; line-height: 1; color: var(--muted); cursor: pointer;
+  transition: color .15s ease;
+}
+.td-check:hover:not(:disabled) { color: var(--ink); }
+.td-check:disabled { cursor: default; }
+.td-corpo { flex: 1 1 auto; min-width: 0; }
+.td-titulo { font-weight: 600; overflow-wrap: anywhere; }
+.td-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+.td-acoes { display: flex; flex: none; gap: .1rem; }
+.td-feita .td-check { color: #1a7f4b; }
+.td-feita .td-titulo { color: var(--muted); font-weight: 500; text-decoration: line-through; }
+
+.td-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .72rem; font-weight: 600; padding: .25em .65em; border-radius: 999px;
+  color: var(--muted); background: var(--bg-soft); border: 1px solid var(--line);
+  max-width: 100%; overflow-wrap: anywhere;
+}
+.td-chip.atrasada { color: #c0392b; background: rgba(192, 57, 43, .10); border-color: rgba(192, 57, 43, .30); }
+.td-chip.hoje     { color: #d68910; background: rgba(214, 137, 16, .12); border-color: rgba(214, 137, 16, .32); }
+.td-chip.ok       { color: #1a7f4b; background: rgba(26, 127, 75, .10); border-color: rgba(26, 127, 75, .30); }
+html[data-theme="dark"] .td-chip.atrasada { color: #ef8a80; }
+html[data-theme="dark"] .td-chip.hoje     { color: #f0b04d; }
+html[data-theme="dark"] .td-chip.ok,
+html[data-theme="dark"] .td-feita .td-check { color: #4cc38a; }
+
+.td-secao-tit {
+  font-size: .72rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--muted); margin: 1.25rem 0 .5rem;
+}
+.td-vazio { padding: 1.5rem 0; }
+
+@media (max-width: 767.98px) {
+  /* 16px nos campos: o iOS dá zoom na página com fonte menor. */
+  .td-tela .form-control, .td-tela .form-select { font-size: 16px; }
+  /* Sem quebra: o botão de atualizar fica na mesma linha do seletor. */
+  .td-toolbar { flex-wrap: nowrap; }
+  .td-dono { flex: 1 1 0; }
+  .td-dono-linha { flex-wrap: wrap; }
+  .td-dono .form-select, .td-dono .choices { flex: 1 1 140px; min-width: 0; max-width: none; }
+  .td-campo-texto { flex: 1 1 100%; }
+  .td-campo-prazo, .td-campo-dest { flex: 1 1 140px; }
+  .td-add .btn { flex: 1 1 100%; }
+  .td-item { padding: .7rem .8rem; gap: .6rem; }
+}

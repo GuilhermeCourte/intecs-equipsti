@@ -21,7 +21,7 @@ import { query, sql } from './db.js';
 // Módulos válidos — whitelist da rota GET /api/logs e do <select> do front.
 export const MODULOS_LOG = [
   'REGISTROS', 'EMPRESTIMOS', 'CHAMADOS_INTECS', 'CHAMADOS_MSA',
-  'CONEXAO_REMOTA', 'INTERNET', 'SENHAS', 'CALENDARIO', 'EMAILS', 'OPCOES', 'USUARIOS',
+  'CONEXAO_REMOTA', 'INTERNET', 'SENHAS', 'CALENDARIO', 'TODO', 'EMAILS', 'OPCOES', 'USUARIOS',
   // SERVICOS: só o cadastro de serviços externos monitorados. A coleta de
   // status é automática e não vira log, mesma régua das conexões das lojas.
   'SERVICOS',

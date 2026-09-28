@@ -1,6 +1,6 @@
 // Service Worker — estratégia network-first para conteúdo da própria origem
 // (mantém o app sempre atualizado) com fallback para cache quando offline.
-const CACHE = 'inv-cache-v17';
+const CACHE = 'inv-cache-v18';
 const SHELL = [
   './',
   './index.html',
@@ -14,6 +14,12 @@ const SHELL = [
   // está estranho na rede, então precisa carregar mesmo com a conexão ruim.
   './status.html',
   './status.js',
+  // /todo é o app TODO instalado: abre sozinho, então precisa ter casca mesmo offline.
+  './todo.html',
+  './todo.js',
+  './todo.css',
+  './todo-page.js',
+  './icons/todo-192.png?v=1',
   // Ícones de push precisam estar no cache ANTES do push chegar: o navegador
   // busca o ícone durante showNotification(), e um push que chega com o
   // aparelho saindo do modo Doze (rede ainda instável) pode falhar essa busca
@@ -63,10 +69,10 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
       })
-      // /cockpit é servido pelo Node a partir de cockpit.html — sem este desvio
-      // a tela de parede cairia no index.html offline, que é o app inteiro.
+      // /cockpit e /todo são servidos pelo Node a partir de cockpit.html / todo.html
+      // — sem este desvio cairiam no index.html offline, que é o app inteiro.
       .catch(() => caches.match(req).then((r) =>
-        r || caches.match(url.pathname === '/cockpit' ? './cockpit.html' : './index.html')))
+        r || caches.match({ '/cockpit': './cockpit.html', '/todo': './todo.html' }[url.pathname] || './index.html')))
   );
 });
 
