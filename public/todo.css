@@ -77,6 +77,12 @@ html[data-theme="dark"] .td-chip.hoje     { color: #f0b04d; }
 html[data-theme="dark"] .td-chip.ok,
 html[data-theme="dark"] .td-feita .td-check { color: #4cc38a; }
 
+/* Modal de informações da task */
+.td-info-titulo { font-weight: 700; margin-bottom: .85rem; overflow-wrap: anywhere; }
+.td-info-lista { display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1rem; margin: 0; }
+.td-info-lista dt { color: var(--muted); font-weight: 600; font-size: .85rem; }
+.td-info-lista dd { margin: 0; overflow-wrap: anywhere; }
+
 .td-secao-tit {
   font-size: .72rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
   color: var(--muted); margin: 1.25rem 0 .5rem;

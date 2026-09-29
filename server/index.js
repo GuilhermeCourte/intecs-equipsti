@@ -2262,6 +2262,17 @@ app.put('/api/todo/:id/concluir', exigirAuth, exigirPermissao('aba_todo'), wrap(
       campo: 'STATUS', valorAnterior: t.concluida ? 'Concluída' : 'Pendente',
       valorNovo: req.body.concluida ? 'Concluída' : 'Pendente'
     });
+    // Task atribuída concluída: avisa quem atribuiu (sininho + push no escopo dele, sem e-mail) —
+    // "atribuir" no sentido inverso. Reabrir e concluir a própria task não avisam ninguém.
+    if (t.atribuida && req.body.concluida && await todoRepo.usuarioComTodo(t.criadoPorId)) {
+      await notificar({
+        tipo: 'TODO', acao: 'CONCLUIDA', titulo: 'Task atribuída foi concluída',
+        mensagem: `${t.titulo}
+Concluída por ${req.user.email.split('@')[0]}`,
+        link: 'tab-todo', refId: t.id, ator: { id: meId, email: req.user.email },
+        email: false, sininhoUsuarioIds: [t.criadoPorId]
+      });
+    }
   }
   res.json({ ok: true });
 }));

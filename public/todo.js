@@ -27,13 +27,16 @@
   };
   const ymdParaBR = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
 
-  // concluidaEm chega como "YYYY-MM-DD HH:MM:SS" em UTC (SYSUTCDATETIME, sem 'Z'); dd/mm/aaaa no fuso de Brasília.
-  function dataConclusaoBR(utcSemZ) {
+  // criadoEm/concluidaEm chegam como "YYYY-MM-DD HH:MM:SS" em UTC (SYSUTCDATETIME, sem 'Z'); saem no fuso de Brasília.
+  function formatarBrasilia(utcSemZ, opcoes) {
     if (!utcSemZ) return '';
     const d = new Date(String(utcSemZ).replace(' ', 'T') + 'Z');
     if (isNaN(d)) return '';
-    return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+    return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', ...opcoes }).format(d);
   }
+  const dataConclusaoBR = (utcSemZ) => formatarBrasilia(utcSemZ);
+  // dd/mm/aaaa hh:mm (o Intl põe uma vírgula entre data e hora em alguns motores).
+  const dataHoraBR = (utcSemZ) => formatarBrasilia(utcSemZ, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).replace(', ', ' ');
 
   // Nome de exibição: a parte do e-mail antes do @. Se duas pessoas da lista
   // têm o mesmo nome, mostra o e-mail inteiro dessas duas para não confundir.
@@ -237,7 +240,7 @@
     // O botão fica visível e desabilitado, com tooltip, no mesmo padrão da Conexão Remota no Linux
     // (nunca esconder um botão inativo — ver .td-acoes button:disabled no CSS pro tooltip funcionar).
     const editarBloqueado = t.concluida;
-    const acoes = [];
+    const acoes = [`<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="info" title="Informações" aria-label="Informações da tarefa"><i class="ph ph-info fs-5"></i></button>`];
     if (podeLiberar) acoes.push(`<button type="button" class="btn btn-link btn-sm text-muted p-1" data-td="compartilhar" title="Liberar para outras pessoas"><i class="ph ph-users fs-5"></i></button>`);
     if (podeEditar) {
       acoes.push(editarBloqueado
@@ -393,6 +396,21 @@
           </div>
         </div></div>
       </div>
+      <div class="modal fade" id="tdModalInfo" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title"><i class="ph ph-info me-2"></i>Informações da tarefa</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+          </div>
+          <div class="modal-body">
+            <div class="td-info-titulo" id="tdInfoTitulo"></div>
+            <dl class="td-info-lista" id="tdInfoLista"></dl>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fechar</button>
+          </div>
+        </div></div>
+      </div>
       <div class="modal fade" id="tdModalApagar" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content">
           <div class="modal-body text-center p-4">
@@ -409,7 +427,7 @@
     document.body.append(...div.children);
     const inst = (id) => window.bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
     dataEditar = criarData(document.getElementById('tdEditarPrazo'), { minDate: false });
-    modais = { editar: inst('tdModalEditar'), compartilhar: inst('tdModalCompartilhar'), apagar: inst('tdModalApagar') };
+    modais = { editar: inst('tdModalEditar'), compartilhar: inst('tdModalCompartilhar'), apagar: inst('tdModalApagar'), info: inst('tdModalInfo') };
 
     document.getElementById('tdFormEditar').addEventListener('submit', async (ev) => {
       ev.preventDefault();
@@ -483,6 +501,17 @@
     modais.compartilhar.show();
   }
 
+  // Quem criou, quando, para quem foi e quando terminou. Só leitura, vale para qualquer task visível.
+  function abrirInfo(t) {
+    const pessoa = (email) => `<span title="${esc(email)}">${esc(nomeDe(email))}</span>`;
+    const linhas = [['Criada em', esc(dataHoraBR(t.criadoEm) || '—')], ['Criada por', pessoa(t.criadoPorEmail)]];
+    if (t.atribuida) linhas.push(['Atribuída a', pessoa(t.donoEmail)]);
+    linhas.push(['Finalizada em', t.concluida ? esc(dataHoraBR(t.concluidaEm) || '—') : '<span class="text-muted">Ainda pendente</span>']);
+    document.getElementById('tdInfoTitulo').textContent = t.lista === 'PESSOAL' ? 'Tarefa pessoal' : t.titulo;
+    document.getElementById('tdInfoLista').innerHTML = linhas.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    modais.info.show();
+  }
+
   function abrirApagar(t) {
     st.tarefaAberta = t;
     document.getElementById('tdApagarTexto').textContent = t.lista === 'PESSOAL' ? 'Esta tarefa pessoal será removida.' : t.titulo;
@@ -504,6 +533,7 @@
         if (await tentar(() => api('PUT', `/api/todo/${t.id}/concluir`, { concluida: !t.concluida }))) await recarregarLista();
       } else if (acao === 'editar') { if (!t.concluida) abrirEditar(t); } // defesa: botão desabilitado já barra o clique
       else if (acao === 'compartilhar') abrirCompartilhar(t);
+      else if (acao === 'info') abrirInfo(t);
       else if (acao === 'apagar') abrirApagar(t);
     });
 
