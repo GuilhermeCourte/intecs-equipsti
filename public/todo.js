@@ -402,9 +402,6 @@
             <div class="td-info-titulo" id="tdInfoTitulo"></div>
             <dl class="td-info-lista" id="tdInfoLista"></dl>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fechar</button>
-          </div>
         </div></div>
       </div>
       <div class="modal fade" id="tdModalApagar" tabindex="-1" aria-hidden="true">
