@@ -34,7 +34,6 @@
     if (isNaN(d)) return '';
     return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', ...opcoes }).format(d);
   }
-  const dataConclusaoBR = (utcSemZ) => formatarBrasilia(utcSemZ);
   // dd/mm/aaaa hh:mm (o Intl põe uma vírgula entre data e hora em alguns motores).
   const dataHoraBR = (utcSemZ) => formatarBrasilia(utcSemZ, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).replace(', ', ' ');
 
@@ -242,15 +241,12 @@
 
     const marca = t.concluida ? 'ph-check-circle' : 'ph-circle';
     const titCheck = podeConcluir ? (t.concluida ? 'Reabrir' : 'Concluir') : (t.concluida ? 'Concluída' : 'Pendente');
-    // Tarefa concluída antes de a coluna existir fica sem data — sem traço nem erro, o span some.
-    const concluidaEmTxt = t.concluida ? dataConclusaoBR(t.concluidaEm) : '';
     return `<li class="td-item ${t.concluida ? 'td-feita' : ''}" data-id="${t.id}">
       <button type="button" class="td-check" data-td="alternar" title="${titCheck}" aria-label="${titCheck}" ${podeConcluir ? '' : 'disabled'}><i class="ph ${marca}"></i></button>
       <div class="td-corpo">
         <div class="td-titulo">${esc(t.titulo)}</div>
         ${chips.filter(Boolean).length ? `<div class="td-meta">${chips.filter(Boolean).join('')}</div>` : ''}
       </div>
-      ${concluidaEmTxt ? `<div class="td-concluida-em">${esc(concluidaEmTxt)}</div>` : ''}
       ${acoes.length ? `<div class="td-acoes">${acoes.join('')}</div>` : ''}
     </li>`;
   }

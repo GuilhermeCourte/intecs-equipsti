@@ -56,7 +56,6 @@
 .td-acoes { display: flex; flex: none; gap: .1rem; }
 /* Data de conclusão: cola na direita (o .td-corpo com flex-grow já empurra pra lá); some quando a
    task foi concluída antes de a coluna existir (o JS não gera o elemento nesse caso). */
-.td-concluida-em { flex: none; align-self: center; font-size: .78rem; color: var(--muted); white-space: nowrap; }
 .td-feita .td-check { color: #1a7f4b; }
 .td-feita .td-titulo { color: var(--muted); font-weight: 500; text-decoration: line-through; }
 
@@ -98,6 +97,4 @@ html[data-theme="dark"] .td-feita .td-check { color: #4cc38a; }
   .td-campo-prazo, .td-campo-dest { flex: 1 1 140px; }
   .td-add .btn { flex: 1 1 100%; }
   .td-item { padding: .7rem .8rem; gap: .6rem; flex-wrap: wrap; }
-  /* order alto: se não couber ao lado do título/ações, desce sozinha pra própria linha, à direita. */
-  .td-concluida-em { flex: 1 1 100%; text-align: right; order: 5; margin-top: -.15rem; }
 }
