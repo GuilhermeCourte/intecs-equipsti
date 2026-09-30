@@ -61,7 +61,7 @@
    task foi concluída antes de a coluna existir (o JS não gera o elemento nesse caso). */
 .td-feita .td-check { color: #1a7f4b; }
 .td-feita .td-titulo { color: var(--muted); font-weight: 500; text-decoration: line-through; }
-.td-feita .td-titulo a { color: inherit; }
+.td-feita .td-titulo a { color: var(--muted) !important; }
 
 .td-chip {
   display: inline-flex; align-items: center; gap: .3rem;
