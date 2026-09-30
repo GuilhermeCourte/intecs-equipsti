@@ -2597,14 +2597,31 @@ function esquecerCalEmail(email) {
   localStorage.setItem(CAL_EMAILS_LS, JSON.stringify(lerCalEmailsSalvos().filter((e) => e !== email)));
 }
 
+// Catálogo da aba E-mails (GET /api/emails: só ativos e visíveis), por endereço.
+// É a segunda fonte das sugestões, depois do que a pessoa já usou. Se a carga
+// falhar, o campo segue funcionando só com o histórico e com texto livre.
+let calCatalogoEmails = new Map();
+const CAL_TIPO_ICONE = { GRUPO: 'ph-users-three', CAIXA: 'ph-envelope-simple', CONTATO: 'ph-address-book' };
+
+async function carregarCalCatalogoEmails() {
+  try {
+    const itens = await api('GET', '/api/emails');
+    calCatalogoEmails = new Map(itens.map((c) => [String(c.email).toLowerCase(), { nome: c.nome || '', tipo: c.tipo }]));
+    renderCalSugestoes();   // o usuário pode já estar digitando quando a carga termina
+  } catch { /* sem catálogo: só o histórico local */ }
+}
+
 // Lista filtrada pelo que está sendo digitado, sem repetir quem já virou pílula.
 // Abaixo de CAL_SUG_MIN letras não sugere nada: com uma ou duas o filtro casaria
 // com quase tudo que está salvo, e a lista atrapalharia mais que ajudaria.
+// Histórico vem primeiro (quem acabou de ser usado); o catálogo completa. O termo
+// casa com o endereço ou com o nome cadastrado ("camilla" acha o grupo dela).
 function calSugestoesAtuais() {
   const termo = trim($('cal_emails_input').value).toLowerCase();
   if (termo.length < CAL_SUG_MIN) return [];
-  return lerCalEmailsSalvos()
-    .filter((e) => !calEmailsExtras.includes(e) && e.includes(termo))
+  const casa = (e) => e.includes(termo) || (calCatalogoEmails.get(e)?.nome || '').toLowerCase().includes(termo);
+  return [...new Set([...lerCalEmailsSalvos(), ...calCatalogoEmails.keys()])]
+    .filter((e) => !calEmailsExtras.includes(e) && casa(e))
     .slice(0, CAL_SUG_VISIVEIS);
 }
 
@@ -2628,11 +2645,16 @@ function renderCalSugestoes() {
   if (!itens.length) return fecharCalSugestoes();
   if (calSugAtiva >= itens.length) { calSugAtiva = -1; calSugTocado = false; }
   const destaque = calSugIndiceEfetivo(itens);
-  cx.innerHTML = itens.map((e, i) =>
-    '<div class="cal-emails-sug-item' + (i === destaque ? ' is-ativo' : '') + '" data-email="' + escapeHtml(e) + '">' +
-    '<i class="ph ph-envelope-simple"></i><span>' + escapeHtml(e) + '</span>' +
-    '<button type="button" class="cal-emails-sug-x" data-esquecer="' + escapeHtml(e) + '" title="Remover da lista"><i class="ph ph-x"></i></button>' +
-    '</div>').join('');
+  cx.innerHTML = itens.map((e, i) => {
+    const cat = calCatalogoEmails.get(e);
+    // O × só esquece o histórico local: do catálogo o endereço voltaria de
+    // qualquer jeito, então o botão seria uma promessa falsa.
+    return '<div class="cal-emails-sug-item' + (i === destaque ? ' is-ativo' : '') + '" data-email="' + escapeHtml(e) + '">' +
+      '<i class="ph ' + ((cat && CAL_TIPO_ICONE[cat.tipo]) || 'ph-envelope-simple') + '"></i>' +
+      '<span>' + escapeHtml(e) + (cat && cat.nome ? ' <small class="cal-emails-sug-nome">' + escapeHtml(cat.nome) + '</small>' : '') + '</span>' +
+      (cat ? '' : '<button type="button" class="cal-emails-sug-x" data-esquecer="' + escapeHtml(e) + '" title="Remover da lista"><i class="ph ph-x"></i></button>') +
+      '</div>';
+  }).join('');
   cx.classList.remove('d-none');
 }
 
@@ -2708,6 +2730,7 @@ function abrirCalendario(id, dataPreenchida) {
   $('cal_emails_box').classList.remove('is-invalid');
   renderCalEmails();
   fecharCalSugestoes();
+  carregarCalCatalogoEmails();   // sem await: o modal abre na hora e as sugestões completam depois
   $('cal_observacao').value = e ? (e.observacao || '') : '';
   $('btnExcluirCalendario').classList.toggle('d-none', !e);
   modalCalendario.show();
