@@ -18,6 +18,29 @@
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Texto da tarefa -> HTML com http(s):// e www. clicáveis. Escapa cada pedaço separado,
+  // então nada do texto cru chega ao innerHTML; pontuação final fica fora do link.
+  const linkificar = (texto) => {
+    const s = String(texto ?? '');
+    let out = '', ult = 0, m;
+    const re = /(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+    while ((m = re.exec(s))) {
+      let url = m[0];
+      for (;;) {
+        const c = url[url.length - 1];
+        const fechaSobra = (c === ')' && url.split(')').length > url.split('(').length)
+          || (c === ']' && url.split(']').length > url.split('[').length);
+        if (/[.,;:!?]/.test(c) || fechaSobra) url = url.slice(0, -1); else break;
+      }
+      if (!/^(?:https?:\/\/|www\.)[^\s.]/i.test(url)) continue;
+      const href = /^www\./i.test(url) ? 'http://' + url : url;
+      out += esc(s.slice(ult, m.index))
+        + `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`;
+      ult = m.index + url.length;
+      re.lastIndex = ult;
+    }
+    return out + esc(s.slice(ult));
+  };
   const pad = (n) => String(n).padStart(2, '0');
   const hojeYmd = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
   const somaDias = (ymd, n) => {
@@ -253,7 +276,7 @@
     return `<li class="td-item ${t.concluida ? 'td-feita' : ''}" data-id="${t.id}">
       <button type="button" class="td-check" data-td="alternar" title="${titCheck}" aria-label="${titCheck}" ${podeConcluir ? '' : 'disabled'}><i class="ph ${marca}"></i></button>
       <div class="td-corpo">
-        <div class="td-titulo">${esc(t.titulo)}</div>
+        <div class="td-titulo">${linkificar(t.titulo)}</div>
         ${chips.filter(Boolean).length ? `<div class="td-meta">${chips.filter(Boolean).join('')}</div>` : ''}
       </div>
       ${acoes.length ? `<div class="td-acoes">${acoes.join('')}</div>` : ''}
