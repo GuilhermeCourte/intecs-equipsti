@@ -218,7 +218,7 @@ async function regravarMembros(emailId, membros) {
  * @returns {{pagina:string, grupos:number, caixas:number, novos:number,
  *            atualizados:number, inativados:number, desativadas:number}}
  */
-export async function importarLocaweb({ pagina = 'GRUPOS', grupos = [], caixas = [] }, usuario) {
+export async function importarLocaweb({ pagina = 'GRUPOS', grupos = [], caixas = [], parcial = false }, usuario) {
   const ehPaginaDeCaixas = pagina === 'CAIXAS';
   const entradas = [
     ...grupos.map((g) => ({ tipo: 'GRUPO', email: g.email, nome: g.nome, externoId: g.externoId, membros: g.membros || [] })),
@@ -231,7 +231,10 @@ export async function importarLocaweb({ pagina = 'GRUPOS', grupos = [], caixas =
     }))
   ].filter((x) => x.email);
 
-  const escopo = ehPaginaDeCaixas ? ['CAIXA'] : ['GRUPO', 'CAIXA'];
+  // Só inativa o que a página enumera: a de grupos do layout atual não traz a
+  // lista de caixas, e uma fatia parcial (paginada) não enumera nem todos os grupos.
+  const escopo = ehPaginaDeCaixas ? ['CAIXA']
+    : [...(parcial ? [] : ['GRUPO']), ...(caixas.length ? ['CAIXA'] : [])];
 
   const existentes = await query('SELECT id, email, tipo, origem, ativo FROM dbo.EQUIPSTI_emails');
   const porEmail = new Map(existentes.recordset.map((l) => [l.email.toLowerCase(), l]));
