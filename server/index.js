@@ -47,6 +47,8 @@ const app = express();
 // Atrás do proxy reverso (nginx na VPS): sem isto req.ip e req.protocol
 // refletem o proxy, não o cliente.
 app.set('trust proxy', 1);
+// Site interno: pede aos buscadores que não indexem nenhuma rota (HTML, API, arquivos).
+app.use((req, res, next) => { res.setHeader('X-Robots-Tag', 'noindex, nofollow'); next(); });
 app.use(cors());
 app.use(compression()); // JSON de inventário comprime ~85-90% — decisivo em rede lenta
 // 15mb: um registro vai com as 3 fotos no mesmo corpo — o default de 100kb
