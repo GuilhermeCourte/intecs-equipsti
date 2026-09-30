@@ -7794,6 +7794,14 @@ const IMP_PAGINAS = { GRUPOS: 'Grupos', CAIXAS: 'Caixas postais' };
 // Abrir a página final basta — sem sessão, o painel redireciona para o CAS e
 // volta para cá depois.
 function abrirPainelLocaweb(pagina) {
+  // O painel só aceita até 50 por página (200 é ignorado e volta 10). Com mais
+  // de 50 grupos a lista vem em duas páginas, então o botão abre as duas, cada
+  // uma na sua aba (nome próprio; com o mesmo nome a segunda trocaria a primeira).
+  if (pagina === 'groups') {
+    window.open(PAINEL_LOCAWEB + '/groups?per_page=50', 'painelLocaweb');
+    window.open(PAINEL_LOCAWEB + '/groups?page=2&per_page=50', 'painelLocaweb2');
+    return;
+  }
   window.open(PAINEL_LOCAWEB + '/' + pagina + '?per_page=200', 'painelLocaweb');
 }
 
@@ -7801,7 +7809,8 @@ function abrirPainelLocaweb(pagina) {
 // (server/locaweb/parser.js). Quem decide de verdade continua sendo o servidor:
 // isto aqui só mostra o que foi colado antes de importar.
 function tipoDaPaginaLocaweb(html) {
-  if (html.includes('window.groups[')) return 'GRUPOS';
+  if (html.includes('window.groups[')
+    || (html.includes('class="messageInfo') && html.includes('Ver integrantes'))) return 'GRUPOS';
   if (html.includes('check_for_action') && html.includes('Editar e-mail')) return 'CAIXAS';
   return null;
 }
@@ -7817,7 +7826,11 @@ function adicionarPaginaImportar(conteudo) {
   if (!trim(texto)) return;
   const tipo = tipoDaPaginaLocaweb(texto);
   const item = { tipo, conteudo: texto, tamanho: texto.length, erro: '' };
-  const i = tipo ? _impEmailsPaginas.findIndex((p) => p.tipo === tipo) : -1;
+  // Grupos vêm paginados (50 por vez): páginas diferentes convivem; só a mesma
+  // página colada de novo (mesmo primeiro grupo) substitui a anterior.
+  const chave = (t) => /id="list_(\d+)"/.exec(t)?.[1] || '';
+  const i = tipo ? _impEmailsPaginas.findIndex((p) => p.tipo === tipo
+    && (tipo !== 'GRUPOS' || chave(p.conteudo) === chave(texto))) : -1;
   if (i >= 0) _impEmailsPaginas[i] = item; else _impEmailsPaginas.push(item);
   // Conteúdo irreconhecível não é dado, é só o aviso de que a colagem não
   // serviu: sai sozinho em 5s. O x continua ali para quem quiser antes disso.
@@ -7930,7 +7943,8 @@ async function confirmarImportarEmails() {
     return;
   }
   const pendencia = _impEmailsPaginas.length
-    ? 'Nem tudo foi importado — o motivo está na cápsula.'
+    ? 'Nem tudo foi importado — ' + _impEmailsPaginas.filter((p) => p.erro)
+      .map((p) => IMP_PAGINAS[p.tipo] + ': ' + p.erro).join(' | ')
     : 'Falta a página de ' + IMP_PAGINAS[falta].toLowerCase() + '.';
   showAlert('alertImportarEmails', _impEmailsPaginas.length ? 'danger' : 'info',
     [...resumos, pendencia].join(' '));
@@ -7967,7 +7981,11 @@ function configurarEmails() {
     removerPaginaImportar(_impEmailsPaginas[Number(btn.getAttribute('data-capsula'))]);
   });
 
-  $('impEmailsConteudo').addEventListener('paste', (ev) => {
+  // No documento inteiro enquanto o modal está aberto, não só no campo: ao voltar
+  // da aba do painel o foco não está no textarea (nem dentro do modal), e o Ctrl+V
+  // da segunda página se perdia sem aviso.
+  document.addEventListener('paste', (ev) => {
+    if (!$('modalImportarEmails').classList.contains('show')) return;
     const texto = ev.clipboardData && ev.clipboardData.getData('text');
     if (!trim(texto || '')) return;
     // Deixar o textarea receber 1-2 MB de HTML trava a tela enquanto renderiza,

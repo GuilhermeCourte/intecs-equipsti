@@ -48,6 +48,44 @@ function dominioPredominante(emails) {
   return vencedor;
 }
 
+// Layout atual do painel: sem <script> com window.groups; cada grupo é um
+// bloco visível (messageInfo) com e-mail, descrição e a lista de integrantes.
+const MARCO_GRUPO = /<span class="name"><strong>([^<]+)<\/strong><\/span>/g;
+
+function ehLayoutNovoGrupos(html) {
+  return /class="messageInfo/.test(html) && /<span class="name"><strong>/.test(html) && /id="list_\d+"/.test(html);
+}
+
+function parseGruposLayoutNovo(html) {
+  const marcos = [...html.matchAll(MARCO_GRUPO)];
+  const dominio = (dominioDaUrl(html)
+    || dominioPredominante(marcos.map((m) => m[1].trim()))).toLowerCase();
+
+  const grupos = marcos.map((m, i) => {
+    const bloco = html.slice(m.index, i + 1 < marcos.length ? marcos[i + 1].index : html.length);
+    const lista = /id="list_(\d+)"[\s\S]*?<ul[^>]*>([\s\S]*?)<\/ul>/.exec(bloco);
+    const email = desescapar(m[1]).toLowerCase();
+    return {
+      externoId: lista?.[1] || '',
+      email,
+      apelido: /\/groups\/([^/"?]+)\/edit/.exec(bloco)?.[1] || email.split('@')[0],
+      nome: desescapar(/<span class="ellipsis">([^<]*)<\/span>/.exec(bloco)?.[1] || ''),
+      membros: [...(lista?.[2] || '').matchAll(/<li>\s*([^<\s]+@[^<\s]+)\s*<\/li>/g)]
+        .map((g) => g[1].trim().toLowerCase())
+        .map((e) => ({ email: e, tipo: dominioDe(e) === dominio ? 'internal' : 'external' }))
+    };
+  }).filter((g) => g.email.includes('@'));
+
+  if (!grupos.length) {
+    throw new Error('Nenhum grupo reconhecido no conteúdo enviado — o painel da Locaweb pode ter mudado.');
+  }
+  // A página mostra "51 grupos" (total do domínio) mas só lista uma fatia
+  // (per_page máx. 50). Fatia incompleta não pode inativar os grupos que estão
+  // em outra página.
+  const total = Number(/(\d+)\s+grupos\s*<\/span>/.exec(html)?.[1]) || grupos.length;
+  return { dominio, dominioHospedagem: '', grupos, caixas: [], parcial: grupos.length < total };
+}
+
 /**
  * Lê o HTML (ou só o trecho de <script>) da página de grupos.
  *
@@ -61,6 +99,9 @@ function dominioPredominante(emails) {
  */
 export function parsePainelGrupos(texto) {
   const html = String(texto || '');
+  if (!html.includes('window.groups[') && ehLayoutNovoGrupos(html)) {
+    return parseGruposLayoutNovo(html);
+  }
   if (!html.includes('window.groups[')) {
     throw new Error('Conteúdo não parece a página de grupos do painel Locaweb. Abra /domains/<dominio>/groups?per_page=200 no painel e copie o HTML dessa página.');
   }
@@ -142,7 +183,8 @@ export function parsePainelCaixas(texto) {
   // O checkbox de ação é o marco estável de cada linha (o <tr> muda de formato
   // entre o HTML cru do servidor e o DOM serializado do navegador). Cada caixa
   // é o pedaço entre um checkbox e o próximo.
-  const marcos = [...html.matchAll(/<input[^>]*class="check_for_action"[^>]*value="(\d+)"/g)];
+  // O value já foi um id numérico; hoje é o nome da caixa (waldir.carvalho).
+  const marcos = [...html.matchAll(/<input[^>]*class="check_for_action"[^>]*value="([^"]+)"/g)];
   const caixas = marcos.map((m, i) => {
     const bloco = html.slice(m.index, i + 1 < marcos.length ? marcos[i + 1].index : html.length);
     return {
@@ -173,7 +215,7 @@ export function parsePainelCaixas(texto) {
  */
 export function parsePainelLocaweb(texto) {
   const html = String(texto || '');
-  if (html.includes('window.groups[')) {
+  if (html.includes('window.groups[') || ehLayoutNovoGrupos(html)) {
     return { pagina: 'GRUPOS', grupos: [], caixas: [], ...parsePainelGrupos(html) };
   }
   if (/check_for_action/.test(html) && /Editar e-mail/.test(html)) {
