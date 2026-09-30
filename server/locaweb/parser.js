@@ -24,6 +24,17 @@ function desescapar(v) {
     .trim();
 }
 
+// Texto que vem do HTML visível (nome da caixa, descrição do grupo) traz
+// entidades: "D'Antonio" chega como "D&#39;Antonio". A tela escapa de novo ao
+// exibir, então sem decodificar aqui o código aparece literal.
+const ENTIDADES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function decodificarEntidades(v) {
+  return desescapar(v).replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (todo, dec, hex, nome) => {
+    if (nome) return ENTIDADES[nome.toLowerCase()] ?? todo;
+    return String.fromCodePoint(dec ? Number(dec) : parseInt(hex, 16));
+  });
+}
+
 function dominioDe(email) {
   return String(email || '').split('@')[1]?.toLowerCase() || '';
 }
@@ -69,7 +80,7 @@ function parseGruposLayoutNovo(html) {
       externoId: lista?.[1] || '',
       email,
       apelido: /\/groups\/([^/"?]+)\/edit/.exec(bloco)?.[1] || email.split('@')[0],
-      nome: desescapar(/<span class="ellipsis">([^<]*)<\/span>/.exec(bloco)?.[1] || ''),
+      nome: decodificarEntidades(/<span class="ellipsis">([^<]*)<\/span>/.exec(bloco)?.[1] || ''),
       membros: [...(lista?.[2] || '').matchAll(/<li>\s*([^<\s]+@[^<\s]+)\s*<\/li>/g)]
         .map((g) => g[1].trim().toLowerCase())
         .map((e) => ({ email: e, tipo: dominioDe(e) === dominio ? 'internal' : 'external' }))
@@ -192,7 +203,7 @@ export function parsePainelCaixas(texto) {
       // O aria-label do link "Editar" carrega o endereço completo e já no
       // domínio público — mais confiável que o texto solto da célula.
       email: (/aria-label="Editar e-mail ([^"]+)"/.exec(bloco)?.[1] || '').trim().toLowerCase(),
-      nome: desescapar(/<strong[^>]*>\s*<a [^>]*>([^<]*)<\/a>/.exec(bloco)?.[1] || ''),
+      nome: decodificarEntidades(/<strong[^>]*>\s*<a [^>]*>([^<]*)<\/a>/.exec(bloco)?.[1] || ''),
       desativada: /label[^>]*>\s*Desativada\s*</.test(bloco)
     };
   }).filter((c) => c.email.includes('@'));
