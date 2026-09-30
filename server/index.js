@@ -49,7 +49,12 @@ const app = express();
 app.set('trust proxy', 1);
 // Site interno: pede aos buscadores que não indexem nenhuma rota (HTML, API, arquivos).
 app.use((req, res, next) => { res.setHeader('X-Robots-Tag', 'noindex, nofollow'); next(); });
-app.use(cors());
+// CORS só para as origens conhecidas. O front é same-origin (caminhos relativos),
+// então isto só vale para quem chamar a API de outra origem pelo navegador.
+// Override: CORS_ORIGINS no .env, separado por vírgula.
+const CORS_ORIGINS = String(process.env.CORS_ORIGINS || 'https://gestaoti.intecsbr.org,http://localhost:3000,http://localhost:3100')
+  .split(',').map(o => o.trim()).filter(Boolean);
+app.use(cors({ origin: CORS_ORIGINS }));
 app.use(compression()); // JSON de inventário comprime ~85-90% — decisivo em rede lenta
 // 15mb: um registro vai com as 3 fotos no mesmo corpo — o default de 100kb
 // não cabe. Folga generosa (fotos comprimidas ficam bem abaixo disso), só
